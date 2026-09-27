@@ -1,0 +1,28 @@
+# ============================================================
+#  NUNCA versionar secretos.
+#
+#  Los .env reales contienen el token de Notion (ntn_...) y el
+#  PAT de Azure DevOps. Este patron los bloquea por si quedan
+#  sueltos en el arbol.
+# ============================================================
+
+# Cualquier .env real, en cualquier carpeta
+*.env
+*.secrets.env
+
+# Los .example SI se versionan (son la plantilla de instalacion)
+!*.env.example
+!plantilla.env
+
+# Secretos explicitos
+azure-sync.secrets.env
+notion-autopilot.secrets.env
+
+# Estado de ejecucion
+*.log
+*.lock
+state.json
+ledger.json
+__pycache__/
+*.pyc
+workitems/
