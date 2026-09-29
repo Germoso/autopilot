@@ -12,6 +12,9 @@ ESTRUCTURA
 
   - El ESTADO de una tarea es la carpeta donde esta. Nunca se guarda en el archivo.
   - Cambiar de estado = os.rename (atomico). Reescribir = tmp + os.replace (atomico).
+  - Adjuntos en adjuntos/<clave>/ (fuera de las carpetas de estado: mover la tarea no los mueve).
+    Desde el .md se referencian como ../adjuntos/<clave>/... (todas las carpetas de estado estan
+    a la misma profundidad). Los fotogramas de un video van en <video>.frames/fNN.png.
   - Archivo: <tipo>-<numero>-<slug>.md. La clave de la tarea es <tipo>-<numero>,
     que es tambien el nombre de su rama de git. Ej: bug-140123.
 
@@ -36,8 +39,10 @@ import unicodedata
 ESTADOS = ["new", "in-progress", "qa", "validando", "bug-fix", "stopped", "done"]
 PRIO = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 TIPOS = ("task", "bug")
-SECCIONES = ["Descripción", "Criterio de aceptación", "Feedback de QA",
+SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Feedback de QA",
              "Resultado", "Motivo de stopped"]
+IMAGEN = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+VIDEO = {".mp4", ".mov", ".webm", ".avi", ".mkv", ".m4v", ".3gp"}
 CAMPOS = ["id", "tipo", "prioridad", "intento", "rama", "repo", "origen", "actualizado"]
 
 RE_ARCHIVO = re.compile(r"^(task|bug)-(\d+)(?:-.*)?\.md$")
@@ -245,7 +250,20 @@ class Board:
             "feedback": secs.get("Feedback de QA", ""),
             "resultado": secs.get("Resultado", ""),
             "motivo": secs.get("Motivo de stopped", ""),
+            **self.adjuntos(clave),
         }
+
+    def adjuntos(self, clave):
+        """Imagenes (incluye fotogramas de videos, en orden) y videos de adjuntos/<clave>/.
+        Tambien sirve para imagenes que el usuario deje a mano en esa carpeta."""
+        carpeta = os.path.join(self.dir, "adjuntos", clave)
+        imgs, vids = [], []
+        for raiz, dirs, files in os.walk(carpeta):
+            dirs.sort()
+            for f in sorted(files):
+                ext = os.path.splitext(f)[1].lower()
+                (imgs if ext in IMAGEN else vids if ext in VIDEO else []).append(os.path.join(raiz, f))
+        return {"adjuntos": imgs, "videos": vids}
 
     def todas(self):
         out = []
@@ -283,7 +301,8 @@ class Board:
             escribir_atomico(path, serializar(meta, titulo, secs))
             return path
 
-    def crear(self, tipo, numero, prioridad, titulo, descripcion, criterio, repo="", origen="manual"):
+    def crear(self, tipo, numero, prioridad, titulo, descripcion, criterio, repo="", origen="manual",
+              adjuntos=""):
         tipo = tipo.lower()
         if tipo not in TIPOS:
             raise Error("tipo invalido '%s'. Usa task o bug" % tipo)
@@ -303,7 +322,8 @@ class Board:
             meta = {"id": numero, "tipo": tipo, "prioridad": prioridad, "intento": "0",
                     "rama": clave, "repo": repo or "-", "origen": origen, "actualizado": ahora()}
             secs = {"Descripción": descripcion or "-",
-                    "Criterio de aceptación": criterio or "_Sin criterio._"}
+                    "Criterio de aceptación": criterio or "_Sin criterio._",
+                    "Adjuntos": adjuntos or ("_Ninguno. Podés dejar imágenes en adjuntos/%s/._" % clave)}
             escribir_atomico(path, serializar(meta, titulo, secs))
             return path
 

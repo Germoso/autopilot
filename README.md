@@ -288,7 +288,24 @@ SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
   cambiar de sprint); `@current:<Equipo>` para otro equipo; o una ruta fija `Proyecto\Sprint X`.
 - En un workspace cada tarea se crea con su `repo:`. Cada `SYNC.<repo>` necesita su `REPO.<repo>`.
 - Si **cualquier** fuente falla, no se escribe nada en el board.
-- `--dry-run` muestra qué importaría; `--status` cuenta por fuente; `--watch 60` en bucle.
+- `--dry-run` muestra qué importaría (con cuántas imágenes/videos); `--status` cuenta por fuente;
+  `--watch 60` en bucle; `--fotogramas` procesa videos ya descargados (tras instalar ffmpeg).
+
+### Adjuntos: capturas y videos
+
+Cada work item importado trae sus adjuntos a `.workitems/adjuntos/<clave>/`:
+
+- **Imágenes incrustadas** en la descripción o los pasos: se descargan y quedan en su lugar en el
+  texto como `![imagen N](../adjuntos/<clave>/...)`.
+- **Adjuntos** del work item (imágenes, videos, otros), listados en la sección `## Adjuntos`.
+- **Videos:** con `ffmpeg` instalado se extraen hasta 12 fotogramas (primer cuadro + cambios de
+  escena, repartidos) en `<video>.frames/fNN.png`, porque ningún modelo ve video directamente.
+  Sin ffmpeg se guarda el video y queda la nota; después: `azure-sync.py --config ... --fotogramas`.
+- Límite de 50 MB por archivo. Un adjunto que falla no frena la importación: queda anotado.
+
+El autopilot le pasa las imágenes y fotogramas al worker y al QA (`tarea.adjuntos`).
+
+**Requisito:** `sudo apt install ffmpeg` para los fotogramas.
 
 ### El watcher
 

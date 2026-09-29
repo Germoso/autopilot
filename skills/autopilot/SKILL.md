@@ -128,8 +128,9 @@ $W "$E" query [estado]
    - `desarrollar-bugfix` → `wi.sh rama <clave> existente` y luego `wi.sh in-progress <clave>`.
    - `certificar` → ver el ciclo de certificación (no cambia de rama).
    Si `wi.sh rama` falla, la tarea ya quedó en `stopped`: relanza el watcher.
-4. Lanza un subagente `autopilot-worker` con la tarea, `<REPO>` (dónde trabajar), la rama y
-   `<BASE>` (y el `Feedback de QA` si es bugfix).
+4. Lanza un subagente `autopilot-worker` con la tarea, `<REPO>` (dónde trabajar), la rama,
+   `<BASE>`, **la lista `tarea.adjuntos`** (rutas de imágenes y fotogramas; pásalas completas) y
+   el `Feedback de QA` si es bugfix.
 5. Verifica el resultado:
    - Hay commits nuevos en la rama (`git -C <REPO> log <BASE>..<clave>`) y el subagente reporta
      éxito → `wi.sh qa <clave>` + `wi.sh resultado <clave> "<rama> @ <commit> — <resumen>"`
@@ -137,6 +138,14 @@ $W "$E" query [estado]
      → `wi.sh stopped <clave> "<motivo>"`
 6. Registra el evento con `wi.sh log`.
 7. Vuelve al paso 1. El watcher se relanza.
+
+### Adjuntos (capturas y videos)
+
+`tarea.adjuntos` trae las rutas absolutas de las imágenes de la tarea: capturas incrustadas en
+Azure, imágenes adjuntas y **fotogramas de los videos** (`<video>.frames/fNN.png`, en orden
+temporal). Viven en `.workitems/adjuntos/<clave>/`. `tarea.videos` lista los videos originales:
+ningún modelo los ve directamente, por eso se extraen fotogramas. Si hay videos pero no
+fotogramas, falta ffmpeg: dilo en el resumen (`azure-sync.py --fotogramas` los genera después).
 
 ## La máquina de estados
 
@@ -173,8 +182,8 @@ Prioridad de selección en el watcher: `bug-fix` > `qa` > `new` (por prioridad, 
 
 1. Hay una tarea en `qa` y el watcher devuelve `certificar`
 2. `wi.sh certificar <clave> <intento+1>`
-3. Lanza `qa-reviewer` con la tarea, sus criterios, `<REPO>`, la rama, `<BASE>` y el número de
-   intento. El reviewer compara con `git -C <REPO> diff <BASE>...<clave>`.
+3. Lanza `qa-reviewer` con la tarea, sus criterios, `<REPO>`, la rama, `<BASE>`, la lista
+   `tarea.adjuntos` y el número de intento. El reviewer compara con `git -C <REPO> diff <BASE>...<clave>`.
 4. Lee el veredicto:
    - `APROBADO` → `wi.sh aprobar <clave>` (va a `done`)
    - `RECHAZADO` → si `intento >= 3` → `wi.sh stopped <clave> "<historial de los intentos>"`

@@ -37,7 +37,8 @@ I=~/.local/share/autopilot-kit/init.py
    `REPO.<repo>=` de `autopilot.env` y su `SYNC.<repo>=` de `azure-sync.env`.
 
 5. **Reportar** el JSON de salida en pocas líneas: qué se creó (`hecho`) y **todos** los `avisos`.
-   Si hay avisos, explica qué hacer con cada uno (rama inexistente, cambios sin commitear...).
+   Si hay avisos, explica qué hacer con cada uno (rama inexistente, cambios sin commitear, falta
+   ffmpeg para ver los videos de los bugs...).
 
 6. **Siguiente paso**, en una línea:
    - Azure: el sprint está en `@current` (sprint actual del equipo `<Proyecto> Team`). El PAT se

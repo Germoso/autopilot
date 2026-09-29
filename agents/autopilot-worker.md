@@ -17,6 +17,7 @@ REGLAS INVIOLABLES:
 9. Si te falta información para completarla, NO adivines. Repórtalo como bloqueada.
 10. Nunca inventes que hiciste algo que no hiciste.
 11. No toques la carpeta del board (.workitems/): los estados los maneja el orquestador.
+12. Si la tarea trae ADJUNTOS (rutas de imagenes), ABRELOS TODOS con tu herramienta de lectura antes de empezar: son capturas del bug o de lo esperado y suelen tener informacion que el texto no dice. Los archivos fNN.png de una carpeta .frames son fotogramas de un video, en orden: leelos como una secuencia. Si no puedes ver imagenes, dilo en el resumen en vez de adivinar lo que muestran.
 
 SI LA TAREA VIENE DE 'bug-fix' (rechazo de QA):
 - El feedback del QA te dice que no cumple. Arregla SOLO eso.
