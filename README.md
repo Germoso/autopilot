@@ -225,7 +225,7 @@ konectame/                      <- abrís el cliente acá
 
 - Cada repo tiene **su propia rama base**. La rama de cada tarea se crea dentro de su repo.
 - azure-sync lee **un proyecto de Azure por repo** y le pone a cada tarea su `repo:`.
-- Sigue siendo **una tarea a la vez** en todo el workspace.
+- Los puestos son globales: **un coder y un QA** para todo el workspace (ver *Dos puestos en paralelo*).
 
 `autopilot.env`:
 
@@ -326,14 +326,44 @@ setsid nohup python3 ~/.local/share/autopilot-kit/azure-sync.py \
 
 ---
 
+## Dos puestos en paralelo
+
+| Puesto | Agente | Toma de | Mientras trabaja | Máximo |
+|---|---|---|---|---|
+| coder | `autopilot-worker` | `bug-fix` > `new` | `in-progress` | 1 |
+| QA | `qa-reviewer` | `qa` | `validando` | 1 |
+
+Mientras el coder desarrolla una tarea, el QA puede estar certificando otra.
+
+- **Claude Code:** los dos subagentes corren en segundo plano; Claude Code avisa al agente
+  principal cuando terminan.
+- **OpenCode:** cada puesto corre como **su propia sesión** de OpenCode, lanzada por la API del
+  servicio local (`oc_sesion.py`). Las ves en tu lista de sesiones y podés mirarlas en vivo. El
+  watcher avisa cuando una termina. Si cerrás OpenCode, esas sesiones siguen; al volver,
+  `/autopilot` las retoma.
+- **El QA trabaja en su propia copia del repo** (`git worktree` en `~/.cache/autopilot-kit/qa/`,
+  en la punta de la rama de la tarea): puede compilar y correr tests o la app sin pisar al coder.
+  Se borra al dar el veredicto.
+
+### Qué queda escrito en cada tarea
+
+- **`## Notas del desarrollador`** (por intento): qué se hizo y por qué, archivos cambiados,
+  decisiones, cómo probarlo, pruebas que corrió, riesgos y pendientes.
+- **`## Reporte de QA`** (por intento): cada criterio (CUMPLE / NO CUMPLE / NO VERIFICABLE con
+  evidencia), **qué probó** (comandos y resultados), **cómo verificarlo manualmente de punta a
+  punta** (preparación, pasos, resultado esperado, casos borde) y **puntos a tomar en cuenta**
+  (regresiones, migraciones, configuración, datos...).
+
 ## Reglas de trabajo
 
 Fijadas en `SKILL.md`, se aplican sin que nadie las recuerde:
 
-- **Una sola tarea a la vez.** Máximo 1 en `in-progress`.
+- **Dos puestos en paralelo, una tarea cada uno:** 1 coder (`in-progress`) y 1 QA (`validando`).
+  `wi.sh` rechaza una segunda tarea en el mismo puesto.
 - **Una rama por workitem:** `task-<numero>` / `bug-<numero>` desde `BASE_BRANCH`.
 - **Nadie hace `push` ni `merge`** (ni `pull`, que mergea). Bloqueado por permiso/hook, no por instrucción.
-- **QA solo lee.** No puede editar, commitear ni cambiar de rama.
+- **QA no toca el código:** prueba en su propia copia (worktree); no edita, no commitea, no cambia de rama.
+- **Todo queda escrito en la tarea:** notas del desarrollador y reporte de QA, por intento.
 - **Los subagentes no usan el MCP de Azure.**
 - **`bug-fix` tiene prioridad** sobre trabajo nuevo: siempre se toma primero.
 - **3 intentos** de certificación. Al cuarto, `stopped` con el historial.

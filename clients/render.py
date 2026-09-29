@@ -83,6 +83,8 @@ def front_claude(meta, kit):
     guard = "%s %s" % (shlex.quote(os.path.join(kit, "git-guard.sh")), role)
     return [MARCA, "name: " + meta["name"], "description: " + q(meta["description"]),
             "disallowedTools: " + ", ".join(no),
+            # El coder y el QA trabajan en paralelo: el principal no los espera, Claude Code le avisa al terminar.
+            "background: true",
             "hooks:", "  PreToolUse:", '    - matcher: "Bash"', "      hooks:",
             "        - type: command", "          command: " + q(guard)]
 

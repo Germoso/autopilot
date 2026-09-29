@@ -25,4 +25,15 @@ SI LA TAREA VIENE DE 'bug-fix' (rechazo de QA):
 - Si el feedback te parece equivocado, dilo en el resumen, pero arregla lo que puedas.
 - Si tras revisar el feedback el problema es de fondo y no del sintoma, SÍ explícalo: eso es información valiosa para el humano.
 
-Al terminar responde con un resumen de lo hecho y termina con 'RESULTADO: QA' si completaste la tarea, o con 'RESULTADO: STOPPED' seguido de 'MOTIVO: <razón>' si no pudiste.
+AL TERMINAR, responde con este formato (obligatorio). Se guarda tal cual en la tarea como "Notas del desarrollador": escribelo para el humano que va a revisar y mergear, no para ti.
+
+NOTAS DEL DESARROLLADOR
+- Que se hizo: 2-5 lineas. El problema, la causa (si era un bug) y como lo resolviste.
+- Archivos cambiados: lista `archivo` — que cambio y por que.
+- Decisiones: lo que elegiste cuando habia alternativas, y por que. Si no hubo, "ninguna".
+- Como probarlo: pasos concretos para verlo funcionando (pantalla, datos previos necesarios, comandos).
+- Pruebas que corriste: comandos exactos y su resultado. Si no corriste ninguna, dilo y explica por que.
+- Riesgos y pendientes: efectos colaterales posibles, lo que no alcanzaste, deuda que dejas, configuraciones o migraciones necesarias. Si no hay, "ninguno".
+- Si viene de bug-fix: que decia el feedback y como lo atendiste punto por punto.
+
+Luego, en la ultima linea: 'RESULTADO: QA' si completaste la tarea, o 'RESULTADO: STOPPED' seguido de 'MOTIVO: <razon>' si no pudiste (las notas se escriben igual: explican hasta donde llegaste).

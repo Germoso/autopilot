@@ -39,11 +39,13 @@ import unicodedata
 ESTADOS = ["new", "in-progress", "qa", "validando", "bug-fix", "stopped", "done"]
 PRIO = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 TIPOS = ("task", "bug")
-SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Feedback de QA",
-             "Resultado", "Motivo de stopped"]
+SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Notas del desarrollador",
+             "Reporte de QA", "Feedback de QA", "Resultado", "Motivo de stopped"]
+# Dos puestos que trabajan en paralelo, cada uno con UNA tarea como maximo.
+PUESTOS = {"coder": "in-progress", "qa": "validando"}
 IMAGEN = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 VIDEO = {".mp4", ".mov", ".webm", ".avi", ".mkv", ".m4v", ".3gp"}
-CAMPOS = ["id", "tipo", "prioridad", "intento", "rama", "repo", "origen", "actualizado"]
+CAMPOS = ["id", "tipo", "prioridad", "intento", "rama", "repo", "origen", "sesion", "actualizado"]
 
 RE_ARCHIVO = re.compile(r"^(task|bug)-(\d+)(?:-.*)?\.md$")
 
@@ -250,6 +252,9 @@ class Board:
             "feedback": secs.get("Feedback de QA", ""),
             "resultado": secs.get("Resultado", ""),
             "motivo": secs.get("Motivo de stopped", ""),
+            "notas_dev": secs.get("Notas del desarrollador", ""),
+            "reporte_qa": secs.get("Reporte de QA", ""),
+            "sesion": meta.get("sesion") or None,
             **self.adjuntos(clave),
         }
 
@@ -285,11 +290,18 @@ class Board:
             if estado_nuevo and estado_nuevo != estado:
                 if estado_nuevo not in ESTADOS:
                     raise Error("estado invalido: %s" % estado_nuevo)
+                puesto = next((p for p, e in PUESTOS.items() if e == estado_nuevo), None)
+                ocupada = [c for e, c, _ in self.archivos() if e == estado_nuevo and c != clave.lower()]
+                if puesto and ocupada:
+                    raise Error("el puesto %s esta ocupado por %s: maximo una tarea en %s"
+                                % (puesto, ocupada[0], estado_nuevo))
                 destino = os.path.join(self.dir, estado_nuevo, os.path.basename(path))
                 os.makedirs(os.path.dirname(destino), exist_ok=True)
                 os.rename(path, destino)
                 path = destino
             meta, titulo, secs = parsear(open(path, encoding="utf-8").read())
+            if estado_nuevo and estado_nuevo not in PUESTOS.values():
+                meta.pop("sesion", None)  # la sesion de OpenCode es del puesto, no de la tarea
             for k, v in (meta_set or {}).items():
                 meta[k] = v
             for k, v in (secs_set or {}).items():
@@ -341,35 +353,85 @@ class Board:
 
     # -- watcher
     def plan(self, recuperar=False):
-        """Lo que el watcher le devuelve al agente. Prioridad: Bug Fix > QA > New."""
-        huerfanas = []
-        if recuperar:
-            for t in self.todas():
-                if t["estado"] in ("in-progress", "validando"):
-                    motivo = ("Huerfana en %s sin agente activo (recuperada por el watcher). "
-                              "Re-encolar manualmente a new o qa." % t["estado"])
-                    self.modificar(t["id"], "stopped", secs_set={"Motivo de stopped": motivo})
-                    self.log("Watcher recupero tarea huerfana", "watcher", "recuperacion",
-                             t["id"], t["rama"], "-", "Estaba en %s sin agente. Marcada stopped." % t["estado"])
-                    huerfanas.append(t["id"])
+        """Lo que el watcher le devuelve al agente principal.
+
+        Dos puestos independientes, una tarea como maximo cada uno:
+          coder  (in-progress): toma bug-fix > new
+          qa     (validando):   toma qa
+        `acciones`: trabajo para cada puesto LIBRE. `terminadas`: tareas de un puesto cuya sesion de
+        OpenCode ya termino (en Claude Code el fin del subagente lo avisa el propio cliente).
+        recuperar=True (solo al iniciar /autopilot): una tarea en un puesto sin sesion viva no tiene
+        agente -> stopped. En los relanzamientos NO se recupera nada: el otro puesto sigue trabajando.
+        """
+        import oc_sesion
+        huerfanas, terminadas = [], []
+        ocupados = {p: None for p in PUESTOS}
+        for t in self.todas():
+            puesto = next((p for p, e in PUESTOS.items() if e == t["estado"]), None)
+            if not puesto:
+                continue
+            ses = t.get("sesion")
+            viva = oc_sesion.estado(ses) if ses else None   # None: sin sesion registrada (Claude Code)
+            if ses and viva and viva["activa"] is False:
+                terminadas.append({"puesto": puesto, "tarea": t, "sesion": ses, "outcome": viva.get("outcome")})
+            elif recuperar and not (ses and viva and viva["activa"]):
+                motivo = ("Huerfana en %s sin agente activo (recuperada al iniciar /autopilot). "
+                          "Re-encolar manualmente a new o qa." % t["estado"])
+                self.modificar(t["id"], "stopped", secs_set={"Motivo de stopped": motivo})
+                self.log("Watcher recupero tarea huerfana", "watcher", "recuperacion",
+                         t["id"], t["rama"], "-", "Estaba en %s sin agente. Marcada stopped." % t["estado"])
+                huerfanas.append(t["id"])
+                continue
+            ocupados[puesto] = t["id"]
 
         ts = self.todas()
         orden = lambda t: (PRIO.get(t["prioridad"], 9), int(t["numero"]))
         by = lambda s: sorted([t for t in ts if t["estado"] == s], key=orden)
         bugfix, qa, nuevas = by("bug-fix"), by("qa"), by("new")
 
-        if bugfix:
-            accion, elegida = "desarrollar-bugfix", bugfix[0]
-        elif qa:
-            accion, elegida = "certificar", qa[0]
-        elif nuevas:
-            accion, elegida = "desarrollar", nuevas[0]
-        else:
-            accion, elegida = "idle", None
-        return {"accion": accion, "tarea": elegida, "huerfanas_recuperadas": huerfanas,
-                "stopped": [t["id"] for t in by("stopped")],
+        acciones = []
+        if not ocupados["coder"]:
+            if bugfix:
+                acciones.append({"puesto": "coder", "accion": "desarrollar-bugfix", "tarea": bugfix[0]})
+            elif nuevas:
+                acciones.append({"puesto": "coder", "accion": "desarrollar", "tarea": nuevas[0]})
+        if not ocupados["qa"] and qa:
+            acciones.append({"puesto": "qa", "accion": "certificar", "tarea": qa[0]})
+        return {"acciones": acciones, "terminadas": terminadas, "ocupados": ocupados,
+                "huerfanas_recuperadas": huerfanas, "stopped": [t["id"] for t in by("stopped")],
                 "workspace": self.cfg["workspace"], "avisos": self.avisos(),
                 "cola": {"bugfix": len(bugfix), "qa": len(qa), "new": len(nuevas)}}
+
+    # -- worktree del QA
+    def qa_worktree(self, clave):
+        """Copia de trabajo SOLO para el QA, en la punta de la rama de la tarea (HEAD separado).
+        Asi puede correr la app o los tests sin tocar el repo donde trabaja el coder."""
+        clave = clave.lower()
+        r = self.repo_de(self.leer(clave)[2].get("repo"))
+        rama = self.leer(clave)[2].get("rama") or clave
+        destino = self.qa_worktree_path(r, clave)
+        if os.path.isdir(destino):
+            self.git(destino, "checkout", "--detach", "--force", rama)  # re-certificacion: a la punta nueva
+        else:
+            os.makedirs(os.path.dirname(destino), exist_ok=True)
+            self.git(r["path"], "worktree", "add", "--detach", destino, rama)
+        return {"worktree": destino, "rama": rama, "repo_path": r["path"],
+                "head": self.git(destino, "rev-parse", "--short", "HEAD").stdout.strip()}
+
+    def qa_worktree_borrar(self, clave):
+        clave = clave.lower()
+        r = self.repo_de(self.leer(clave)[2].get("repo"))
+        destino = self.qa_worktree_path(r, clave)
+        if os.path.isdir(destino):
+            self.git(r["path"], "worktree", "remove", "--force", destino)
+        self.git(r["path"], "worktree", "prune", check=False)
+        return {"borrado": destino}
+
+    @staticmethod
+    def qa_worktree_path(repo, clave):
+        cache = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+        nombre = repo["nombre"] or os.path.basename(repo["path"])
+        return os.path.join(cache, "autopilot-kit", "qa", "%s-%s" % (nombre, clave))
 
     # -- git
     def git(self, repo, *args, check=True):
@@ -445,7 +507,12 @@ USO = """uso: wi.sh <env> <comando> [args]
   check                                  avisos de configuracion (ramas base vacias, repos faltantes)
   log        <evento> <origen> <tipo> <tarea> <rama> <commit> <detalle>
   query      [estado]                    JSON con las tareas
-  plan       [--recuperar]               lo que usa el watcher
+  plan       [--recuperar]               lo que usa el watcher (--recuperar: solo al iniciar)
+  sesion     <clave> <ses_id>            registra la sesion de OpenCode que trabaja la tarea
+  notas-dev  <clave> <texto|->           agrega las notas del desarrollador (- = leer de stdin)
+  reporte-qa <clave> <texto|->           agrega el reporte de QA (- = leer de stdin)
+  qa-worktree        <clave>             copia de trabajo aislada para el QA (en la punta de la rama)
+  qa-worktree-borrar <clave>
 
 <clave> = task-<numero> | bug-<numero>   (es tambien el nombre de la rama)"""
 
@@ -528,6 +595,20 @@ def main(argv):
             ts = [t for t in ts if t["estado"] == a[0]]
         print(json.dumps(ts, ensure_ascii=False, indent=2))
         return 0
+    elif cmd == "sesion":
+        need(2); b.modificar(a[0], meta_set={"sesion": a[1]})
+    elif cmd in ("notas-dev", "reporte-qa"):
+        need(2)
+        texto = sys.stdin.read() if a[1] == "-" else a[1]
+        if not texto.strip():
+            raise Error("texto vacio para %s" % cmd)
+        seccion = "Notas del desarrollador" if cmd == "notas-dev" else "Reporte de QA"
+        b.modificar(a[0], secs_append={seccion: "### Intento %d (%s)\n\n%s" % (
+            intento_actual(a[0]), ahora(), texto.strip())})
+    elif cmd == "qa-worktree":
+        need(1); print(json.dumps(b.qa_worktree(a[0]), ensure_ascii=False)); return 0
+    elif cmd == "qa-worktree-borrar":
+        need(1); print(json.dumps(b.qa_worktree_borrar(a[0]), ensure_ascii=False)); return 0
     elif cmd == "plan":
         print(json.dumps(b.plan(recuperar="--recuperar" in a), ensure_ascii=False))
         return 0
