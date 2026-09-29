@@ -32,6 +32,7 @@ import fcntl
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import unicodedata
@@ -117,6 +118,11 @@ def herramientas_faltantes(repo):
         faltan += [h for h in ("node", "npm") if not shutil.which(h)]
     return faltan
 
+
+
+def filecmp_iguales(a, b):
+    import filecmp
+    return filecmp.cmp(a, b, shallow=False)
 
 
 def ahora():
@@ -209,6 +215,66 @@ class Board:
                                "certificar sus tareas (quedaran en stopped)" % (n or os.path.basename(r["path"]),
                                                                                 ", ".join(faltan)))
         return out
+
+    # -- imagenes en los reportes
+    RE_IMG = re.compile(r"(?:~|/)[^\s`'\"()<>\[\]]+?\.(?:png|jpe?g|gif|webp|bmp)", re.I)
+
+    def incrustar_imagenes(self, clave, texto, carpetas=(), subcarpeta="imagenes"):
+        """Convierte las imagenes que un agente menciona en su texto en imagenes Markdown.
+
+        - Una ruta a una imagen que existe se reemplaza por ![nombre](../adjuntos/...).
+        - Si esta fuera del board (p. ej. una captura del QA en su worktree, que se borra al dar
+          el veredicto) se COPIA antes a adjuntos/<clave>/<subcarpeta>/.
+        - Las imagenes de `carpetas` que el texto no menciona se agregan al final.
+        Asi el humano ve las imagenes en el .md (VS Code, Obsidian, GitHub...).
+        """
+        base = os.path.join(self.dir, "adjuntos", clave)
+        destino_dir = os.path.join(base, subcarpeta)
+        rel = lambda p: "../" + os.path.relpath(p, self.dir).replace(os.sep, "/")
+        copiadas = {}
+
+        def al_board(ruta):
+            real = os.path.realpath(os.path.expanduser(ruta))
+            if real in copiadas:
+                return copiadas[real]
+            if not os.path.isfile(real):
+                return None
+            if real.startswith(os.path.realpath(self.dir) + os.sep):
+                copiadas[real] = real
+                return real
+            os.makedirs(destino_dir, exist_ok=True)
+            nombre = os.path.basename(real)
+            dst, n = os.path.join(destino_dir, nombre), 1
+            while os.path.exists(dst) and not filecmp_iguales(dst, real):
+                n += 1
+                dst = os.path.join(destino_dir, "%s-%d%s" % (os.path.splitext(nombre)[0], n, os.path.splitext(nombre)[1]))
+            if not os.path.exists(dst):
+                shutil.copy2(real, dst)
+            copiadas[real] = dst
+            return dst
+
+        def reemplazo(ruta):
+            dst = al_board(ruta)
+            if not dst:
+                return ruta
+            return "![%s](%s)" % (os.path.basename(dst), rel(dst))  # en linea: no rompe listas
+
+        # Una sola pasada: ![alt](ruta), `ruta` o una ruta suelta (absoluta o con ~, no parte de otra).
+        ruta = r"(?<![\w./~-])(?:~|/)[^\s`'\"()<>\[\]]+?\.(?:png|jpe?g|gif|webp|bmp)(?!\w)"
+        patron = re.compile(r"!\[[^\]]*\]\(\s*(?P<a>%s)\s*\)|`(?P<b>%s)`|(?P<c>%s)" % (ruta, ruta, ruta), re.I)
+        texto = patron.sub(lambda m: reemplazo(m.group("a") or m.group("b") or m.group("c")), texto)
+        extra = []
+        for c in carpetas:
+            for raiz, _, files in os.walk(os.path.expanduser(c)):
+                for f in sorted(files):
+                    p = os.path.join(raiz, f)
+                    if self.RE_IMG.fullmatch(p) and os.path.realpath(p) not in copiadas:
+                        dst = al_board(p)
+                        if dst:
+                            extra.append("![%s](%s)" % (os.path.basename(dst), rel(dst)))
+        if extra:
+            texto = texto.rstrip() + "\n\n**Imágenes:**\n\n" + "\n\n".join(extra)
+        return re.sub(r"\n{3,}", "\n\n", texto).strip()
 
     # -- estructura
     def init(self):
@@ -600,8 +666,10 @@ USO = """uso: wi.sh <env> <comando> [args]
   query      [estado]                    JSON con las tareas
   plan       [--recuperar]               lo que usa el watcher (--recuperar: solo al iniciar)
   sesion     <clave> <ses_id>            registra la sesion de OpenCode que trabaja la tarea
-  notas-dev  <clave> <texto|->           agrega las notas del desarrollador (- = leer de stdin)
-  reporte-qa <clave> <texto|->           agrega el reporte de QA (- = leer de stdin)
+  notas-dev  <clave> <texto|-> [--imagenes <dir>]...   notas del coder (- = stdin)
+  reporte-qa <clave> <texto|-> [--imagenes <dir>]...   reporte del QA (- = stdin)
+                                         Las imagenes mencionadas en el texto (y las de --imagenes)
+                                         se copian a adjuntos/<clave>/ y quedan como ![..](..) en el .md
   qa-worktree        <clave>             copia de trabajo aislada para el QA (en la punta de la rama)
   qa-worktree-borrar <clave>
 
@@ -701,9 +769,12 @@ def main(argv):
         texto = sys.stdin.read() if a[1] == "-" else a[1]
         if not texto.strip():
             raise Error("texto vacio para %s" % cmd)
+        carpetas = [a[i + 1] for i, x in enumerate(a) if x == "--imagenes" and i + 1 < len(a)]
         seccion = "Notas del desarrollador" if cmd == "notas-dev" else "Reporte de QA"
-        b.modificar(a[0], secs_append={seccion: "### Intento %d (%s)\n\n%s" % (
-            intento_actual(a[0]), ahora(), texto.strip())})
+        n = intento_actual(a[0])
+        texto = b.incrustar_imagenes(a[0].lower(), texto, carpetas,
+                                     "%s-intento%d" % ("coder" if cmd == "notas-dev" else "qa", n))
+        b.modificar(a[0], secs_append={seccion: "### Intento %d (%s)\n\n%s" % (n, ahora(), texto)})
     elif cmd == "qa-worktree":
         need(1); print(json.dumps(b.qa_worktree(a[0]), ensure_ascii=False)); return 0
     elif cmd == "qa-worktree-borrar":
