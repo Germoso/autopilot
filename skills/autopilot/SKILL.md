@@ -13,7 +13,7 @@ principal (orquestador), delegas en **dos puestos que trabajan en paralelo**:
 | **coder** | `coder` | `bug-fix` > `new` | `in-progress` | `MAX_CODERS` |
 | **qa** | `qa-reviewer` | `qa` | `validando` | `MAX_QA` |
 
-**Capacidad** (en `autopilot.env`): `PARALELO=no` (defecto) → 1 coder y 1 QA. `PARALELO=si` →
+**Capacidad** (en `autopilot.env`): `PARALLEL=false` (defecto) → 1 coder y 1 QA. `PARALLEL=true` →
 hasta `MAX_CODERS` y `MAX_QA` (defecto 2 y 2) a la vez, **cada uno con un workitem distinto**.
 `wi.sh` rechaza superar el máximo. En un workspace el límite es global, no por repo.
 
@@ -191,7 +191,7 @@ watcher antes de ocupar el puesto, te devuelve la misma acción):
   (devuelve **una copia de trabajo por repo** de la tarea) → lanza `qa-reviewer` con el **encargo del QA**.
 
 Si `wi.sh rama` falla, la tarea ya quedó en `stopped`: sigue con lo demás. Pueden venir **varias
-acciones** (varios coders y varios QA si `PARALELO=si`): atiéndelas todas y lanza todos los
+acciones** (varios coders y varios QA si `PARALLEL=true`): atiéndelas todas y lanza todos los
 subagentes (en Claude Code, en el mismo mensaje; en OpenCode, una sesión por tarea).
 
 ### B. Terminó el coder (aviso de Claude Code, o `terminadas` con puesto `coder` en OpenCode)
@@ -345,7 +345,7 @@ el orquestador.
 - `git push` o `git merge`. **El merge lo hace el humano, siempre.**
 - Crear una rama desde otra que no sea `<BASE>`, o con otro nombre que `task-<n>`/`bug-<n>`.
 - Trabajar en `<BASE>` directamente.
-- Superar la capacidad de un puesto (`MAX_CODERS` en `in-progress`, `MAX_QA` en `validando`; 1 y 1 con `PARALELO=no`).
+- Superar la capacidad de un puesto (`MAX_CODERS` en `in-progress`, `MAX_QA` en `validando`; 1 y 1 con `PARALLEL=false`).
 - Dejar que un coder trabaje en la copia principal de un repo: siempre en su worktree.
 - Lanzar un segundo watcher si ya hay uno corriendo.
 - Relanzar el watcher con `--inicio` fuera del arranque: marcaría huérfana la tarea del otro puesto.

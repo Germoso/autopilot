@@ -100,10 +100,10 @@ def env_autopilot(det, bases):
         L += ["REPO.%s=%s" % (r["nombre"], bases.get(r["nombre"], "")) for r in det["repos"]]
     L += ["", "# Carpeta del board. Vacio = .workitems/ junto a este archivo.", "WORKITEMS_DIR=",
           "", "# Segundos entre lecturas del board.", "POLL_INTERVAL=5",
-          "", "# Paralelismo: no = 1 coder y 1 QA a la vez. si = hasta MAX_CODERS y MAX_QA, cada uno con un",
+          "", "# Paralelismo: false = 1 coder y 1 QA a la vez. true = hasta MAX_CODERS y MAX_QA, cada uno con un",
           "# workitem distinto, en su propia copia del repo; dos workitems nunca tocan el mismo archivo.",
           "# Cada agente gasta tokens y memoria (Flutter ~1,5-2 GB por analisis/test).",
-          "PARALELO=no", "MAX_CODERS=2", "MAX_QA=2", ""]
+          "PARALLEL=false", "MAX_CODERS=2", "MAX_QA=2", ""]
     return "\n".join(L)
 
 

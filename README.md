@@ -368,14 +368,14 @@ Mientras un coder desarrolla una tarea, el QA puede estar certificando otra.
 En `autopilot.env`:
 
 ```ini
-PARALELO=no     # no = 1 coder + 1 QA (defecto). si = hasta MAX_CODERS y MAX_QA a la vez
+PARALLEL=false  # false = 1 coder + 1 QA (defecto). true = hasta MAX_CODERS y MAX_QA a la vez
 MAX_CODERS=2
 MAX_QA=2
 ```
 
 - **Cada agente trabaja un workitem distinto.** Nunca hay dos coders en la misma tarea.
 - **Cada coder en su propia copia del repo** (`git worktree` en `~/.cache/autopilot-kit/coder/<repo>-<clave>`)
-  con su propia rama. Tu copia principal del repo **nunca cambia de rama** (también con `PARALELO=no`).
+  con su propia rama. Tu copia principal del repo **nunca cambia de rama** (también con `PARALLEL=false`).
 - **Dos workitems en paralelo no tocan el mismo archivo:** el primero que lo edita lo reserva (en
   Claude Code, automáticamente al editar; con `wi.sh reservar` desde la terminal o en OpenCode).
   El otro se pone **en espera** y se retoma, en su misma copia, cuando el primero termina.

@@ -12,7 +12,7 @@
 #  (Claude Code: en segundo plano; OpenCode: como sesiones propias via oc_sesion.py).
 #  Leer el board es leer archivos locales: no hay red ni tokens.
 #
-#  Dos puestos en paralelo, con capacidad (PARALELO=no -> 1 y 1; si -> MAX_CODERS y MAX_QA):
+#  Dos puestos en paralelo, con capacidad (PARALLEL=false -> 1 y 1; true -> MAX_CODERS y MAX_QA):
 #    coder (in-progress): bug-fix primero, despues new (Critical>High>Medium>Low)
 #    qa    (validando):   la cola qa
 #  Retorna cuando hay trabajo para un puesto LIBRE (`acciones`) o cuando termino una sesion de

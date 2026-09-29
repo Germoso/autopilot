@@ -67,7 +67,7 @@ def cargar_config(env_path=None):
       REPO.<carpeta>=<rama base>   una por repo; <carpeta> es relativa al .env
     Ambos:
       WORKITEMS_DIR default: <raiz>/.workitems. Relativo = relativo al .env.
-      PARALELO=no|si  (default no: 1 coder + 1 QA). Con si: MAX_CODERS y MAX_QA (default 2 y 2).
+      PARALLEL=true|false  (default false: 1 coder + 1 QA). Con true: MAX_CODERS y MAX_QA (default 2 y 2).
     """
     vals = {}
     base = os.getcwd()
@@ -94,12 +94,14 @@ def cargar_config(env_path=None):
         raiz = absoluta(vals.get("REPO_PATH") or base)
         repos = {"": {"path": raiz, "base": vals.get("BASE_BRANCH", "").strip()}}
     wdir = absoluta(vals.get("WORKITEMS_DIR") or os.path.join(raiz, ".workitems"))
-    paralelo = vals.get("PARALELO", "no").strip().lower() in ("si", "sí", "yes", "true", "1", "on")
+    valor_parallel = vals.get("PARALLEL", "false").strip().lower()
+    paralelo = valor_parallel == "true"   # solo true/false; cualquier otro valor = false (y aviso)
     entero = lambda k, d: max(1, int(vals.get(k, d))) if str(vals.get(k, d)).strip().isdigit() else d
     capacidad = ({"coder": entero("MAX_CODERS", 2), "qa": entero("MAX_QA", 2)} if paralelo
                  else {"coder": 1, "qa": 1})
     return {"workspace": bool(ws), "raiz": raiz, "dir": wdir, "repos": repos,
-            "paralelo": paralelo, "capacidad": capacidad}
+            "paralelo": paralelo, "capacidad": capacidad,
+            "parallel_invalido": None if valor_parallel in ("true", "false") else vals.get("PARALLEL")}
 
 
 # ----------------------------------------------------------------- util
@@ -287,6 +289,9 @@ class Board:
     def avisos(self):
         """Problemas de configuracion que dejarian tareas en stopped."""
         out = []
+        if self.cfg.get("parallel_invalido") is not None:
+            out.append("PARALLEL=%s no es valido: usa true o false. Se usa false (1 coder + 1 QA)"
+                       % self.cfg["parallel_invalido"])
         for n, r in sorted(self.cfg["repos"].items()):
             etiqueta = "REPO.%s" % n if n else "BASE_BRANCH"
             if not r["base"]:
@@ -498,7 +503,7 @@ class Board:
                     raise Error("el puesto %s esta lleno (%d de %d: %s). Maximo en %s: %d%s"
                                 % (puesto, len(ocupada), self.cfg["capacidad"][puesto], ", ".join(ocupada),
                                    estado_nuevo, self.cfg["capacidad"][puesto],
-                                   "" if self.cfg["paralelo"] else " (PARALELO=no)"))
+                                   "" if self.cfg["paralelo"] else " (PARALLEL=false)"))
                 destino = os.path.join(self.dir, estado_nuevo, os.path.basename(path))
                 os.makedirs(os.path.dirname(destino), exist_ok=True)
                 os.rename(path, destino)
@@ -563,7 +568,7 @@ class Board:
     def plan(self, recuperar=False):
         """Lo que el watcher le devuelve al agente principal.
 
-        Dos puestos independientes, con capacidad (PARALELO=no -> 1 y 1; si -> MAX_CODERS y MAX_QA):
+        Dos puestos independientes, con capacidad (PARALLEL=false -> 1 y 1; true -> MAX_CODERS y MAX_QA):
           coder  (in-progress): toma bug-fix > new (saltando las que esperan a otra tarea)
           qa     (validando):   toma qa
         `acciones`: trabajo para cada puesto LIBRE. `terminadas`: tareas de un puesto cuya sesion de
@@ -612,7 +617,7 @@ class Board:
         for t in qa[:max(0, cap["qa"] - len(ocupados["qa"]))]:
             acciones.append({"puesto": "qa", "accion": "certificar", "tarea": t})
         return {"acciones": acciones, "terminadas": terminadas, "ocupados": ocupados,
-                "capacidad": cap, "paralelo": self.cfg["paralelo"],
+                "capacidad": cap, "parallel": self.cfg["paralelo"],
                 "en_espera": [{"id": t["id"], "espera": t["espera"]} for t in bugfix + nuevas if not libre(t)],
                 "huerfanas_recuperadas": huerfanas, "stopped": [t["id"] for t in by("stopped")],
                 "workspace": self.cfg["workspace"], "avisos": self.avisos(),
