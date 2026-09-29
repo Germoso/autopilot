@@ -8,6 +8,7 @@ Dos subsistemas independientes, ambos opt-in por proyecto:
 
 | Comando | Qué hace | Consume tokens |
 |---|---|---|
+| `/autopilot-init` | Prepara la carpeta abierta: un repo o un **workspace con varios repos**. Detecta ramas y proyectos de Azure, pregunta la rama base de cada repo y crea la config y el board. | sí (poco) |
 | `/autopilot` | Detecta tareas en el board y las trabaja con subagentes, cada una en su rama. Ciclo completo: `new` → `in-progress` → `qa` → `validando` → `done`, con `bug-fix` hasta 3 intentos. | sí |
 | `/azure-sync` | Importa Work Items de Azure DevOps al board como `new`. Aditivo, con dedup. | no |
 
@@ -22,11 +23,13 @@ dotenvs/
 │   ├── workitems.py            # formato del board (unica implementacion)
 │   ├── wi.sh                   # unica via de escritura del board + ramas
 │   ├── watcher.sh              # sensor: lee el board y retorna
-│   ├── azure-sync.py           # importador aditivo de Azure DevOps
+│   ├── azure-sync.py           # importador aditivo de Azure DevOps (uno o varios proyectos)
+│   ├── init.py                 # prepara un repo o workspace (lo usa /autopilot-init)
 │   ├── git-guard.sh            # bloquea push/merge (hooks de Claude Code)
 │   └── ado-mcp.sh              # lanza el MCP de Azure DevOps con tu PAT
 ├── skills/                     # -> carpeta de skills de cada cliente
 │   ├── autopilot/SKILL.md      # reglas, maquina de estados, arranque por cliente
+│   ├── autopilot-init/SKILL.md # /autopilot-init
 │   └── azure-sync/SKILL.md
 ├── agents/                     # fuente unica de los subagentes
 │   ├── autopilot-worker.md
@@ -41,7 +44,7 @@ dotenvs/
 |---|---|---|
 | Skills | `~/.config/opencode/skills/` | `~/.claude/skills/` |
 | Subagentes | `~/.config/opencode/agents/*.md` | `~/.claude/agents/*.md` |
-| `/autopilot`, `/azure-sync` | comandos en `~/.config/opencode/commands/` | las propias skills |
+| `/autopilot-init`, `/autopilot`, `/azure-sync` | comandos en `~/.config/opencode/commands/` | las propias skills |
 | Bloqueo de push/merge en subagentes | `permission.bash` con `deny` | hook `PreToolUse` → `git-guard.sh` |
 | Bloqueo en el agente principal (por proyecto) | `opencode.json` del proyecto | `.claude/settings.local.json` (deny + hook) |
 | Cómo espera el watcher | primer plano | segundo plano (`run_in_background`): Claude Code te re-invoca al terminar |
@@ -122,8 +125,13 @@ El feedback de QA **se acumula por intento**: al llegar a `stopped`, el historia
 ## Ramas
 
 - **Una rama independiente por workitem**: `task-<numero>` o `bug-<numero>` (ej. `bug-140123`).
-- **Siempre desde `base-branch`** (`BASE_BRANCH` en `autopilot.env`). Si no existe, la tarea
-  pasa a `stopped`: no se inventa otra base.
+- **Siempre desde la rama base de su repo**, definida en `autopilot.env` (obligatoria):
+  `BASE_BRANCH=<rama>` en un repo, o `REPO.<carpeta>=<rama>` por repo en un workspace.
+  Si está vacía o la rama no existe (ni local ni en `origin`), la tarea pasa a `stopped`:
+  no se inventa otra base.
+- **Workspace:** la rama se crea **dentro del repo de la tarea** (`repo:` en su frontmatter).
+  Una tarea sin repo, o con un repo que no está en `autopilot.env`, pasa a `stopped`.
+- Si el repo tiene cambios sin commitear en archivos rastreados, no se cambia de rama: `stopped`.
 - Si la rama de una tarea nueva ya existe, `stopped`: no se pisa trabajo previo.
 - Un rechazo de QA se corrige **en la misma rama**.
 - **Nunca `push`, nunca `merge`.** Bloqueados por permiso. El merge lo hace el humano.
@@ -181,53 +189,106 @@ sirve para consultar Azure o escribir de vuelta desde el agente principal; los s
 
 ## Configurar un proyecto
 
-Cada proyecto decide si participa. **Sin `autopilot.env`, el proyecto no entra.**
+Abrí OpenCode o Claude Code **en la carpeta del proyecto** y ejecutá:
 
-```sh
-./install.sh --init /mi/proyecto
+```
+/autopilot-init
 ```
 
-- crea `autopilot.env`, `azure-sync.env` y el board `.workitems/`
-- agrega `.workitems/`, `*.secrets.env` y `.claude/settings.local.json` al `.gitignore`
-- prohíbe push/merge también al agente principal del proyecto (en cada cliente instalado)
-- avisa si `base-branch` no existe
+El agente detecta si la carpeta es **un repo** o un **workspace** (una carpeta con varios repos
+adentro), te muestra las ramas de cada repo con una sugerida, te pregunta la rama base de cada
+uno y crea todo. Sin `autopilot.env`, la carpeta no participa.
 
-**Después, commiteá esos cambios en `base-branch`** (`.gitignore`, `opencode.json`, los `.env`).
-Mientras haya cambios sin commitear en archivos rastreados, `wi.sh rama` no cambia de rama y
-la tarea pasa a `stopped`.
+También sin agente: `./install.sh --init /ruta --base dev` (un repo) o
+`--base <repo>=<rama>` por cada repo (workspace).
+
+Qué hace:
+
+- crea `autopilot.env`, `azure-sync.env` (org y proyecto deducidos del remoto de cada repo,
+  sprint `@current`) y el board `.workitems/`
+- **no toca archivos de los repos**: en un repo, lo del kit se ignora solo en tu copia local
+  (`.git/info/exclude`); en un workspace todo vive en la carpeta padre. No hay nada que commitear.
+- prohíbe push/merge también al agente principal (en cada cliente instalado)
+- avisa si falta alguna rama base, si no existe, o si un repo tiene cambios sin commitear
+
+### Workspace: varios repos, un board
+
+```
+konectame/                      <- abrís el cliente acá
+├── autopilot.env               REPO.Konectame_App_Clientes=dev
+│                               REPO.Konectame_BackOffice=master ...
+├── azure-sync.env              SYNC.Konectame_App_Clientes=Konectame_App_Clientes|@current ...
+├── .workitems/                 un solo board; cada tarea dice su repo (repo: <carpeta>)
+├── Konectame_App_Clientes/     <- la rama bug-140123 se crea ACÁ, desde dev
+└── Konectame_BackOffice/
+```
+
+- Cada repo tiene **su propia rama base**. La rama de cada tarea se crea dentro de su repo.
+- azure-sync lee **un proyecto de Azure por repo** y le pone a cada tarea su `repo:`.
+- Sigue siendo **una tarea a la vez** en todo el workspace.
 
 `autopilot.env`:
 
 | Variable | Default | Qué es |
 |---|---|---|
 | `REPO_PATH` | carpeta del `.env` | Ruta del repo |
-| `BASE_BRANCH` | `base-branch` | Rama desde la que nacen las ramas de los workitems |
+| `BASE_BRANCH` | **obligatoria** (un repo) | Rama desde la que nacen las ramas de los workitems (`dev`, `main`...) |
+| `REPO.<carpeta>` | **una por repo** (workspace) | Rama base de ese repo. Si hay alguna, es un workspace |
 | `WORKITEMS_DIR` | `$REPO_PATH/.workitems` | Carpeta del board |
 | `POLL_INTERVAL` | `5` | Segundos entre lecturas del board |
 
-No tiene secretos: se puede versionar. El PAT para `azure-sync.py` va en
-`azure-sync.secrets.env` (gitignored).
+**La rama base se define por proyecto/repo** en su `autopilot.env`. Para cambiarla, editá la
+línea o volvé a correr `/autopilot-init`; no hace falta reinstalar nada.
+
+El PAT para `azure-sync.py` se busca en `AZURE_DEVOPS_PAT`, `azure-sync.secrets.env` y, si no,
+en el del MCP (`~/.config/autopilot-kit/ado-mcp.secrets.env`): con el MCP configurado no hace falta nada más.
 
 ---
 
 ## Uso
 
 ```sh
-/autopilot     # arranca el bucle: espera tareas y las trabaja
-/azure-sync    # importa Work Items de Azure al board
+/autopilot-init   # una vez por proyecto/workspace
+/azure-sync       # importa Work Items de Azure al board
+/autopilot        # arranca el bucle: espera tareas y las trabaja
 ```
 
 Crear una tarea a mano:
 
 ```sh
 ~/.local/share/autopilot-kit/wi.sh ./autopilot.env \
-  add-task bug 140123 High "Login falla con Google" "descripcion" "criterio"
+  add-task bug 140123 High "Login falla con Google" "descripcion" "criterio" [repo]   # repo: obligatorio en workspace
 ```
 
 (o escribir el `.md` directamente en `.workitems/new/` respetando el nombre `<tipo>-<numero>-*.md`).
 
 En un proyecto sin el `.env`, ambos comandos dicen que el proyecto no participa
 y no hacen nada.
+
+### azure-sync
+
+Importa a `.workitems/new/` los work items **Task/Bug en estado New** del sprint. Solo crea,
+nunca modifica; no gasta tokens; deduplica por número (los IDs son únicos en la organización).
+
+`azure-sync.env` (lo genera `/autopilot-init` desde los remotos de git):
+
+```ini
+AZURE_ORG=codikasrl
+
+# Un repo
+AZURE_PROJECT=Konectame_App_Clientes
+AZURE_ITERATION=@current
+
+# Workspace: una fuente por repo -> SYNC.<carpeta>=<proyecto de Azure>|<sprint>
+SYNC.Konectame_App_Clientes=Konectame_App_Clientes|@current
+SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
+```
+
+- **Sprint:** `@current` = sprint actual del equipo `<Proyecto> Team` (se actualiza solo al
+  cambiar de sprint); `@current:<Equipo>` para otro equipo; o una ruta fija `Proyecto\Sprint X`.
+- En un workspace cada tarea se crea con su `repo:`. Cada `SYNC.<repo>` necesita su `REPO.<repo>`.
+- Si **cualquier** fuente falla, no se escribe nada en el board.
+- `--dry-run` muestra qué importaría; `--status` cuenta por fuente; `--watch 60` en bucle.
 
 ### El watcher
 
@@ -253,7 +314,7 @@ setsid nohup python3 ~/.local/share/autopilot-kit/azure-sync.py \
 Fijadas en `SKILL.md`, se aplican sin que nadie las recuerde:
 
 - **Una sola tarea a la vez.** Máximo 1 en `in-progress`.
-- **Una rama por workitem:** `task-<numero>` / `bug-<numero>` desde `base-branch`.
+- **Una rama por workitem:** `task-<numero>` / `bug-<numero>` desde `BASE_BRANCH`.
 - **Nadie hace `push` ni `merge`** (ni `pull`, que mergea). Bloqueado por permiso/hook, no por instrucción.
 - **QA solo lee.** No puede editar, commitear ni cambiar de rama.
 - **Los subagentes no usan el MCP de Azure.**

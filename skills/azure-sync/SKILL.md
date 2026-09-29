@@ -34,9 +34,9 @@ Usa `workitems.py` (misma carpeta), que define el formato del board.
 
 1. Verifica que existe `azure-sync.env` en la raíz del proyecto actual. Si no existe, para y
    dile al usuario que este proyecto no importa de Azure (se prepara con
-   `install.sh --init <proyecto>`). No lo busques en otro sitio ni lo adivines.
-2. Verifica que hay un PAT: variable `AZURE_DEVOPS_PAT` o `azure-sync.secrets.env` junto al
-   config. Si no hay, explica cómo configurarlo y para. **No lo pidas en el chat** ni lo
+   `/autopilot-init`). No lo busques en otro sitio ni lo adivines.
+2. Verifica que hay un PAT: variable `AZURE_DEVOPS_PAT`, `azure-sync.secrets.env` junto al
+   config, o el del MCP (`~/.config/autopilot-kit/ado-mcp.secrets.env`), en ese orden. Si no hay, explica cómo configurarlo y para. **No lo pidas en el chat** ni lo
    escribas en un archivo versionado.
 3. Corre primero en `--dry-run` y muestra el resumen: cuántos hay en New en Azure, cuántos ya
    están en el board y cuáles se importarían.
@@ -61,10 +61,33 @@ Si el MCP `azure-devops` está configurado, sirve para **consultar** Azure o **e
 (comentarios, estado del work item). La **importación** al board se hace siempre con
 `azure-sync.py`: no gasta tokens, deduplica y es idempotente. No importes a mano con el MCP.
 
+## Fuentes: un repo o un workspace
+
+`azure-sync.env` (lo genera `/autopilot-init` a partir del remoto de cada repo):
+
+```ini
+AZURE_ORG=codikasrl
+
+# Un repo
+AZURE_PROJECT=Konectame_App_Clientes
+AZURE_ITERATION=@current
+
+# Workspace: una línea por repo -> SYNC.<carpeta>=<proyecto de Azure>|<sprint>
+SYNC.Konectame_App_Clientes=Konectame_App_Clientes|@current
+SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
+```
+
+- En un workspace, cada tarea se crea con `repo: <carpeta>`: así el autopilot sabe en qué repo
+  crear su rama. Cada `SYNC.<carpeta>` debe tener su `REPO.<carpeta>` en `autopilot.env`.
+- **Sprint**: una ruta (`Proyecto\Sprint X`) o `@current`, el sprint actual del equipo
+  `<Proyecto> Team` (`@current:<Equipo>` para otro). Con `@current` no hay que editar nada al
+  cambiar de sprint.
+- Si **cualquier** fuente falla, no se escribe nada en el board.
+
 ## Criterio de filtro
 
-Solo entra lo que está en estado **`New`** en Azure, del sprint configurado en
-`AZURE_ITERATION`, de tipo `Task` o `Bug`.
+Solo entra lo que está en estado **`New`** en Azure, del sprint de cada fuente,
+de tipo `Task` o `Bug`.
 
 Cuando mueves un work item a otro estado en Azure, el script deja de verlo, **pero la
 tarea sigue en el board** en la carpeta donde la dejó el autopilot. No hay reconciliación
@@ -91,7 +114,7 @@ Un archivo `new/<tipo>-<id>-<slug>.md`:
 | `id` | número del Work Item |
 | `tipo` | `task` o `bug` |
 | `prioridad` | mapeada desde Azure |
-| `rama` | `<tipo>-<id>`: la rama que el autopilot creará desde `base-branch` |
+| `rama` | `<tipo>-<id>`: la rama que el autopilot creará desde `BASE_BRANCH` |
 | `origen` | `azure:<project>` |
 | `## Descripción` | descripción del work item, HTML limpiado a texto |
 | `## Criterio de aceptación` | `AcceptanceCriteria`, si no `ReproSteps`, si no `_Sin criterio en Azure._` |
@@ -101,9 +124,9 @@ Un archivo `new/<tipo>-<id>-<slug>.md`:
 ## Configurar un proyecto nuevo
 
 ```sh
-install.sh --init /mi-proyecto      # crea azure-sync.env, autopilot.env y el board
-# editar AZURE_ORG, AZURE_PROJECT, AZURE_ITERATION (y WORKITEMS_DIR si no usas el default)
-echo 'AZURE_DEVOPS_PAT=xxx' > /mi-proyecto/azure-sync.secrets.env
+/autopilot-init        # desde el agente, en la carpeta del repo o del workspace
+# azure-sync.env queda armado desde los remotos (org, proyecto, sprint @current)
+# PAT: si ya configuraste el MCP, se reutiliza ~/.config/autopilot-kit/ado-mcp.secrets.env
 ```
 
 `azure-sync.secrets.env` debe estar en `.gitignore`.

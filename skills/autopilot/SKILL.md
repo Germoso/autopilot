@@ -1,6 +1,6 @@
 ---
 name: autopilot
-description: Sistema autonomo de desarrollo sobre un board de workitems en carpetas y archivos Markdown. Arranca el watcher y trabaja las tareas con subagentes, una rama por workitem desde base-branch, sin push ni merge. Usar cuando el usuario mencione el tablero de tareas, el board, workitems, autopilot, /autopilot, o pida trabajo autonomo sobre tareas. NO usar en proyectos que no tengan un archivo autopilot.env.
+description: Sistema autonomo de desarrollo sobre un board de workitems en carpetas y archivos Markdown. Arranca el watcher y trabaja las tareas con subagentes, una rama por workitem desde la rama base del proyecto (BASE_BRANCH), sin push ni merge. Usar cuando el usuario mencione el tablero de tareas, el board, workitems, autopilot, /autopilot, o pida trabajo autonomo sobre tareas. NO usar en proyectos que no tengan un archivo autopilot.env.
 ---
 
 # Sistema Autónomo de Desarrollo (Autopilot)
@@ -39,9 +39,9 @@ Si no existe, este proyecto **no participa** del sistema. No preguntes, no asuma
 
 Los scripts del sistema estan en `~/.local/share/autopilot-kit/` (en adelante `$K`).
 
-1. Verifica que existe `autopilot.env` en la raíz del proyecto. Si no existe, para y dile al
-   usuario que este proyecto no participa (se prepara con `install.sh --init <proyecto>`).
-   No lo busques en otro sitio ni lo adivines.
+1. Verifica que existe `autopilot.env` en la carpeta abierta (un repo, o la carpeta padre de un
+   workspace con varios repos). Si no existe, para y dile al usuario que no participa y que se
+   prepara con `/autopilot-init`. No lo busques en otro sitio ni lo adivines.
 2. Lanza el watcher. **Cómo** depende del cliente en el que estás corriendo:
 
    | Cliente | Cómo lanzarlo |
@@ -77,11 +77,18 @@ Claude Code, deja de vigilar. No sobrevive a la ausencia del usuario.
 
 - **Una rama independiente por workitem.** Nombre: `task-<numero>` o `bug-<numero>`.
   Ejemplo: `bug-140123`.
-- **Toda rama nueva sale de `base-branch`** (`BASE_BRANCH` en `autopilot.env`). Nunca de otra.
+- **Toda rama nueva sale de la rama base de SU repo**, definida en `autopilot.env`:
+  `BASE_BRANCH=<rama>` si es un repo, o `REPO.<carpeta>=<rama>` por repo si es un workspace.
+  Nunca de otra.
+- **Workspace (varios repos):** cada tarea dice su repo (`repo:` en el frontmatter) y su rama se
+  crea **dentro de ese repo**. Todo lo de git de esa tarea se hace ahí (`git -C <REPO> ...`).
+- El watcher devuelve, dentro de `tarea`, **`repo_path`** (en este documento `<REPO>`) y
+  **`base`** (`<BASE>`). Si trae `repo_error`, la tarea no tiene un repo válido: `stopped` con ese
+  motivo.
 - **La rama se prepara SOLO con `wi.sh rama`**, que valida todo y, si algo falla, pasa la tarea
   a `stopped` con el motivo:
-  - `wi.sh rama <clave> nueva` → crea `<clave>` desde `base-branch`. Si la rama ya existe o
-    `base-branch` no existe, **no inventa nada**: `stopped`.
+  - `wi.sh rama <clave> nueva` → crea `<clave>` desde `<BASE>`. Si la rama ya existe, si
+    la rama base está vacía o no existe, **no inventa nada**: `stopped`.
   - `wi.sh rama <clave> existente` → vuelve a la rama de la tarea (ciclo de Bug Fix).
 - **NUNCA `git push`. NUNCA `git merge`.** Bloqueados por permiso. El merge lo hace el humano.
 - Tampoco `git rebase`, ni borrar ramas, ni `reset --hard`.
@@ -107,7 +114,7 @@ $W "$E" rechazar    <clave> "<motivos>"       # validando -> bug-fix
 $W "$E" new         <clave>
 $W "$E" stopped     <clave> "<motivo>"
 $W "$E" resultado   <clave> "<rama | commit | resumen>"
-$W "$E" add-task    <task|bug> <numero> <prioridad> "<titulo>" "<descripcion>" "<criterio>"
+$W "$E" add-task    <task|bug> <numero> <prioridad> "<titulo>" "<descripcion>" "<criterio>" [repo]   # repo obligatorio en workspace
 $W "$E" log <evento> <origen> <tipo> <tarea> <rama> <commit> <detalle>
 $W "$E" query [estado]
 ```
@@ -121,11 +128,12 @@ $W "$E" query [estado]
    - `desarrollar-bugfix` → `wi.sh rama <clave> existente` y luego `wi.sh in-progress <clave>`.
    - `certificar` → ver el ciclo de certificación (no cambia de rama).
    Si `wi.sh rama` falla, la tarea ya quedó en `stopped`: relanza el watcher.
-4. Lanza un subagente `autopilot-worker` con la tarea (y el `Feedback de QA` si es bugfix).
+4. Lanza un subagente `autopilot-worker` con la tarea, `<REPO>` (dónde trabajar), la rama y
+   `<BASE>` (y el `Feedback de QA` si es bugfix).
 5. Verifica el resultado:
-   - Hay commits nuevos en la rama (`git log base-branch..<clave>`) y el subagente reporta
+   - Hay commits nuevos en la rama (`git -C <REPO> log <BASE>..<clave>`) y el subagente reporta
      éxito → `wi.sh qa <clave>` + `wi.sh resultado <clave> "<rama> @ <commit> — <resumen>"`
-   - No hay commits, depende de algo que no está en `base-branch`, o falta información
+   - No hay commits, depende de algo que no está en `<BASE>`, o falta información
      → `wi.sh stopped <clave> "<motivo>"`
 6. Registra el evento con `wi.sh log`.
 7. Vuelve al paso 1. El watcher se relanza.
@@ -165,8 +173,8 @@ Prioridad de selección en el watcher: `bug-fix` > `qa` > `new` (por prioridad, 
 
 1. Hay una tarea en `qa` y el watcher devuelve `certificar`
 2. `wi.sh certificar <clave> <intento+1>`
-3. Lanza `qa-reviewer` con la tarea, sus criterios, la rama, `base-branch` y el número de intento.
-   El reviewer compara con `git diff base-branch...<clave>`.
+3. Lanza `qa-reviewer` con la tarea, sus criterios, `<REPO>`, la rama, `<BASE>` y el número de
+   intento. El reviewer compara con `git -C <REPO> diff <BASE>...<clave>`.
 4. Lee el veredicto:
    - `APROBADO` → `wi.sh aprobar <clave>` (va a `done`)
    - `RECHAZADO` → si `intento >= 3` → `wi.sh stopped <clave> "<historial de los intentos>"`
@@ -203,8 +211,8 @@ Debe marcar `NO VERIFICABLE` lo que no pueda comprobar, en vez de aprobarlo.
 - **Cerrar el turno sin un watcher activo** sin decírselo al usuario.
 - **Afirmar que el sistema sigue vigilando si el watcher no corre.**
 - `git push` o `git merge`. **El merge lo hace el humano, siempre.**
-- Crear una rama desde otra que no sea `base-branch`, o con otro nombre que `task-<n>`/`bug-<n>`.
-- Trabajar en `base-branch` directamente.
+- Crear una rama desde otra que no sea `<BASE>`, o con otro nombre que `task-<n>`/`bug-<n>`.
+- Trabajar en `<BASE>` directamente.
 - Procesar más de una tarea a la vez.
 - Marcar `qa` sin commits verificables en la rama.
 - Marcar `stopped` sin escribir el motivo.

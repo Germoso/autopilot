@@ -15,6 +15,12 @@ ESTRUCTURA
   - Archivo: <tipo>-<numero>-<slug>.md. La clave de la tarea es <tipo>-<numero>,
     que es tambien el nombre de su rama de git. Ej: bug-140123.
 
+DOS MODOS (autopilot.env):
+  - Un repo:    BASE_BRANCH=<rama>. El repo es la carpeta del .env (o REPO_PATH).
+  - Workspace:  una linea REPO.<carpeta>=<rama base> por repo, en la carpeta padre.
+                Cada tarea indica su repo en el frontmatter (repo: <carpeta>) y su rama
+                se crea DENTRO de ese repo, desde la base de ese repo.
+
 EL BOARD NO VA EN GIT. Si viviera en el repo, cada cambio de rama del worker
 cambiaria el tablero. install.sh --init lo agrega al .gitignore.
 """
@@ -45,9 +51,13 @@ class Error(Exception):
 def cargar_config(env_path=None):
     """Lee el .env del proyecto. El entorno tiene prioridad sobre el archivo.
 
-    REPO_PATH     default: carpeta del .env (o cwd si no hay .env)
-    WORKITEMS_DIR default: $REPO_PATH/.workitems. Relativo = relativo al .env.
-    BASE_BRANCH   default: base-branch
+    Modo un repo:
+      REPO_PATH     default: carpeta del .env (o cwd si no hay .env)
+      BASE_BRANCH   OBLIGATORIA: rama desde la que nacen las ramas de los workitems
+    Modo workspace (hay al menos una clave REPO.<carpeta>):
+      REPO.<carpeta>=<rama base>   una por repo; <carpeta> es relativa al .env
+    Ambos:
+      WORKITEMS_DIR default: <raiz>/.workitems. Relativo = relativo al .env.
     """
     vals = {}
     base = os.getcwd()
@@ -65,11 +75,16 @@ def cargar_config(env_path=None):
         if os.environ.get(k):
             vals[k] = os.environ[k]
 
-    repo = vals.get("REPO_PATH") or base
-    repo = os.path.abspath(os.path.join(base, os.path.expanduser(repo)))
-    wdir = vals.get("WORKITEMS_DIR") or os.path.join(repo, ".workitems")
-    wdir = os.path.abspath(os.path.join(base, os.path.expanduser(wdir)))
-    return {"repo": repo, "dir": wdir, "base_branch": vals.get("BASE_BRANCH") or "base-branch"}
+    absoluta = lambda x: os.path.abspath(os.path.join(base, os.path.expanduser(x)))
+    ws = {k[5:]: v.strip() for k, v in vals.items() if k.startswith("REPO.") and k[5:]}
+    if ws:
+        repos = {n: {"path": absoluta(n), "base": b} for n, b in ws.items()}
+        raiz = base
+    else:
+        raiz = absoluta(vals.get("REPO_PATH") or base)
+        repos = {"": {"path": raiz, "base": vals.get("BASE_BRANCH", "").strip()}}
+    wdir = absoluta(vals.get("WORKITEMS_DIR") or os.path.join(raiz, ".workitems"))
+    return {"workspace": bool(ws), "raiz": raiz, "dir": wdir, "repos": repos}
 
 
 # ----------------------------------------------------------------- util
@@ -134,6 +149,29 @@ class Board:
     def __init__(self, cfg):
         self.cfg = cfg
         self.dir = cfg["dir"]
+
+    # -- repos
+    def repo_de(self, nombre):
+        """{'nombre','path','base'} del repo de una tarea. En modo un repo, siempre el unico."""
+        repos = self.cfg["repos"]
+        if not self.cfg["workspace"]:
+            return dict(repos[""], nombre="")
+        nombre = (nombre or "").strip()
+        if nombre not in repos:
+            raise Error("la tarea indica repo '%s', que no esta en autopilot.env (REPO.<carpeta>=<base>). "
+                        "Repos: %s" % (nombre or "-", ", ".join(sorted(repos))))
+        return dict(repos[nombre], nombre=nombre)
+
+    def avisos(self):
+        """Problemas de configuracion que dejarian tareas en stopped."""
+        out = []
+        for n, r in sorted(self.cfg["repos"].items()):
+            etiqueta = "REPO.%s" % n if n else "BASE_BRANCH"
+            if not r["base"]:
+                out.append("%s vacia: define la rama base" % etiqueta)
+            elif not os.path.isdir(r["path"]):
+                out.append("%s: no existe la carpeta %s" % (etiqueta, r["path"]))
+        return out
 
     # -- estructura
     def init(self):
@@ -201,6 +239,7 @@ class Board:
             "prioridad": meta.get("prioridad", "Medium"),
             "intento": intento, "rama": meta.get("rama") or clave,
             "repo": meta.get("repo", ""),
+            "repo_path": None, "base": None, "repo_error": None,
             "descripcion": secs.get("Descripción", ""),
             "criterio": secs.get("Criterio de aceptación", ""),
             "feedback": secs.get("Feedback de QA", ""),
@@ -209,7 +248,16 @@ class Board:
         }
 
     def todas(self):
-        return [self.tarea_json(e, c, p) for e, c, p in self.archivos()]
+        out = []
+        for e, c, p in self.archivos():
+            t = self.tarea_json(e, c, p)
+            try:
+                r = self.repo_de(t["repo"])
+                t["repo_path"], t["base"] = r["path"], r["base"]
+            except Error as err:
+                t["repo_error"] = str(err)
+            out.append(t)
+        return out
 
     # -- escritura
     def modificar(self, clave, estado_nuevo=None, meta_set=None, secs_set=None, secs_append=None):
@@ -244,6 +292,8 @@ class Board:
             raise Error("numero de workitem invalido: '%s'" % numero)
         if prioridad not in PRIO:
             raise Error("prioridad invalida '%s'. Usa %s" % (prioridad, "|".join(PRIO)))
+        if self.cfg["workspace"]:
+            self.repo_de(repo)  # valida: en un workspace cada tarea debe decir a que repo va
         with self.lock():
             if numero in self.numeros():
                 raise Error("ya existe un workitem con numero %s en el board" % numero)
@@ -298,12 +348,12 @@ class Board:
             accion, elegida = "idle", None
         return {"accion": accion, "tarea": elegida, "huerfanas_recuperadas": huerfanas,
                 "stopped": [t["id"] for t in by("stopped")],
-                "base_branch": self.cfg["base_branch"],
+                "workspace": self.cfg["workspace"], "avisos": self.avisos(),
                 "cola": {"bugfix": len(bugfix), "qa": len(qa), "new": len(nuevas)}}
 
     # -- git
-    def git(self, *args, check=True):
-        r = subprocess.run(["git", "-C", self.cfg["repo"]] + list(args), capture_output=True, text=True)
+    def git(self, repo, *args, check=True):
+        r = subprocess.run(["git", "-C", repo] + list(args), capture_output=True, text=True)
         if check and r.returncode != 0:
             raise Error("git %s: %s" % (" ".join(args), (r.stderr or r.stdout).strip()[:300]))
         return r
@@ -311,21 +361,25 @@ class Board:
     def preparar_rama(self, clave, modo):
         """Deja el repo parado en la rama de la tarea.
 
-        modo=nueva      crea <clave> desde BASE_BRANCH. Si ya existe, error (no se pisa trabajo).
+        modo=nueva      crea <clave> desde BASE_BRANCH (obligatoria). Si ya existe, error (no se pisa trabajo).
         modo=existente  cambia a <clave>, que debe existir (ciclo de Bug Fix).
 
         Si falla, la tarea pasa a stopped con el motivo y se lanza Error.
         Nunca hace push, merge, rebase ni borra ramas.
         """
         clave = clave.lower()
-        base = self.cfg["base_branch"]
         try:
-            if self.git("rev-parse", "--is-inside-work-tree", check=False).returncode != 0:
-                raise Error("%s no es un repositorio git" % self.cfg["repo"])
+            r = self.repo_de(self.leer(clave)[2].get("repo"))
+            repo, base = r["path"], r["base"]
+            if not base:
+                raise Error("falta la rama base en autopilot.env (%s): define desde que rama se crean las ramas"
+                            % ("REPO.%s" % r["nombre"] if r["nombre"] else "BASE_BRANCH"))
+            if self.git(repo, "rev-parse", "--is-inside-work-tree", check=False).returncode != 0:
+                raise Error("%s no es un repositorio git" % repo)
             # Solo cuentan archivos rastreados: los untracked (.env, etc.) viajan entre ramas sin problema.
-            if self.git("status", "--porcelain", "--untracked-files=no").stdout.strip():
+            if self.git(repo, "status", "--porcelain", "--untracked-files=no").stdout.strip():
                 raise Error("hay cambios sin commitear en archivos rastreados; no se cambia de rama")
-            existe = lambda ref: self.git("rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
+            existe = lambda ref: self.git(repo, "rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
             if modo == "nueva":
                 if existe("refs/heads/%s" % clave):
                     raise Error("la rama %s ya existe; no se recrea para no pisar trabajo previo" % clave)
@@ -335,11 +389,11 @@ class Board:
                     origen = "origin/%s" % base
                 else:
                     raise Error("no existe la rama base '%s' (ni local ni origin/%s)" % (base, base))
-                self.git("switch", "--no-track", "-c", clave, origen)
+                self.git(repo, "switch", "--no-track", "-c", clave, origen)
             elif modo == "existente":
                 if not existe("refs/heads/%s" % clave):
                     raise Error("la rama %s no existe; no se puede continuar el Bug Fix" % clave)
-                self.git("switch", clave)
+                self.git(repo, "switch", clave)
             else:
                 raise Error("modo invalido: %s (nueva|existente)" % modo)
         except Error as e:
@@ -347,8 +401,8 @@ class Board:
             self.log("No se pudo preparar la rama", "sistema", "Stopped", clave, clave, "-", str(e))
             raise
         self.modificar(clave, meta_set={"rama": clave})
-        return {"rama": clave, "base": base,
-                "head": self.git("rev-parse", "--short", "HEAD").stdout.strip()}
+        return {"rama": clave, "base": base, "repo": r["nombre"] or os.path.basename(repo), "repo_path": repo,
+                "head": self.git(repo, "rev-parse", "--short", "HEAD").stdout.strip()}
 
 
 # ----------------------------------------------------------------- CLI
@@ -367,6 +421,8 @@ USO = """uso: wi.sh <env> <comando> [args]
   rechazar   <clave> <feedback>          validando -> bug-fix
   reqa       <clave>                     -> qa, Intento a 0 (conserva el historial)
   add-task   <task|bug> <numero> <prioridad> <titulo> <descripcion> <criterio> [repo]
+                                         (en un workspace, repo es obligatorio: la carpeta del repo)
+  check                                  avisos de configuracion (ramas base vacias, repos faltantes)
   log        <evento> <origen> <tipo> <tarea> <rama> <commit> <detalle>
   query      [estado]                    JSON con las tareas
   plan       [--recuperar]               lo que usa el watcher
@@ -397,6 +453,10 @@ def main(argv):
     if cmd == "init":
         b.init()
         print(b.dir)
+        return 0
+    if cmd == "check":
+        for a_ in b.avisos():
+            print("AVISO: " + a_)
         return 0
 
     b.verificar()
