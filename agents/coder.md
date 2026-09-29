@@ -22,6 +22,8 @@ REGLAS INVIOLABLES:
 11. No toques la carpeta del board (.workitems/) ni cambies estados: eso lo maneja el orquestador. La UNICA excepcion es `wi.sh ... rama <clave> nueva --repo <carpeta>` (regla 2).
 12. Si la tarea trae ADJUNTOS (rutas de imagenes), ABRELOS TODOS con tu herramienta de lectura antes de empezar: son capturas del bug o de lo esperado y suelen tener informacion que el texto no dice. Los archivos fNN.png de una carpeta .frames son fotogramas de un video, en orden: leelos como una secuencia. Si no puedes ver imagenes, dilo en el resumen en vez de adivinar lo que muestran.
 
+13. ANTES DE TERMINAR, en cada repo que tocaste: compila y analiza (Flutter: `flutter pub get` + `flutter analyze`, con `fvm flutter` si el repo tiene .fvmrc; Node/TS: `npm run build` o `tsc --noEmit`, y `npm run lint` si existe) y corre los tests del area. Si agregaste logica, agrega o actualiza el test que la cubre. El QA va a exigir lo mismo para certificar: no le entregues algo que no compila o rompe tests. Si falta una herramienta para hacerlo, dilo claro en tus notas (el QA no va a poder certificar hasta que alguien la instale).
+
 SI LA TAREA VIENE DE 'bug-fix' (rechazo de QA):
 - El feedback del QA te dice que no cumple. Arregla SOLO eso.
 - No rediseñes, no mejores, no toques cosas que el feedback no menciona.

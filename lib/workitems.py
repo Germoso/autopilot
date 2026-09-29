@@ -95,6 +95,30 @@ def cargar_config(env_path=None):
 
 
 # ----------------------------------------------------------------- util
+def herramientas_faltantes(repo):
+    """Lo que falta instalar para compilar y probar el repo (lo que el QA exige para certificar)."""
+    import shutil
+    faltan = []
+    fvmrc = os.path.join(repo, ".fvmrc")
+    fvm_viejo = os.path.join(repo, ".fvm", "fvm_config.json")
+    if os.path.exists(os.path.join(repo, "pubspec.yaml")):
+        if os.path.exists(fvmrc) or os.path.exists(fvm_viejo):
+            version = ""
+            for f, k in ((fvmrc, "flutter"), (fvm_viejo, "flutterSdkVersion")):
+                try:
+                    version = json.load(open(f)).get(k, "") or version
+                except (OSError, ValueError):
+                    pass
+            if not shutil.which("fvm"):
+                faltan.append("fvm (Flutter %s)" % version if version else "fvm")
+        elif not shutil.which("flutter"):
+            faltan.append("flutter")
+    if os.path.exists(os.path.join(repo, "package.json")):
+        faltan += [h for h in ("node", "npm") if not shutil.which(h)]
+    return faltan
+
+
+
 def ahora():
     return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
 
@@ -178,6 +202,12 @@ class Board:
                 out.append("%s vacia: define la rama base" % etiqueta)
             elif not os.path.isdir(r["path"]):
                 out.append("%s: no existe la carpeta %s" % (etiqueta, r["path"]))
+            else:
+                faltan = herramientas_faltantes(r["path"])
+                if faltan:
+                    out.append("%s: faltan herramientas para compilar y probar: %s. El QA no va a poder "
+                               "certificar sus tareas (quedaran en stopped)" % (n or os.path.basename(r["path"]),
+                                                                                ", ".join(faltan)))
         return out
 
     # -- estructura
