@@ -310,6 +310,9 @@ SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
   cambiar de sprint); `@current:<Equipo>` para otro equipo; o una ruta fija `Proyecto\Sprint X`.
 - En un workspace cada tarea se crea con su `repo:`. Cada `SYNC.<repo>` necesita su `REPO.<repo>`.
 - Si **cualquier** fuente falla, no se escribe nada en el board.
+- `--refrescar [clave…]` vuelve a traer de Azure la descripción, el criterio y los adjuntos de tareas
+  **ya importadas** (sin claves: todas) con el formato actual. No cambia su estado ni toca notas,
+  reportes ni feedback. Útil para tareas importadas antes de una mejora del importador.
 - `--dry-run` muestra qué importaría (con cuántas imágenes/videos); `--status` cuenta por fuente;
   `--watch 60` en bucle; `--fotogramas` procesa videos ya descargados (tras instalar ffmpeg).
 
