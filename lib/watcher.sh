@@ -37,6 +37,9 @@ POLL_INTERVAL="$(sed -n 's/^POLL_INTERVAL=//p' "$ENV_FILE" | tail -1)"
 log(){ echo "$(date '+%H:%M:%S') $*" >&2; }
 
 "$PY" "$WI" "$ENV_FILE" query >/dev/null || exit 1   # falla ruidosa si el board no existe
+while IFS= read -r aviso; do                          # ramas base vacias, repos faltantes
+  [[ -n "$aviso" ]] && log " $aviso (las tareas afectadas pasaran a stopped)"
+done < <("$PY" "$WI" "$ENV_FILE" check)
 
 log " vigilando el board cada ${POLL_INTERVAL}s (bloqueante). Ctrl+C para salir."
 iter=0

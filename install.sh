@@ -19,7 +19,8 @@
 #    ./install.sh                        # detecta los clientes instalados
 #    ./install.sh --opencode --claude    # elige clientes explicitamente
 #    ./install.sh --with-ado-mcp <org>   # ademas registra el MCP local de Azure DevOps
-#    ./install.sh --init /mi/proyecto    # prepara un proyecto (board, .env, guardas)
+#    ./install.sh --init /mi/proyecto --base dev        # prepara un repo (o usa /autopilot-init)
+#    ./install.sh --init /mi/workspace --base app=dev  # workspace: carpeta con varios repos
 #    ./install.sh --uninstall            # deshace todo lo instalado por el kit
 # ============================================================
 
@@ -30,19 +31,20 @@ KIT="${XDG_DATA_HOME:-$HOME/.local/share}/autopilot-kit"
 SECRETS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/autopilot-kit"
 OC_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
 CC_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-SKILLS=(autopilot azure-sync)
+SKILLS=(autopilot autopilot-init azure-sync)
 MARCA=".autopilot-kit"
 RENDER="$KIT_DIR/clients/render.py"
 
-WANT_OC=0; WANT_CC=0; UNINSTALL=0; PROJ=""; ADO_ORG=""
+WANT_OC=0; WANT_CC=0; UNINSTALL=0; PROJ=""; ADO_ORG=""; BASES=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --opencode)     WANT_OC=1 ;;
     --claude)       WANT_CC=1 ;;
     --uninstall)    UNINSTALL=1 ;;
     --with-ado-mcp) shift; ADO_ORG="${1:-}"; [[ -z "$ADO_ORG" ]] && { echo "--with-ado-mcp necesita la organizacion" >&2; exit 1; } ;;
+    --base)         shift; [[ -z "${1:-}" ]] && { echo "--base necesita la rama (o repo=rama)" >&2; exit 1; }; BASES+=(--base "$1") ;;
     --init)         shift; PROJ="${1:-}";    [[ -z "$PROJ" ]] && { echo "--init necesita una ruta" >&2; exit 1; } ;;
-    -h|--help)      sed -n '3,26p' "$0"; exit 0 ;;
+    -h|--help)      sed -n '3,27p' "$0"; exit 0 ;;
     *) echo "opcion desconocida: $1 (ver --help)" >&2; exit 1 ;;
   esac
   shift
@@ -130,39 +132,10 @@ fi
 # Init de un proyecto
 # ------------------------------------------------------------------
 if [[ -n "$PROJ" ]]; then
-  [[ -d "$PROJ" ]] || { err "no existe el directorio $PROJ"; exit 1; }
-  [[ -x "$KIT/wi.sh" ]] || { err "primero instala el kit: $0"; exit 1; }
-  PROJ="$(cd "$PROJ" && pwd)"
-  echo "==> Preparando $PROJ (${CLIENTES[*]})"
-
-  for f in autopilot azure-sync; do
-    if [[ -f "$PROJ/$f.env" ]]; then warn "$f.env ya existe, no se toco"
-    else cp "$KIT_DIR/examples/proyecto/$f.env.example" "$PROJ/$f.env"; say "$f.env"; fi
-  done
-
-  board="$("$KIT/wi.sh" "$PROJ/autopilot.env" init)" || { err "no pude crear el board"; exit 1; }
-  say "board en $board"
-
-  gi="$PROJ/.gitignore"; touch "$gi"
-  for pat in ".workitems/" "*.secrets.env" ".claude/settings.local.json"; do
-    grep -qxF "$pat" "$gi" || { printf '%s\n' "$pat" >> "$gi"; say ".gitignore: $pat"; }
-  done
-
-  # push/merge prohibidos tambien para el agente principal en este proyecto
-  for c in "${CLIENTES[@]}"; do python3 "$RENDER" project "$c" "$PROJ" "$KIT"; done
-
-  if git -C "$PROJ" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    base="$(sed -n 's/^BASE_BRANCH=//p' "$PROJ/autopilot.env" | tail -1)"; base="${base:-base-branch}"
-    git -C "$PROJ" rev-parse --verify --quiet "refs/heads/$base" >/dev/null \
-      || git -C "$PROJ" rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null \
-      || warn "la rama '$base' no existe: las tareas quedaran en stopped hasta que exista."
-  else
-    warn "$PROJ no es un repositorio git: el autopilot no podra crear ramas."
-  fi
-  echo
-  echo "  Falta (solo si vas a importar de Azure): editar AZURE_* en azure-sync.env y"
-  echo "  guardar el PAT en $PROJ/azure-sync.secrets.env (AZURE_DEVOPS_PAT=...)."
-  exit 0
+  [[ -x "$KIT/init.py" ]] || { err "primero instala el kit: $0"; exit 1; }
+  # Misma logica que /autopilot-init. --base <rama> (un repo) o --base <repo>=<rama> (workspace).
+  python3 "$KIT/init.py" "$PROJ" "${BASES[@]}"
+  exit $?
 fi
 
 # ------------------------------------------------------------------
@@ -170,7 +143,7 @@ fi
 # ------------------------------------------------------------------
 echo "==> Scripts en $KIT"
 mkdir -p "$KIT"
-cp "$KIT_DIR"/lib/* "$KIT/" && chmod +x "$KIT"/*.sh "$KIT"/*.py
+cp "$KIT_DIR"/lib/* "$KIT_DIR/clients/render.py" "$KIT/" && chmod +x "$KIT"/*.sh "$KIT"/*.py
 say "$(ls "$KIT" | tr '\n' ' ')"
 
 # ------------------------------------------------------------------

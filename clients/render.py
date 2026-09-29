@@ -40,6 +40,7 @@ DENY = {
 }
 
 COMANDOS = {
+    "autopilot-init": "Prepara esta carpeta (repo o workspace de varios repos) para el autopilot: rama base, board y Azure",
     "autopilot": "Enciende el watcher del sistema autonomo sobre el board de workitems de este proyecto",
     "azure-sync": "Importa Work Items de Azure DevOps al board de workitems como new (aditivo, con dedup)",
 }
