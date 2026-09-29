@@ -45,7 +45,7 @@ SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Notas del d
 PUESTOS = {"coder": "in-progress", "qa": "validando"}
 IMAGEN = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 VIDEO = {".mp4", ".mov", ".webm", ".avi", ".mkv", ".m4v", ".3gp"}
-CAMPOS = ["id", "tipo", "prioridad", "intento", "rama", "repo", "origen", "sesion", "actualizado"]
+CAMPOS = ["id", "tipo", "prioridad", "intento", "rama", "repo", "repos_extra", "origen", "sesion", "actualizado"]
 
 RE_ARCHIVO = re.compile(r"^(task|bug)-(\d+)(?:-.*)?\.md$")
 
@@ -275,12 +275,20 @@ class Board:
         for e, c, p in self.archivos():
             t = self.tarea_json(e, c, p)
             try:
-                r = self.repo_de(t["repo"])
-                t["repo_path"], t["base"] = r["path"], r["base"]
+                repos = self.repos_de_tarea(parsear(open(p, encoding="utf-8").read())[0])
+                t["repo_path"], t["base"] = repos[0]["path"], repos[0]["base"]
+                t["repos"] = [{"nombre": r["nombre"] or os.path.basename(r["path"]), "path": r["path"],
+                               "base": r["base"], "principal": i == 0} for i, r in enumerate(repos)]
             except Error as err:
-                t["repo_error"] = str(err)
+                t["repo_error"], t["repos"] = str(err), []
             out.append(t)
         return out
+
+    def repos_de_tarea(self, meta):
+        """Repo principal (el del work item) + los extra que el coder sumo, en ese orden."""
+        principal = self.repo_de(meta.get("repo"))
+        extra = [x.strip() for x in (meta.get("repos_extra") or "").split(",") if x.strip()]
+        return [principal] + [self.repo_de(x) for x in extra if x != principal["nombre"]]
 
     # -- escritura
     def modificar(self, clave, estado_nuevo=None, meta_set=None, secs_set=None, secs_append=None):
@@ -404,28 +412,34 @@ class Board:
 
     # -- worktree del QA
     def qa_worktree(self, clave):
-        """Copia de trabajo SOLO para el QA, en la punta de la rama de la tarea (HEAD separado).
-        Asi puede correr la app o los tests sin tocar el repo donde trabaja el coder."""
+        """Una copia de trabajo por repo de la tarea, SOLO para el QA, en la punta de la rama
+        (HEAD separado). Asi prueba sin tocar los repos donde trabaja el coder."""
         clave = clave.lower()
-        r = self.repo_de(self.leer(clave)[2].get("repo"))
-        rama = self.leer(clave)[2].get("rama") or clave
-        destino = self.qa_worktree_path(r, clave)
-        if os.path.isdir(destino):
-            self.git(destino, "checkout", "--detach", "--force", rama)  # re-certificacion: a la punta nueva
-        else:
-            os.makedirs(os.path.dirname(destino), exist_ok=True)
-            self.git(r["path"], "worktree", "add", "--detach", destino, rama)
-        return {"worktree": destino, "rama": rama, "repo_path": r["path"],
-                "head": self.git(destino, "rev-parse", "--short", "HEAD").stdout.strip()}
+        meta = self.leer(clave)[2]
+        rama = meta.get("rama") or clave
+        out = []
+        for r in self.repos_de_tarea(meta):
+            destino = self.qa_worktree_path(r, clave)
+            if os.path.isdir(destino):
+                self.git(destino, "checkout", "--detach", "--force", rama)  # re-certificacion: punta nueva
+            else:
+                os.makedirs(os.path.dirname(destino), exist_ok=True)
+                self.git(r["path"], "worktree", "add", "--detach", destino, rama)
+            out.append({"repo": r["nombre"] or os.path.basename(r["path"]), "worktree": destino, "rama": rama,
+                        "repo_path": r["path"], "base": r["base"],
+                        "head": self.git(destino, "rev-parse", "--short", "HEAD").stdout.strip()})
+        return out
 
     def qa_worktree_borrar(self, clave):
         clave = clave.lower()
-        r = self.repo_de(self.leer(clave)[2].get("repo"))
-        destino = self.qa_worktree_path(r, clave)
-        if os.path.isdir(destino):
-            self.git(r["path"], "worktree", "remove", "--force", destino)
-        self.git(r["path"], "worktree", "prune", check=False)
-        return {"borrado": destino}
+        borrados = []
+        for r in self.repos_de_tarea(self.leer(clave)[2]):
+            destino = self.qa_worktree_path(r, clave)
+            if os.path.isdir(destino):
+                self.git(r["path"], "worktree", "remove", "--force", destino)
+                borrados.append(destino)
+            self.git(r["path"], "worktree", "prune", check=False)
+        return {"borrados": borrados}
 
     @staticmethod
     def qa_worktree_path(repo, clave):
@@ -440,51 +454,94 @@ class Board:
             raise Error("git %s: %s" % (" ".join(args), (r.stderr or r.stdout).strip()[:300]))
         return r
 
-    def preparar_rama(self, clave, modo):
-        """Deja el repo parado en la rama de la tarea.
+    def _rama_en(self, r, clave, modo):
+        """Deja el repo `r` en la rama <clave>. modo: nueva | existente | nueva-o-existente."""
+        repo, base = r["path"], r["base"]
+        if not base:
+            raise Error("falta la rama base en autopilot.env (%s): define desde que rama se crean las ramas"
+                        % ("REPO.%s" % r["nombre"] if r["nombre"] else "BASE_BRANCH"))
+        if self.git(repo, "rev-parse", "--is-inside-work-tree", check=False).returncode != 0:
+            raise Error("%s no es un repositorio git" % repo)
+        existe = lambda ref: self.git(repo, "rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
+        if modo == "nueva-o-existente":
+            modo = "existente" if existe("refs/heads/%s" % clave) else "nueva"
+        if self.git(repo, "branch", "--show-current").stdout.strip() == clave and modo == "existente":
+            return  # ya esta ahi
+        # Solo cuentan archivos rastreados: los untracked (.env, etc.) viajan entre ramas sin problema.
+        if self.git(repo, "status", "--porcelain", "--untracked-files=no").stdout.strip():
+            raise Error("%s: hay cambios sin commitear en archivos rastreados; no se cambia de rama"
+                        % os.path.basename(repo))
+        if modo == "nueva":
+            if existe("refs/heads/%s" % base):
+                origen = base
+            elif existe("refs/remotes/origin/%s" % base):
+                origen = "origin/%s" % base
+            else:
+                raise Error("%s: no existe la rama base '%s' (ni local ni origin/%s)"
+                            % (os.path.basename(repo), base, base))
+            if existe("refs/heads/%s" % clave):
+                propios = self.git(repo, "rev-list", "--count", "%s..%s" % (origen, clave)).stdout.strip()
+                if propios != "0":
+                    raise Error("%s: la rama %s ya existe con %s commit(s) que no estan en %s; no se recrea "
+                                "para no pisar trabajo previo" % (os.path.basename(repo), clave, propios, origen))
+                # Sin commits propios (p. ej. un intento que se detuvo antes de commitear): no hay nada que
+                # pisar; se reusa y se pone en la punta actual de la base.
+                self.git(repo, "switch", "--no-track", "-C", clave, origen)
+            else:
+                self.git(repo, "switch", "--no-track", "-c", clave, origen)
+        elif modo == "existente":
+            if not existe("refs/heads/%s" % clave):
+                raise Error("%s: la rama %s no existe" % (os.path.basename(repo), clave))
+            self.git(repo, "switch", clave)
+        else:
+            raise Error("modo invalido: %s (nueva|existente)" % modo)
 
-        modo=nueva      crea <clave> desde BASE_BRANCH (obligatoria). Si ya existe, error (no se pisa trabajo).
-        modo=existente  cambia a <clave>, que debe existir (ciclo de Bug Fix).
+    def _info_rama(self, r, clave):
+        return {"rama": clave, "base": r["base"], "repo": r["nombre"] or os.path.basename(r["path"]),
+                "repo_path": r["path"], "head": self.git(r["path"], "rev-parse", "--short", "HEAD").stdout.strip()}
 
-        Si falla, la tarea pasa a stopped con el motivo y se lanza Error.
+    def preparar_rama(self, clave, modo, repo=None):
+        """Deja los repos de la tarea parados en su rama <clave>.
+
+        Sin repo (el orquestador):
+          modo=nueva      crea <clave> en el repo principal desde su rama base. Si ya existe, error.
+          modo=existente  cambia a <clave> en TODOS los repos de la tarea (ciclo de bug-fix).
+          Si falla, la tarea pasa a stopped con el motivo y se lanza Error.
+        Con repo=<carpeta> distinta de la principal (el coder, en un workspace):
+          crea <clave> en ese repo desde SU rama base (o la reusa si ya existe) y la registra en
+          repos_extra. Si falla NO pasa la tarea a stopped: el error vuelve al coder.
         Nunca hace push, merge, rebase ni borra ramas.
         """
         clave = clave.lower()
+        meta = self.leer(clave)[2]
+        principal = self.repo_de(meta.get("repo"))
+        if repo and repo != principal["nombre"]:
+            if not self.cfg["workspace"]:
+                raise Error("--repo solo aplica en un workspace (autopilot.env con REPO.<carpeta>=...)")
+            if repo not in self.cfg["repos"]:
+                raise Error("el repo '%s' no esta declarado en autopilot.env. Repos: %s. Pide al humano "
+                            "que lo agregue con /autopilot-init." % (repo, ", ".join(sorted(self.cfg["repos"]))))
+            r = self.repo_de(repo)
+            self._rama_en(r, clave, "nueva-o-existente")
+            extra = [x.strip() for x in (meta.get("repos_extra") or "").split(",") if x.strip()]
+            if repo not in extra:
+                self.modificar(clave, meta_set={"repos_extra": ", ".join(extra + [repo])})
+                self.log("Rama en repo adicional", "agente", "nota", clave, clave, "-",
+                         "%s: rama %s desde %s" % (repo, clave, r["base"]))
+            return self._info_rama(r, clave)
         try:
-            r = self.repo_de(self.leer(clave)[2].get("repo"))
-            repo, base = r["path"], r["base"]
-            if not base:
-                raise Error("falta la rama base en autopilot.env (%s): define desde que rama se crean las ramas"
-                            % ("REPO.%s" % r["nombre"] if r["nombre"] else "BASE_BRANCH"))
-            if self.git(repo, "rev-parse", "--is-inside-work-tree", check=False).returncode != 0:
-                raise Error("%s no es un repositorio git" % repo)
-            # Solo cuentan archivos rastreados: los untracked (.env, etc.) viajan entre ramas sin problema.
-            if self.git(repo, "status", "--porcelain", "--untracked-files=no").stdout.strip():
-                raise Error("hay cambios sin commitear en archivos rastreados; no se cambia de rama")
-            existe = lambda ref: self.git(repo, "rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
-            if modo == "nueva":
-                if existe("refs/heads/%s" % clave):
-                    raise Error("la rama %s ya existe; no se recrea para no pisar trabajo previo" % clave)
-                if existe("refs/heads/%s" % base):
-                    origen = base
-                elif existe("refs/remotes/origin/%s" % base):
-                    origen = "origin/%s" % base
-                else:
-                    raise Error("no existe la rama base '%s' (ni local ni origin/%s)" % (base, base))
-                self.git(repo, "switch", "--no-track", "-c", clave, origen)
-            elif modo == "existente":
-                if not existe("refs/heads/%s" % clave):
-                    raise Error("la rama %s no existe; no se puede continuar el Bug Fix" % clave)
-                self.git(repo, "switch", clave)
-            else:
-                raise Error("modo invalido: %s (nueva|existente)" % modo)
+            repos = [principal] if modo == "nueva" else self.repos_de_tarea(meta)
+            for r in repos:
+                self._rama_en(r, clave, modo)
         except Error as e:
             self.modificar(clave, "stopped", secs_set={"Motivo de stopped": str(e)})
             self.log("No se pudo preparar la rama", "sistema", "Stopped", clave, clave, "-", str(e))
             raise
         self.modificar(clave, meta_set={"rama": clave})
-        return {"rama": clave, "base": base, "repo": r["nombre"] or os.path.basename(repo), "repo_path": repo,
-                "head": self.git(repo, "rev-parse", "--short", "HEAD").stdout.strip()}
+        info = self._info_rama(principal, clave)
+        if len(repos) > 1:
+            info["repos"] = [self._info_rama(r, clave) for r in repos]
+        return info
 
 
 # ----------------------------------------------------------------- CLI
@@ -492,7 +549,11 @@ USO = """uso: wi.sh <env> <comando> [args]
   init                                   crea las carpetas del board y log.md
   in-progress|qa|validando|bugfix|done|new <clave>
   stopped    <clave> <motivo>
-  rama       <clave> nueva|existente     crea/cambia a la rama <clave> (desde BASE_BRANCH)
+  rama       <clave> nueva|existente [--repo <carpeta>]
+                                         crea/cambia a la rama <clave> desde la base de su repo.
+                                         --repo (workspace): abre la MISMA rama en otro repo
+                                         declarado y lo suma a la tarea (lo usa el coder)
+  repos      <clave>                     repos de la tarea (principal + extra) en JSON
   resultado  <clave> <texto>
   motivo     <clave> <texto>
   feedback   <clave> <texto>             agrega al historial de Feedback de QA
@@ -554,7 +615,15 @@ def main(argv):
     elif cmd == "stopped":
         need(2); b.modificar(a[0], "stopped", secs_set={"Motivo de stopped": a[1]})
     elif cmd == "rama":
-        need(2); print(json.dumps(b.preparar_rama(a[0], a[1]), ensure_ascii=False)); return 0
+        need(2)
+        repo = a[a.index("--repo") + 1] if "--repo" in a and a.index("--repo") + 1 < len(a) else None
+        print(json.dumps(b.preparar_rama(a[0], a[1], repo), ensure_ascii=False)); return 0
+    elif cmd == "repos":
+        need(1)
+        t = next((t for t in b.todas() if t["id"] == a[0].lower()), None)
+        if not t:
+            raise Error("no existe la tarea %s" % a[0])
+        print(json.dumps(t["repos"], ensure_ascii=False, indent=2)); return 0
     elif cmd == "resultado":
         need(2); b.modificar(a[0], secs_set={"Resultado": a[1]})
     elif cmd == "motivo":

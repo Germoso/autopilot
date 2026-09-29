@@ -227,6 +227,23 @@ konectame/                      <- abrís el cliente acá
 - azure-sync lee **un proyecto de Azure por repo** y le pone a cada tarea su `repo:`.
 - Los puestos son globales: **un coder y un QA** para todo el workspace (ver *Dos puestos en paralelo*).
 
+### Una tarea en varios repos
+
+Si la corrección de un work item está (también) en **otro repo del workspace** — p. ej. el bug es
+de la app pero la causa está en el backend —, el coder **no se detiene ni pide otro work item**:
+
+- abre la **misma rama** (`bug-37271`) en ese repo con
+  `wi.sh <env> rama bug-37271 nueva --repo Konectame_BackOffice_BE`, desde la rama base **de ese
+  repo**; queda registrado en la tarea (`repos_extra:`);
+- corrige y commitea ahí; en sus **notas del desarrollador** detalla repo por repo (rama, commits,
+  archivos), por qué tocó cada uno y en qué orden levantarlos o desplegarlos;
+- el QA recibe **una copia de trabajo por repo** y los revisa y prueba todos; un rechazo vuelve a
+  poner la rama en todos los repos de la tarea.
+
+Solo repos declarados en `autopilot.env` (`REPO.<carpeta>`); si hace falta uno que no está, el
+coder termina en `stopped` explicando cuál. El bloqueo de git no cambia: el coder no crea ramas con
+git, lo hace `wi.sh` con las mismas validaciones (base del repo, árbol limpio).
+
 `autopilot.env`:
 
 | Variable | Default | Qué es |
