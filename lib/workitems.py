@@ -70,6 +70,8 @@ def cargar_config(env_path=None):
     Ambos:
       WORKITEMS_DIR default: <raiz>/.workitems. Relativo = relativo al .env.
       PARALLEL=true|false  (default false: 1 coder + 1 QA). Con true: MAX_CODERS y MAX_QA (default 2 y 2).
+      WATCHDOG=true|false (default true), WATCHDOG_INTERVAL=60 s, HUNG_MINUTES=10, STALE_MINUTES=45,
+      COMMAND_TIMEOUT=900 s (lo aplica aenv.sh).
     """
     vals = {}
     base = os.getcwd()
@@ -103,7 +105,10 @@ def cargar_config(env_path=None):
                  else {"coder": 1, "qa": 1})
     return {"workspace": bool(ws), "raiz": raiz, "dir": wdir, "repos": repos,
             "paralelo": paralelo, "capacidad": capacidad,
-            "parallel_invalido": None if valor_parallel in ("true", "false") else vals.get("PARALLEL")}
+            "parallel_invalido": None if valor_parallel in ("true", "false") else vals.get("PARALLEL"),
+            "vigia": {"activo": vals.get("WATCHDOG", "true").strip().lower() != "false",
+                      "intervalo": entero("WATCHDOG_INTERVAL", 60), "hung_min": entero("HUNG_MINUTES", 10),
+                      "stale_min": entero("STALE_MINUTES", 45), "timeout": entero("COMMAND_TIMEOUT", 900)}}
 
 
 # ----------------------------------------------------------------- util
@@ -212,6 +217,14 @@ def reservar_ruta(ruta):
                 "tocan el mismo archivo: no commitees lo parcial y termina con RESULTADO: EN ESPERA y "
                 "CHOCA CON: %s" % (rel, choques[0][1], choques[0][1]))
     return None
+
+
+def matar_procesos_en(ruta):
+    try:
+        import vigia
+        return vigia.matar_en(ruta)
+    except Exception:
+        return []
 
 
 def ahora():
@@ -650,6 +663,7 @@ class Board:
         borrados = []
         for r in self.repos_de_tarea(self.leer(clave)[2]):
             destino = self.qa_worktree_path(r, clave)
+            matar_procesos_en(destino)  # que no quede nada corriendo (p. ej. un MongoDB en memoria)
             if os.path.isdir(destino):
                 self.git(r["path"], "worktree", "remove", "--force", destino)
                 borrados.append(destino)
@@ -744,6 +758,7 @@ class Board:
                 if sucio and not forzar:
                     conservados.append(wt)
                     continue
+                matar_procesos_en(wt)
                 self.git(r["path"], "worktree", "remove", "--force", wt)
                 borrados.append(wt)
             self.git(r["path"], "worktree", "prune", check=False)

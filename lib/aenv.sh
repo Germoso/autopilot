@@ -9,6 +9,7 @@
 #  (las del proceso le ganan al .env del repo en dotenv/NestJS) y ejecuta.
 #
 #  El .env.autopilot lo crea el HUMANO. Nadie mas lo crea, edita ni copia.
+#  Nunca espera para siempre: tiempo maximo COMMAND_TIMEOUT (autopilot.env, default 900 s).
 #
 #  uso: aenv.sh <repo o worktree> -- <comando> [args...]
 # ============================================================
@@ -34,4 +35,18 @@ while IFS= read -r -d '' k && IFS= read -r -d '' v; do
   export "$k=$v"
 done < <(python3 "$DIR/entorno.py" "$REPO" --exportar)
 export AUTOPILOT_ENTORNO=1
-cd "$REPO" && exec "$@"
+
+# Nunca espera para siempre: COMMAND_TIMEOUT del autopilot.env (junto al repo o, en un workspace,
+# en la carpeta padre); default 900 s. Al vencer se le pide terminar y, 30 s despues, se lo fuerza.
+LIMITE="$(python3 -c '
+import os, sys
+sys.path.insert(0, sys.argv[2])
+import entorno, workitems
+repo = entorno.repo_principal(sys.argv[1])
+for env in (os.path.join(repo, "autopilot.env"), os.path.join(os.path.dirname(repo), "autopilot.env")):
+    if os.path.isfile(env):
+        print(workitems.cargar_config(env)["vigia"]["timeout"])
+        break
+else:
+    print(900)' "$REPO" "$DIR" 2>/dev/null)"
+cd "$REPO" && exec timeout --kill-after=30 "${LIMITE:-900}" "$@"

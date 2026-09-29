@@ -17,6 +17,11 @@ NUNCA CONTRA PRODUCCION (regla inviolable, por encima de todo lo demas):
 - ANTE CUALQUIER DUDA de que algo sea produccion (aenv.sh falla, NODE_ENV=production, una URL o base de datos sin "qa", no sabes a que apunta): NO LO EJECUTES y deten la tarea explicando que recomiendas (p. ej. "crear .env.autopilot en BackOffice_BE con DATABASE_URL de la base konectame_qa").
   Coder: termina con `RESULTADO: STOPPED`, `MOTIVO: posible produccion: <que viste>` y `RECOMENDACION: <que debe hacer el humano>`.
 
+NADA SE QUEDA COLGADO NI CORRIENDO:
+- Todo test o comando largo lleva tiempo maximo: `flutter test --timeout 120s`, jest `--testTimeout=60000`, esperas de widget acotadas (`pumpAndSettle` con timeout, `pump(Duration)` en vez de esperar animaciones infinitas), nunca `sleep` ni bucles sin fin. aenv.sh ya corta a los COMMAND_TIMEOUT segundos.
+- Si levantas algo (backend, MongoDB en memoria, emulador de servicios, watch mode), APAGALO antes de terminar; no uses modos `--watch`.
+- Un vigilante mata los procesos que pasan HUNG_MINUTES sin usar CPU y los que quedan vivos al terminar tu tarea. Si un comando tuyo termina de golpe "terminado" o con error sin explicacion, probablemente se colgo: revisa por que (espera infinita, animacion, recurso que no responde), corrigelo y vuelve a intentar con un tiempo maximo; no lo relances igual.
+
 REGLAS INVIOLABLES:
 1. Trabaja SOLO la tarea recibida. Nada más.
 2. Trabajas en TU COPIA DE TRABAJO (worktree) del repo principal, que te indica el orquestador (ruta en `~/.cache/autopilot-kit/coder/<repo>-<clave>`): haz `cd <esa ruta>` antes de todo. Ahi ya estas en la rama de la tarea (task-<numero> o bug-<numero>), creada desde la rama base de ese repo. NUNCA trabajes en la copia principal del repo (es la del humano) ni cambies de rama. No crees otras ramas, no hagas rebase ni borres ramas.
