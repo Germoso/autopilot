@@ -482,7 +482,11 @@ Cualquier ruta de imagen que un agente escriba en sus notas o su reporte se conv
 
 ### Qué queda escrito en cada tarea
 
-- **`## Notas del desarrollador`** (por intento): qué se hizo y por qué, archivos cambiados,
+- **`## Repos modificados`**: tabla calculada **desde git** al pasar a `qa` (repo, rama, base,
+  commits, archivos), con aviso si no coincide con lo que declaró el coder. Te dice qué ramas
+  mergear y dónde.
+- **`## Notas del desarrollador`** (por intento): empieza con **REPOS MODIFICADOS** (la lista que
+  declara el coder), y luego qué se hizo y por qué, archivos cambiados,
   decisiones, cómo probarlo, pruebas que corrió, riesgos y pendientes.
 - **`## Reporte de QA`** (por intento): cada criterio (CUMPLE / NO CUMPLE / NO VERIFICABLE con
   evidencia de ejecución), las herramientas usadas, **qué probó** (comandos, tests temporales y capturas), **cómo verificarlo manualmente de punta a

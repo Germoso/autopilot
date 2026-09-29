@@ -206,7 +206,9 @@ Antes de verificar, recarga los repos de la tarea: el coder pudo haber sumado ot
    `$W "$E" notas-dev <clave> - --imagenes ~/.cache/autopilot-kit/capturas/<clave> <<'FIN'` … `FIN`.
    Las imágenes que mencione (y las de esa carpeta) quedan copiadas y **visibles en el `.md`**.
 2. `RESULTADO: QA` **y** hay commits nuevos en **al menos uno** de sus repos
-   (`git -C <path> log <base>..<clave>` por cada uno) → `$W "$E" qa <clave>` +
+   (`$W "$E" repos-modificados <clave>`: commits y archivos por repo, desde git) →
+   `$W "$E" qa <clave>` (escribe solo la sección **`## Repos modificados`** en la tarea y avisa si
+   no coincide con el bloque `REPOS MODIFICADOS` que declaró el coder) +
    `$W "$E" resultado <clave> "<repo>: <rama> @ <commit>; <repo2>: ... — <resumen>"`.
 3. `RESULTADO: EN ESPERA` + `CHOCA CON: <otra>` (un archivo que necesitaba lo tiene otra tarea en
    paralelo) → `$W "$E" esperar <clave> <otra>`: vuelve a la cola, conserva su worktree, y el watcher
@@ -278,7 +280,7 @@ sin detenerse. Pídele que termine con su formato `NOTAS DEL DESARROLLADOR` + `R
 
 **La ruta del archivo de la tarea** (`tarea.archivo`: léelo completo); clave y título; rama e
 intento; **cada worktree con su repo y su rama base** (lo que devuelve `qa-worktree`);
-descripción y criterio **textuales**; las **`Notas del desarrollador`** (`tarea.notas_dev`); `tarea.adjuntos`.
+descripción y criterio **textuales**; la lista de **repos modificados** (`tarea.repos_modificados`); las **`Notas del desarrollador`** (`tarea.notas_dev`); `tarea.adjuntos`.
 Pídele que termine con su formato `REPORTE DE QA` + `VEREDICTO`.
 
 ### Imágenes en el `.md`
