@@ -182,10 +182,16 @@ Antes de verificar, recarga los repos de la tarea: el coder pudo haber sumado ot
 ### C. Terminó el QA (aviso, o `terminadas` con puesto `qa`)
 
 1. Guarda su bloque `REPORTE DE QA` completo: `$W "$E" reporte-qa <clave> - <<'FIN'` … `FIN`.
-2. Veredicto:
+2. Veredicto (el QA solo aprueba lo que **probó**: compilación, tests y cada criterio con una
+   ejecución; "por lectura de código" no alcanza):
    - `APROBADO` → `$W "$E" aprobar <clave>` (va a `done`).
    - `RECHAZADO` → si `intento >= 3` → `$W "$E" stopped <clave> "<historial de los intentos>"`;
      si no → `$W "$E" rechazar <clave> "<motivos>"` (va a `bug-fix`: el coder lo toma primero).
+   - `NO CERTIFICABLE` → `$W "$E" stopped <clave> "NO CERTIFICABLE: <lo que dice FALTA>"`. No es
+     culpa del coder: falta una herramienta, un entorno o un dato. Cuando el humano lo resuelva,
+     la devuelve a la cola con `$W "$E" reqa <clave>`.
+   - Cualquier otra respuesta, o un APROBADO con algún criterio que no sea CUMPLE → trátalo como
+     `NO CERTIFICABLE`. Nunca apruebes por tu cuenta.
 3. `$W "$E" qa-worktree-borrar <clave>` (borra las copias de todos los repos).
 
 Registra cada evento con `$W "$E" log`.
@@ -262,9 +268,13 @@ cambiar/crear/borrar ramas y `reset --hard`.
 
 **`qa-reviewer`** (QA) — certifica en **su propia copia de trabajo** (`git worktree` con HEAD en
 la punta de la rama, en `~/.cache/autopilot-kit/qa/`), así puede compilar, correr tests o la app
-sin tocar el repo donde trabaja el coder. **No puede editar código, commitear ni cambiar de rama.**
-Entrega un **reporte de QA**: criterios, qué probó, cómo verificarlo manualmente de punta a punta
-y puntos a tener en cuenta.
+sin tocar el repo donde trabaja el coder. **Certifica al 100% o no certifica:** primero verifica
+herramientas (Flutter con la versión de `.fvmrc`, Node...), compila y analiza, corre los tests, y
+prueba **cada criterio con una ejecución** (tests existentes o tests temporales; para lo visual, un
+test de widget que mide y guarda una captura PNG que él mismo mira). Solo puede escribir dentro de
+sus copias de trabajo; no commitea ni cambia de rama. Veredicto: `APROBADO`, `RECHAZADO` o
+`NO CERTIFICABLE` (falta herramienta/entorno → `stopped`). Entrega un **reporte de QA**: criterios
+con su prueba, qué probó, cómo verificarlo manualmente de punta a punta y puntos a tener en cuenta.
 
 Los bloqueos son reales, no instrucciones: en OpenCode son permisos `deny` del agente; en
 Claude Code, un hook `PreToolUse` (`$K/git-guard.sh`) que cancela el comando. `/autopilot-init`

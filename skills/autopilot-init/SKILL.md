@@ -38,7 +38,9 @@ I=~/.local/share/autopilot-kit/init.py
 
 5. **Reportar** el JSON de salida en pocas líneas: qué se creó (`hecho`) y **todos** los `avisos`.
    Si hay avisos, explica qué hacer con cada uno (rama inexistente, cambios sin commitear, falta
-   ffmpeg para ver los videos de los bugs...).
+   ffmpeg para ver los videos de los bugs, **faltan herramientas de un repo** — p. ej. `fvm` con la
+   versión de `.fvmrc`, `flutter`, `node` —: sin ellas el QA no puede certificar las tareas de ese
+   repo y quedarán en `stopped`; di qué instalar).
 
 6. **Siguiente paso**, en una línea:
    - Azure: el sprint está en `@current` (sprint actual del equipo `<Proyecto> Team`). El PAT se

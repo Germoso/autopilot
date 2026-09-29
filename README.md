@@ -362,12 +362,29 @@ Mientras el coder desarrolla una tarea, el QA puede estar certificando otra.
   en la punta de la rama de la tarea): puede compilar y correr tests o la app sin pisar al coder.
   Se borra al dar el veredicto.
 
+### El QA certifica al 100% o no certifica
+
+`APROBADO` solo si **probó** todo: compila y analiza sin errores nuevos, los tests pasan y **cada
+criterio** tiene una ejecución que lo demuestra (un test existente o uno temporal que escribe en su
+copia de trabajo). "Cumple por lectura de código" no alcanza.
+
+- **Lo visual** (espacios, colores, layout) se prueba con un **test de widget temporal** que mide la
+  pantalla y guarda una **captura PNG**, que el QA abre y compara con las capturas del bug.
+- **Tres veredictos:** `APROBADO` → `done`; `RECHAZADO` → `bug-fix` (trabajo para el coder);
+  **`NO CERTIFICABLE`** → `stopped` con lo que falta (herramienta, versión, entorno o dato). Cuando
+  lo resuelvas: `wi.sh <env> reqa <clave>` la devuelve a la cola del QA.
+- **Herramientas:** el QA usa la versión que pide cada repo (`fvm` con la de `.fvmrc`, Flutter, Node).
+  Si falta alguna, lo avisan `/autopilot-init` y el watcher al arrancar, y esas tareas quedan en
+  `stopped` en vez de certificarse a ciegas.
+- El QA solo puede escribir dentro de sus copias de trabajo (hook en Claude Code, permiso por ruta
+  en OpenCode): nunca en el repo del coder ni en el board.
+
 ### Qué queda escrito en cada tarea
 
 - **`## Notas del desarrollador`** (por intento): qué se hizo y por qué, archivos cambiados,
   decisiones, cómo probarlo, pruebas que corrió, riesgos y pendientes.
 - **`## Reporte de QA`** (por intento): cada criterio (CUMPLE / NO CUMPLE / NO VERIFICABLE con
-  evidencia), **qué probó** (comandos y resultados), **cómo verificarlo manualmente de punta a
+  evidencia de ejecución), las herramientas usadas, **qué probó** (comandos, tests temporales y capturas), **cómo verificarlo manualmente de punta a
   punta** (preparación, pasos, resultado esperado, casos borde) y **puntos a tomar en cuenta**
   (regresiones, migraciones, configuración, datos...).
 
@@ -379,7 +396,8 @@ Fijadas en `SKILL.md`, se aplican sin que nadie las recuerde:
   `wi.sh` rechaza una segunda tarea en el mismo puesto.
 - **Una rama por workitem:** `task-<numero>` / `bug-<numero>` desde `BASE_BRANCH`.
 - **Nadie hace `push` ni `merge`** (ni `pull`, que mergea). Bloqueado por permiso/hook, no por instrucción.
-- **QA no toca el código:** prueba en su propia copia (worktree); no edita, no commitea, no cambia de rama.
+- **QA no toca el código:** prueba en su propia copia (worktree); solo escribe tests temporales ahí; no commitea ni cambia de rama.
+- **Nada se certifica sin probarlo:** sin compilación, tests y una prueba por criterio, el veredicto es `NO CERTIFICABLE` y la tarea queda en `stopped`.
 - **Todo queda escrito en la tarea:** notas del desarrollador y reporte de QA, por intento.
 - **Los subagentes no usan el MCP de Azure.**
 - **`bug-fix` tiene prioridad** sobre trabajo nuevo: siempre se toma primero.

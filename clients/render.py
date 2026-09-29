@@ -66,10 +66,21 @@ def patrones(cmd):
     return [cmd, cmd + " *"]
 
 
+def qa_dir():
+    """Carpeta de las copias de trabajo del QA (misma que workitems.Board.qa_worktree_path)."""
+    cache = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    return os.path.join(cache, "autopilot-kit", "qa")
+
+
 def front_opencode(meta):
     role = meta["role"]
-    out = [MARCA, "description: " + q(meta["description"]), "mode: subagent", "permission:",
-           "  edit: " + ("deny" if role == "qa" else "allow"), "  bash:", '    "*": allow']
+    out = [MARCA, "description: " + q(meta["description"]), "mode: subagent", "permission:"]
+    if role == "qa":
+        # Solo escribe pruebas temporales y capturas en sus copias de trabajo; nada mas.
+        out += ["  edit:", '    "*": deny', "    %s: allow" % q(qa_dir() + "/**")]
+    else:
+        out += ["  edit: allow"]
+    out += ["  bash:", '    "*": allow']
     # OpenCode evalua en orden y gana la ultima regla que coincide: primero allow, despues deny.
     for c in DENY[role]:
         for p in patrones(c):
@@ -79,14 +90,18 @@ def front_opencode(meta):
 
 def front_claude(meta, kit):
     role = meta["role"]
-    no = ["mcp__azure-devops"] + (["Edit", "Write", "NotebookEdit"] if role == "qa" else [])
     guard = "%s %s" % (shlex.quote(os.path.join(kit, "git-guard.sh")), role)
-    return [MARCA, "name: " + meta["name"], "description: " + q(meta["description"]),
-            "disallowedTools: " + ", ".join(no),
-            # El coder y el QA trabajan en paralelo: el principal no los espera, Claude Code le avisa al terminar.
-            "background: true",
-            "hooks:", "  PreToolUse:", '    - matcher: "Bash"', "      hooks:",
-            "        - type: command", "          command: " + q(guard)]
+    out = [MARCA, "name: " + meta["name"], "description: " + q(meta["description"]),
+           "disallowedTools: mcp__azure-devops",
+           # El coder y el QA trabajan en paralelo: el principal no los espera, Claude Code le avisa al terminar.
+           "background: true",
+           "hooks:", "  PreToolUse:", '    - matcher: "Bash"', "      hooks:",
+           "        - type: command", "          command: " + q(guard)]
+    if role == "qa":
+        # El QA escribe pruebas temporales y capturas, pero SOLO en sus copias de trabajo.
+        out += ['    - matcher: "Edit|Write|NotebookEdit"', "      hooks:", "        - type: command",
+                "          command: " + q(shlex.quote(os.path.join(kit, "qa-escritura.sh")))]
+    return out
 
 
 def escribir(path, front, cuerpo):
