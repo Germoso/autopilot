@@ -37,7 +37,9 @@ import subprocess
 import sys
 import unicodedata
 
-ESTADOS = ["new", "in-progress", "qa", "validando", "bug-fix", "stopped", "done"]
+ESTADOS = ["new", "in-progress", "qa", "validando", "bug-fix", "stopped", "done", "reviewed"]
+# Tareas que ya no estan activas. `reviewed` = done que el humano ya reviso (lo mueve el humano).
+CERRADAS = ("done", "stopped", "reviewed")
 PRIO = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 TIPOS = ("task", "bug")
 SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Notas del desarrollador",
@@ -522,7 +524,7 @@ class Board:
                 secs[k] = (prev + "\n\n" + v).strip() if prev else v
             meta["actualizado"] = ahora()
             escribir_atomico(path, serializar(meta, titulo, secs))
-        if estado_nuevo in ("done", "stopped"):
+        if estado_nuevo in CERRADAS:
             self._cerrar_coder(clave.lower(), estado_nuevo)
         return path
 
@@ -600,7 +602,7 @@ class Board:
         ts = self.todas()
         estado_de = {t["id"]: t["estado"] for t in ts}
         # Una tarea "en espera" (choco con archivos de otra) no se ofrece hasta que la otra termine.
-        libre = lambda t: not t.get("espera") or estado_de.get(t["espera"]) in (None, "done", "stopped")
+        libre = lambda t: not t.get("espera") or estado_de.get(t["espera"]) in (None,) + CERRADAS
         orden = lambda t: (PRIO.get(t["prioridad"], 9), int(t["numero"]))
         by = lambda s: sorted([t for t in ts if t["estado"] == s], key=orden)
         bugfix, qa, nuevas = by("bug-fix"), by("qa"), by("new")
@@ -752,7 +754,7 @@ class Board:
         """done -> se borra el worktree del coder; stopped -> se borra si no tiene cambios sin commitear
         (si los tiene se conserva para que el humano los vea). En ambos casos se liberan las reservas."""
         try:
-            r = self.coder_worktree_borrar(clave, forzar=(estado == "done"))
+            r = self.coder_worktree_borrar(clave, forzar=(estado != "stopped"))
         except Error:
             return
         for wt in r["conservados_con_cambios"]:
@@ -763,7 +765,7 @@ class Board:
         mismo repo: posible conflicto al mergear."""
         clave = clave.lower()
         out = []
-        activas = {t["id"]: t for t in self.todas() if t["estado"] not in ("done", "stopped") and t["id"] != clave}
+        activas = {t["id"]: t for t in self.todas() if t["estado"] not in CERRADAS and t["id"] != clave}
         for r in self.repos_de_tarea(self.leer(clave)[2]):
             nombre = r["nombre"] or os.path.basename(r["path"])
             mios = set(self._cambiados(r, clave)) | set(reservas_de(nombre, clave))
@@ -852,6 +854,7 @@ class Board:
 USO = """uso: wi.sh <env> <comando> [args]
   init                                   crea las carpetas del board y log.md
   in-progress|qa|validando|bugfix|done|new <clave>
+  reviewed   <clave>                     done -> reviewed: el humano ya reviso la tarea
   stopped    <clave> <motivo>
   rama       <clave> nueva|existente [--repo <carpeta>]
                                          crea/cambia a la rama <clave> desde la base de su repo.
@@ -936,6 +939,12 @@ def main(argv):
     b.verificar()
     if cmd in MOVER:
         need(1); b.modificar(a[0], MOVER[cmd])
+    elif cmd == "reviewed":
+        need(1)
+        if b.buscar(a[0])[0] not in ("done", "reviewed"):
+            raise Error("solo una tarea en done pasa a reviewed (%s esta en %s)" % (a[0], b.buscar(a[0])[0]))
+        b.modificar(a[0], "reviewed")
+        b.log("Revisada por el humano", "humano", "nota", a[0].lower(), a[0].lower(), "-", "done -> reviewed")
     elif cmd == "new":
         need(1); b.modificar(a[0], "new", secs_set={"Motivo de stopped": ""})
     elif cmd == "stopped":

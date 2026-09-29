@@ -38,6 +38,7 @@ Si no existe, este proyecto **no participa** del sistema. No preguntes, no asuma
 ├── bug-fix/
 ├── stopped/
 ├── done/
+├── reviewed/                   # done que el humano ya revisó (lo mueve el humano)
 └── log.md                      # log de actividad, solo se agregan filas
 ```
 
@@ -161,6 +162,7 @@ $W "$E" certificar  <clave> <intento_nuevo>   # qa -> validando
 $W "$E" aprobar     <clave>                   # validando -> done
 $W "$E" rechazar    <clave> "<motivos>"       # validando -> bug-fix
 $W "$E" new         <clave>
+$W "$E" reviewed    <clave>                   # SOLO el humano: done -> reviewed
 $W "$E" stopped     <clave> "<motivo>"
 $W "$E" resultado   <clave> "<rama | commit | resumen>"
 $W "$E" add-task    <task|bug> <numero> <prioridad> "<titulo>" "<descripcion>" "<criterio>" [repo]   # repo obligatorio en workspace
@@ -271,7 +273,7 @@ fotogramas, falta ffmpeg: dilo en el resumen (`azure-sync.py --fotogramas` los g
 ## La máquina de estados
 
 ```
-new ──> in-progress ──> qa ──> validando ──┬──> done
+new ──> in-progress ──> qa ──> validando ──┬──> done ──(humano)──> reviewed
                           ↑       │         │
                           │       ↓         │
                           └── bug-fix ──────┘
@@ -288,6 +290,7 @@ new ──> in-progress ──> qa ──> validando ──┬──> done
 | `bug-fix` | QA falló. Hay que corregir. **Se toma antes que cualquier otra cosa.** | `coder` |
 | `stopped` | No se pudo. Requiere humano, con motivo escrito. | — |
 | `done` | **Certificado por QA.** No significa mergeado: el merge lo hace el humano. | — |
+| `reviewed` | El humano ya revisó la tarea en `done`. Solo la mueve el humano (`wi.sh reviewed <clave>` o moviendo el archivo). El autopilot no la vuelve a tocar. | humano |
 
 ## Qué devuelve el watcher
 
@@ -352,4 +355,5 @@ el orquestador.
 - Marcar `qa` sin commits verificables en la rama.
 - Marcar `stopped` sin escribir el motivo.
 - Editar o mover los `.md` del board sin `wi.sh`.
+- Mover tareas a `reviewed`: eso lo hace solo el humano, después de revisar las de `done`.
 - Inventar que hiciste algo que no hiciste.
