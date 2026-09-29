@@ -125,9 +125,13 @@ El feedback de QA **se acumula por intento**: al llegar a `stopped`, el historia
 ## Ramas
 
 - **Una rama independiente por workitem**: `task-<numero>` o `bug-<numero>` (ej. `bug-140123`).
-- **Siempre desde la rama base del proyecto**: la variable `BASE_BRANCH` de su `autopilot.env`
-  (obligatoria; cada proyecto pone la suya). Si está vacía o la rama no existe, la tarea
-  pasa a `stopped`: no se inventa otra base.
+- **Siempre desde la rama base de su repo**, definida en `autopilot.env` (obligatoria):
+  `BASE_BRANCH=<rama>` en un repo, o `REPO.<carpeta>=<rama>` por repo en un workspace.
+  Si está vacía o la rama no existe (ni local ni en `origin`), la tarea pasa a `stopped`:
+  no se inventa otra base.
+- **Workspace:** la rama se crea **dentro del repo de la tarea** (`repo:` en su frontmatter).
+  Una tarea sin repo, o con un repo que no está en `autopilot.env`, pasa a `stopped`.
+- Si el repo tiene cambios sin commitear en archivos rastreados, no se cambia de rama: `stopped`.
 - Si la rama de una tarea nueva ya existe, `stopped`: no se pisa trabajo previo.
 - Un rechazo de QA se corrige **en la misma rama**.
 - **Nunca `push`, nunca `merge`.** Bloqueados por permiso. El merge lo hace el humano.
@@ -260,6 +264,31 @@ Crear una tarea a mano:
 
 En un proyecto sin el `.env`, ambos comandos dicen que el proyecto no participa
 y no hacen nada.
+
+### azure-sync
+
+Importa a `.workitems/new/` los work items **Task/Bug en estado New** del sprint. Solo crea,
+nunca modifica; no gasta tokens; deduplica por número (los IDs son únicos en la organización).
+
+`azure-sync.env` (lo genera `/autopilot-init` desde los remotos de git):
+
+```ini
+AZURE_ORG=codikasrl
+
+# Un repo
+AZURE_PROJECT=Konectame_App_Clientes
+AZURE_ITERATION=@current
+
+# Workspace: una fuente por repo -> SYNC.<carpeta>=<proyecto de Azure>|<sprint>
+SYNC.Konectame_App_Clientes=Konectame_App_Clientes|@current
+SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
+```
+
+- **Sprint:** `@current` = sprint actual del equipo `<Proyecto> Team` (se actualiza solo al
+  cambiar de sprint); `@current:<Equipo>` para otro equipo; o una ruta fija `Proyecto\Sprint X`.
+- En un workspace cada tarea se crea con su `repo:`. Cada `SYNC.<repo>` necesita su `REPO.<repo>`.
+- Si **cualquier** fuente falla, no se escribe nada en el board.
+- `--dry-run` muestra qué importaría; `--status` cuenta por fuente; `--watch 60` en bucle.
 
 ### El watcher
 
