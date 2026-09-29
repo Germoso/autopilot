@@ -49,9 +49,33 @@ while IFS= read -r aviso; do                          # ramas base vacias, repos
 done < <("$PY" "$WI" "$ENV_FILE" check)
 
 log " vigilando el board cada ${POLL_INTERVAL}s (bloqueante). Ctrl+C para salir."
+VIGIA="$SCRIPT_DIR/vigia.py"
+read -r VIGIA_ON VIGIA_CADA < <("$PY" -c '
+import sys; sys.path.insert(0, sys.argv[1]); import workitems as wi
+v = wi.cargar_config(sys.argv[2])["vigia"]; print("1" if v["activo"] else "0", v["intervalo"])' "$SCRIPT_DIR" "$ENV_FILE")
+ULTIMA_VIGIA=0
+[[ "$VIGIA_ON" == 1 ]] && log " vigia activo cada ${VIGIA_CADA}s (procesos colgados, huerfanos y tareas atascadas)"
+
 iter=0
 while true; do
   iter=$((iter+1))
+
+  # Vigia: mata procesos colgados/huerfanos (sin despertar al agente) y detecta tareas atascadas.
+  atascadas="[]"
+  if [[ "$VIGIA_ON" == 1 && $(( $(date +%s) - ULTIMA_VIGIA )) -ge $VIGIA_CADA ]]; then
+    ULTIMA_VIGIA=$(date +%s)
+    v="$("$PY" "$VIGIA" "$ENV_FILE" 2>/dev/null)" || v='{}'
+    res="$("$PY" -c '
+import json,sys
+v = json.load(sys.stdin)
+for h in v.get("huerfanos", []): print("M vigia: %d proceso(s) huerfanos de %s (%s en %s) terminados" % (len(h["procesos"]), h["tarea"], h["puesto"], h["estado"]))
+for c in v.get("colgados", []): print("M vigia: proceso colgado de %s (%s, %s min sin CPU) terminado" % (c["tarea"], c["puesto"], c["minutos_sin_cpu"]))
+print("A " + json.dumps(v.get("atascadas", [])))' <<<"$v")"
+    while IFS= read -r l; do
+      [[ "$l" == M* ]] && log " ${l:2}"
+      [[ "$l" == A* ]] && atascadas="${l:2}"
+    done <<<"$res"
+  fi
 
   # --recuperar solo en la primera vuelta de un --inicio
   rec=(); [[ $INICIO == 1 && $iter == 1 ]] && rec=(--recuperar)
@@ -63,11 +87,12 @@ import json,sys
 p = json.load(sys.stdin)
 ev = ["%s:%s %s" % (a["puesto"], a["accion"], a["tarea"]["id"]) for a in p["acciones"]]
 ev += ["%s:terminada %s" % (t["puesto"], t["tarea"]["id"]) for t in p["terminadas"]]
-print(", ".join(ev))' <<<"$plan")"
+ev += ["atascada %s" % a["tarea"] for a in json.loads(sys.argv[1])]
+print(", ".join(ev))' "$atascadas" <<<"$plan")"
 
   if [[ -n "$hay" ]]; then
     log " #$iter $hay. Retornando al agente."
-    echo "$plan"
+    "$PY" -c 'import json,sys; p = json.load(sys.stdin); p["atascadas"] = json.loads(sys.argv[1]); print(json.dumps(p, ensure_ascii=False))' "$atascadas" <<<"$plan"
     exit 0
   fi
 

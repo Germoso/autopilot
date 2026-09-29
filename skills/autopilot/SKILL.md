@@ -154,7 +154,8 @@ $W "$E" repos       <clave>                   # repos de la tarea (principal + e
 $W "$E" reservar    <clave> <archivo>...      # reserva archivos para la tarea (coder)
 $W "$E" solapes     <clave>                   # archivos que comparte con otras tareas activas
 $W "$E" esperar     <clave> <otra>            # choco con <otra>: vuelve a la cola hasta que termine
-$W "$E" coder-worktree-borrar <clave>
+$W "$E" coder-worktree-borrar <clave>          # (también mata los procesos que queden en esa copia)
+python3 $K/vigia.py "$E" [--simular]           # vigilante a mano: qué mataría / qué está atascado
 $W "$E" entorno     <clave|repo>              # .env.autopilot de sus repos: ok/falta/inseguro/incompleto
 $W "$E" in-progress <clave>
 $W "$E" qa          <clave>
@@ -235,6 +236,23 @@ Al pasar a `done` o `stopped`, el worktree del coder se borra solo y se liberan 
    - Cualquier otra respuesta, o un APROBADO con algún criterio que no sea CUMPLE → trátalo como
      `NO CERTIFICABLE`. Nunca apruebes por tu cuenta.
 3. `$W "$E" qa-worktree-borrar <clave>` (borra las copias de todos los repos).
+
+### D. El watcher retorna con `atascadas` (vigilante)
+
+El watcher corre un **vigilante** cada `WATCHDOG_INTERVAL` s (`$K/vigia.py`, sin tokens). Por su cuenta,
+sin despertarte, **mata** los procesos **huérfanos** (de tareas que ya no están en su puesto o de
+worktrees borrados) y los **colgados** (una tarea activa cuyos procesos llevan `HUNG_MINUTES` sin
+usar CPU); el comando del agente termina con error y el agente sigue. Todo queda en `log.md`.
+
+Solo te despierta por una tarea **atascada**: en su puesto sin ninguna actividad (archivos, commits,
+CPU, sesión) durante `STALE_MINUTES`. Para cada una:
+- **Claude Code:** revisa el estado del subagente; si sigue vivo, mándale un mensaje preguntando qué
+  está esperando y pidiéndole que corte lo que esté bloqueado. Si ya terminó sin avisar, procesa su
+  resultado (eventos B o C).
+- **OpenCode:** `python3 $K/oc_sesion.py estado <ses>`; si terminó, procesa su resultado.
+- Si no responde o no hay agente → `$W "$E" stopped <clave> "Atascada: <N> min sin actividad"`.
+
+Relanza el watcher después.
 
 Registra cada evento con `$W "$E" log`.
 

@@ -103,7 +103,11 @@ def env_autopilot(det, bases):
           "", "# Paralelismo: false = 1 coder y 1 QA a la vez. true = hasta MAX_CODERS y MAX_QA, cada uno con un",
           "# workitem distinto, en su propia copia del repo; dos workitems nunca tocan el mismo archivo.",
           "# Cada agente gasta tokens y memoria (Flutter ~1,5-2 GB por analisis/test).",
-          "PARALLEL=false", "MAX_CODERS=2", "MAX_QA=2", ""]
+          "PARALLEL=false", "MAX_CODERS=2", "MAX_QA=2",
+          "", "# Vigilante (lo corre el watcher cada WATCHDOG_INTERVAL s, sin tokens): mata procesos huerfanos",
+          "# y los colgados HUNG_MINUTES sin usar CPU; avisa de tareas sin actividad STALE_MINUTES.",
+          "# COMMAND_TIMEOUT: tiempo maximo (s) de lo que corre por aenv.sh.",
+          "WATCHDOG=true", "WATCHDOG_INTERVAL=60", "HUNG_MINUTES=10", "STALE_MINUTES=45", "COMMAND_TIMEOUT=900", ""]
     return "\n".join(L)
 
 

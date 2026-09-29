@@ -389,6 +389,36 @@ MAX_QA=2
   QA o se ve al mergear. **Cada agente gasta tokens y memoria**: con 7 GB de RAM y Flutter, 2 + 2 es
   el máximo razonable.
 
+### Vigilante: nada se queda colgado
+
+El watcher corre cada `WATCHDOG_INTERVAL` segundos un vigilante (`vigia.py`, no gasta tokens) que
+mira los procesos de cada tarea (los reconoce porque corren dentro de su copia del repo):
+
+- **Colgados:** si los procesos de una tarea activa llevan `HUNG_MINUTES` **sin usar nada de CPU**
+  (están vivos pero no hacen nada, p. ej. un test esperando una animación que no termina), los mata.
+  El comando del agente termina con error y el agente sigue. Un proceso lento pero que trabaja
+  (su CPU avanza) nunca se toca.
+- **Huérfanos:** procesos que siguen vivos cuando su tarea ya no está en su puesto (p. ej. un
+  MongoDB en memoria que el QA dejó levantado) → los mata en la siguiente revisión. Al borrar la
+  copia de una tarea, también se matan sus procesos.
+- **Tareas atascadas:** una tarea en su puesto sin ninguna actividad (archivos, commits, CPU)
+  durante `STALE_MINUTES` → despierta al agente principal para que revise al agente.
+- **Prevención:** lo que corre por `aenv.sh` tiene tiempo máximo (`COMMAND_TIMEOUT`), y los agentes
+  corren los tests con límite (`flutter test --timeout 120s`, jest `--testTimeout`) y apagan lo que
+  levantan.
+- Solo toca procesos de trabajo (node, dart, flutter, mongod, tests…) dentro de las copias de este
+  board; nunca terminales, editores ni los clientes. Todo queda en `log.md`.
+
+```ini
+WATCHDOG=true           # false = apagado
+WATCHDOG_INTERVAL=60    # segundos entre revisiones
+HUNG_MINUTES=10         # minutos sin usar CPU para considerar colgado
+STALE_MINUTES=45        # minutos sin actividad para avisar de una tarea atascada
+COMMAND_TIMEOUT=900     # segundos máximos de un comando por aenv.sh
+```
+
+Revisarlo a mano: `python3 ~/.local/share/autopilot-kit/vigia.py <autopilot.env> --simular`.
+
 ### Nunca contra producción: `.env.autopilot`
 
 Los agentes **nunca** ejecutan nada contra un ambiente con el `.env` del repo. Solo usan un archivo
