@@ -70,11 +70,15 @@ mi-proyecto/
     ├── bug-fix/
     ├── stopped/
     ├── done/
+    ├── reviewed/                 # done que ya revisaste (la mueves tú)
     └── log.md                    # log de actividad (solo se agregan filas)
 ```
 
 - **El estado de una tarea es la carpeta donde está.** Cambiar de estado es mover el archivo.
   Podés mover tareas a mano (explorador, VS Code, Obsidian); el watcher lo ve en segundos.
+- **`reviewed`**: cuando revisas una tarea de `done`, muévela a `reviewed/` (arrastrando el archivo
+  o con `wi.sh <env> reviewed <clave>`). Así `done` queda solo con lo pendiente de revisar. El
+  autopilot nunca mueve tareas a `reviewed` ni las vuelve a tocar.
 - **El nombre del archivo es `<tipo>-<numero>-<slug>.md`.** `<tipo>-<numero>` es la clave de
   la tarea y **el nombre de su rama**.
 - **El board no está en git.** Si lo estuviera, cada vez que una rama cambia el
