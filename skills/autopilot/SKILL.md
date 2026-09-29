@@ -1,12 +1,20 @@
 ---
 name: autopilot
-description: Sistema autonomo de desarrollo sobre un board de workitems en carpetas y archivos Markdown. Arranca el watcher y trabaja las tareas con subagentes, una rama por workitem desde la rama base del proyecto (BASE_BRANCH), sin push ni merge. Usar cuando el usuario mencione el tablero de tareas, el board, workitems, autopilot, /autopilot, o pida trabajo autonomo sobre tareas. NO usar en proyectos que no tengan un archivo autopilot.env.
+description: Sistema autonomo de desarrollo sobre un board de workitems en carpetas y archivos Markdown. Arranca el watcher y trabaja las tareas con dos subagentes en paralelo (un coder y un QA, una tarea cada uno), una rama por workitem desde la rama base del proyecto (BASE_BRANCH), sin push ni merge. Usar cuando el usuario mencione el tablero de tareas, el board, workitems, autopilot, /autopilot, o pida trabajo autonomo sobre tareas. NO usar en proyectos que no tengan un archivo autopilot.env.
 ---
 
 # Sistema Autónomo de Desarrollo (Autopilot)
 
-Sistema donde un **watcher** vigila un board de workitems (carpetas + `.md`) y delega
-tareas a subagentes.
+Sistema donde un **watcher** vigila un board de workitems (carpetas + `.md`) y tú, el agente
+principal (orquestador), delegas en **dos puestos que trabajan en paralelo**:
+
+| Puesto | Agente | Toma de | Estado mientras trabaja | Máximo |
+|---|---|---|---|---|
+| **coder** | `autopilot-worker` | `bug-fix` > `new` | `in-progress` | **1** |
+| **qa** | `qa-reviewer` | `qa` | `validando` | **1** |
+
+Puede haber a la vez una tarea en `in-progress` y otra en `validando`, nunca dos en el mismo
+puesto (`wi.sh` lo impide). En un workspace el límite es global, no por repo.
 
 ## Cuándo usar esta skill
 
@@ -31,42 +39,50 @@ Si no existe, este proyecto **no participa** del sistema. No preguntes, no asuma
 - **Clave de la tarea = `<tipo>-<numero>`** (`task-123`, `bug-140123`). Es también el
   **nombre de su rama**. Es lo que se le pasa a `wi.sh`.
 - Cada archivo tiene frontmatter (`id`, `tipo`, `prioridad`, `intento`, `rama`, `repo`,
-  `origen`, `actualizado`) y las secciones `## Descripción`, `## Criterio de aceptación`,
-  `## Feedback de QA` (historial por intento), `## Resultado`, `## Motivo de stopped`.
+  `origen`, `sesion`, `actualizado`) y las secciones `## Descripción`, `## Criterio de aceptación`,
+  `## Adjuntos`, `## Notas del desarrollador` y `## Reporte de QA` (por intento),
+  `## Feedback de QA`, `## Resultado`, `## Motivo de stopped`.
 - El board **no va en git**: si estuviera versionado, al cambiar de rama cambiaría el tablero.
 
 ## Arranque
 
-Los scripts del sistema estan en `~/.local/share/autopilot-kit/` (en adelante `$K`).
+Los scripts del sistema están en `~/.local/share/autopilot-kit/` (en adelante `$K`); `W` y `E`
+son `wi.sh` y el `autopilot.env` (ver *Una sola vía de escritura*).
 
 1. Verifica que existe `autopilot.env` en la carpeta abierta (un repo, o la carpeta padre de un
    workspace con varios repos). Si no existe, para y dile al usuario que no participa y que se
    prepara con `/autopilot-init`. No lo busques en otro sitio ni lo adivines.
-2. Lanza el watcher. **Cómo** depende del cliente en el que estás corriendo:
+2. Lanza el watcher **con `--inicio`** (solo esta primera vez: recupera tareas que quedaron en un
+   puesto sin agente de una sesión anterior): `$K/watcher.sh ./autopilot.env --inicio`.
+   Todos los relanzamientos posteriores van **sin** `--inicio`.
+3. Sigue **El bucle**.
 
-   | Cliente | Cómo lanzarlo |
-   |---|---|
-   | **Claude Code** | Tool Bash con `run_in_background: true`: `$K/watcher.sh ./autopilot.env`. Claude Code corta los comandos en primer plano a los 10 minutos; en segundo plano no hay límite y **te re-invoca cuando el watcher termina**. Mientras tanto no hagas nada ni sondees su salida: termina el turno diciendo que el watcher está vigilando. |
-   | **OpenCode** | En primer plano, con el timeout más largo que permita el tool de shell: `$K/watcher.sh ./autopilot.env`. |
+### Cómo se lanza cada cosa según el cliente
 
-3. Cuando el watcher retorna, lee el JSON de su salida y sigue **El bucle** (más abajo).
-4. Al terminar cada tarea, vuelve al paso 2.
+| | **Claude Code** | **OpenCode** |
+|---|---|---|
+| Watcher | Bash con `run_in_background: true`. Te re-invoca cuando retorna. Mientras, no sondees su salida. | Bash en primer plano, con el timeout más largo posible. |
+| Subagente de un puesto | Tool Agent con `subagent_type: autopilot-worker` o `qa-reviewer`. Corren **en segundo plano** (definido en el agente): no los esperes; Claude Code te avisa cuando terminan. | **Sesión propia** vía API: `python3 $K/oc_sesion.py lanzar <agente> <carpeta abierta> "<clave>: <puesto>" - --adjunto <img>...` con el encargo por stdin. Devuelve `{"sesion": "ses_..."}`: regístralo con `$W "$E" sesion <clave> <ses>`. No espera. |
+| Fin de un subagente | Llega como aviso de tarea terminada, con su respuesta. | El watcher lo devuelve en `terminadas`; la respuesta se lee con `python3 $K/oc_sesion.py resultado <ses>`. |
+| Imágenes | Pásale las rutas en el encargo: las abre con Read. | Van como `--adjunto` (las ve directo) **y** también listadas en el encargo. |
+
+Las sesiones de OpenCode se ven en su lista de sesiones: el usuario puede abrirlas y mirarlas en vivo.
 
 ### Por qué el watcher y no polling del agente
 
 - **No consume tokens mientras espera.** El proceso duerme entre lecturas del board; no hay
   turnos de modelo hasta que retorna.
-- **No hay sesión duplicada.** No se usa `opencode run` ni `claude -p` desde un demonio, que
-  abrirían sesiones con tokens aparte. El usuario rechazó explícitamente ese modelo.
-- **El despertar es la propia salida del script.** Cuando detecta algo, imprime el JSON y termina.
+- **El despertar es la propia salida del script** (o, en Claude Code, el aviso de un subagente).
+- **Un solo watcher a la vez.** Llévalo en la cuenta: si lo lanzaste y no retornó, sigue corriendo.
 
-**LIMITACIÓN CONOCIDA:** el watcher vive dentro de la sesión. Si el usuario cierra OpenCode o
-Claude Code, deja de vigilar. No sobrevive a la ausencia del usuario.
+**LIMITACIÓN CONOCIDA:** el watcher vive dentro de la sesión. Si el usuario cierra el cliente, deja
+de vigilar. En OpenCode las sesiones de los puestos sí siguen; al volver, `--inicio` las respeta
+(no las marca huérfanas) y el watcher avisa cuando terminan.
 
 ## REGLA DE ORO: NUNCA DEJAR EL WATCHER PARADO
 
-1. **El watcher se relanza SIEMPRE al terminar cada tarea.** No importa cómo terminó:
-   `done`, `qa`, `bug-fix` o `stopped`. Siempre vuelve al paso 1.
+1. **El watcher se relanza SIEMPRE que retorna**, después de atender lo que trajo. Si ya hay
+   uno corriendo (Claude Code, segundo plano), no lances otro.
 2. **Si no hay tareas, el watcher sigue esperando.** No lo abandones por no haber nada que hacer.
 3. **No cierres el turno sin un watcher corriendo.** O lo relanzas, o le dices al usuario que
    el sistema ya no está vigilando. (En Claude Code, "corriendo" = lanzado en segundo plano.)
@@ -80,8 +96,11 @@ Claude Code, deja de vigilar. No sobrevive a la ausencia del usuario.
 - **Toda rama nueva sale de la rama base de SU repo**, definida en `autopilot.env`:
   `BASE_BRANCH=<rama>` si es un repo, o `REPO.<carpeta>=<rama>` por repo si es un workspace.
   Nunca de otra.
-- **Workspace (varios repos):** cada tarea dice su repo (`repo:` en el frontmatter) y su rama se
-  crea **dentro de ese repo**. Todo lo de git de esa tarea se hace ahí (`git -C <REPO> ...`).
+- **Workspace (varios repos):** cada tarea dice su repo principal (`repo:`) y su rama se crea
+  **dentro de ese repo**. Si la corrección requiere **otro repo del workspace**, el coder **no se
+  detiene**: abre la **misma rama** allí con `wi.sh rama <clave> nueva --repo <carpeta>` (desde la
+  base de ese repo) y queda registrado en `repos_extra:`. Desde ahí, todo lo de la tarea (ramas de
+  bug-fix, verificación de commits, worktrees del QA) abarca todos sus repos (`tarea.repos`).
 - El watcher devuelve, dentro de `tarea`, **`repo_path`** (en este documento `<REPO>`) y
   **`base`** (`<BASE>`). Si trae `repo_error`, la tarea no tiene un repo válido: `stopped` con ese
   motivo.
@@ -89,7 +108,9 @@ Claude Code, deja de vigilar. No sobrevive a la ausencia del usuario.
   a `stopped` con el motivo:
   - `wi.sh rama <clave> nueva` → crea `<clave>` desde `<BASE>`. Si la rama ya existe, si
     la rama base está vacía o no existe, **no inventa nada**: `stopped`.
-  - `wi.sh rama <clave> existente` → vuelve a la rama de la tarea (ciclo de Bug Fix).
+  - `wi.sh rama <clave> existente` → vuelve a la rama de la tarea en **todos** sus repos (bug-fix).
+  - `wi.sh rama <clave> nueva --repo <carpeta>` → la usa el **coder** para sumar otro repo. Si
+    falla, la tarea **no** pasa a stopped: el error vuelve al coder.
 - **NUNCA `git push`. NUNCA `git merge`.** Bloqueados por permiso. El merge lo hace el humano.
 - Tampoco `git rebase`, ni borrar ramas, ni `reset --hard`.
 - El tipo de la rama (`task`/`bug`) es el tipo del workitem, **no** el estado `bug-fix`:
@@ -105,7 +126,8 @@ o editarlos: el watcher lo detecta en la siguiente lectura.)
 W=~/.local/share/autopilot-kit/wi.sh
 E=<proyecto>/autopilot.env
 
-$W "$E" rama        <clave> nueva|existente
+$W "$E" rama        <clave> nueva|existente [--repo <carpeta>]
+$W "$E" repos       <clave>                   # repos de la tarea (principal + extra)
 $W "$E" in-progress <clave>
 $W "$E" qa          <clave>
 $W "$E" certificar  <clave> <intento_nuevo>   # qa -> validando
@@ -117,26 +139,80 @@ $W "$E" resultado   <clave> "<rama | commit | resumen>"
 $W "$E" add-task    <task|bug> <numero> <prioridad> "<titulo>" "<descripcion>" "<criterio>" [repo]   # repo obligatorio en workspace
 $W "$E" log <evento> <origen> <tipo> <tarea> <rama> <commit> <detalle>
 $W "$E" query [estado]
+$W "$E" sesion      <clave> <ses_id>          # OpenCode: sesión que trabaja la tarea
+$W "$E" notas-dev   <clave> -   <<'FIN'       # notas del coder (stdin)
+$W "$E" reporte-qa  <clave> -   <<'FIN'       # reporte del QA (stdin)
+$W "$E" qa-worktree <clave>                   # copia de trabajo del QA
+$W "$E" qa-worktree-borrar <clave>
 ```
 
 ## El bucle
 
-1. Lanza el watcher como dice **Arranque** (segundo plano en Claude Code, primer plano en OpenCode). No hagas polling paralelo.
-2. Cuando retorna con `accion` != `idle`, toma **solo** `tarea` (su `id` es la clave).
-3. Según la acción:
-   - `desarrollar` → `wi.sh rama <clave> nueva` y luego `wi.sh in-progress <clave>`.
-   - `desarrollar-bugfix` → `wi.sh rama <clave> existente` y luego `wi.sh in-progress <clave>`.
-   - `certificar` → ver el ciclo de certificación (no cambia de rama).
-   Si `wi.sh rama` falla, la tarea ya quedó en `stopped`: relanza el watcher.
-4. Lanza un subagente `autopilot-worker` con la tarea, `<REPO>` (dónde trabajar), la rama y
-   `<BASE>` (y el `Feedback de QA` si es bugfix).
-5. Verifica el resultado:
-   - Hay commits nuevos en la rama (`git -C <REPO> log <BASE>..<clave>`) y el subagente reporta
-     éxito → `wi.sh qa <clave>` + `wi.sh resultado <clave> "<rama> @ <commit> — <resumen>"`
-   - No hay commits, depende de algo que no está en `<BASE>`, o falta información
-     → `wi.sh stopped <clave> "<motivo>"`
-6. Registra el evento con `wi.sh log`.
-7. Vuelve al paso 1. El watcher se relanza.
+Hay tres eventos. Atiende cada uno y **relanza el watcher si no está corriendo**.
+
+### A. El watcher retorna con `acciones` (trabajo para un puesto libre)
+
+Para **cada** acción, primero **ocupa el puesto** y después lanza el subagente (si relanzas el
+watcher antes de ocupar el puesto, te devuelve la misma acción):
+
+- `desarrollar` (coder) → `$W "$E" rama <clave> nueva` → `$W "$E" in-progress <clave>` →
+  lanza `autopilot-worker` con el **encargo del coder**.
+- `desarrollar-bugfix` (coder) → `$W "$E" rama <clave> existente` → `$W "$E" in-progress <clave>`
+  → lanza `autopilot-worker` con el encargo del coder, incluido el `Feedback de QA`.
+- `certificar` (qa) → `$W "$E" certificar <clave> <intento+1>` → `$W "$E" qa-worktree <clave>`
+  (devuelve **una copia de trabajo por repo** de la tarea) → lanza `qa-reviewer` con el **encargo del QA**.
+
+Si `wi.sh rama` falla, la tarea ya quedó en `stopped`: sigue con lo demás. Si vienen las dos
+acciones juntas, lanza los dos subagentes (en Claude Code, en el mismo mensaje).
+
+### B. Terminó el coder (aviso de Claude Code, o `terminadas` con puesto `coder` en OpenCode)
+
+Antes de verificar, recarga los repos de la tarea: el coder pudo haber sumado otros
+(`$W "$E" repos <clave>`).
+
+1. Toma su respuesta. Guarda su bloque `NOTAS DEL DESARROLLADOR` completo:
+   `$W "$E" notas-dev <clave> - <<'FIN'` … `FIN`.
+2. `RESULTADO: QA` **y** hay commits nuevos en **al menos uno** de sus repos
+   (`git -C <path> log <base>..<clave>` por cada uno) → `$W "$E" qa <clave>` +
+   `$W "$E" resultado <clave> "<repo>: <rama> @ <commit>; <repo2>: ... — <resumen>"`.
+3. `RESULTADO: STOPPED`, sin commits, o dependía de algo que no está en `<BASE>` →
+   `$W "$E" stopped <clave> "<motivo>"`.
+4. En OpenCode, si el `outcome` no es `succeeded` (falló o se interrumpió) → `stopped` con ese motivo.
+
+### C. Terminó el QA (aviso, o `terminadas` con puesto `qa`)
+
+1. Guarda su bloque `REPORTE DE QA` completo: `$W "$E" reporte-qa <clave> - <<'FIN'` … `FIN`.
+2. Veredicto:
+   - `APROBADO` → `$W "$E" aprobar <clave>` (va a `done`).
+   - `RECHAZADO` → si `intento >= 3` → `$W "$E" stopped <clave> "<historial de los intentos>"`;
+     si no → `$W "$E" rechazar <clave> "<motivos>"` (va a `bug-fix`: el coder lo toma primero).
+3. `$W "$E" qa-worktree-borrar <clave>` (borra las copias de todos los repos).
+
+Registra cada evento con `$W "$E" log`.
+
+### Encargo del coder (texto que le pasas)
+
+Clave y título; `<REPO>` (dónde empezar), rama y `<BASE>`; descripción y criterio de aceptación;
+la lista **`tarea.adjuntos`** (rutas completas); si es bug-fix, el `Feedback de QA`, las notas
+anteriores y **todos** los repos de la tarea (`tarea.repos`). En un workspace, además: la ruta de
+`$W`, la de `$E` y **la lista de repos del workspace con su rama base** (los `REPO.*` de
+`autopilot.env`), para que pueda seguir en otro repo con `$W "$E" rama <clave> nueva --repo <carpeta>`
+sin detenerse. Pídele que termine con su formato `NOTAS DEL DESARROLLADOR` + `RESULTADO`.
+
+### Encargo del QA
+
+Clave y título; rama e intento; **cada worktree con su repo y su rama base** (lo que devuelve
+`qa-worktree`);
+descripción y criterio; las **`Notas del desarrollador`** (`tarea.notas_dev`); `tarea.adjuntos`.
+Pídele que termine con su formato `REPORTE DE QA` + `VEREDICTO`.
+
+### Adjuntos (capturas y videos)
+
+`tarea.adjuntos` trae las rutas absolutas de las imágenes de la tarea: capturas incrustadas en
+Azure, imágenes adjuntas y **fotogramas de los videos** (`<video>.frames/fNN.png`, en orden
+temporal). Viven en `.workitems/adjuntos/<clave>/`. `tarea.videos` lista los videos originales:
+ningún modelo los ve directamente, por eso se extraen fotogramas. Si hay videos pero no
+fotogramas, falta ffmpeg: dilo en el resumen (`azure-sync.py --fotogramas` los genera después).
 
 ## La máquina de estados
 
@@ -152,52 +228,50 @@ new ──> in-progress ──> qa ──> validando ──┬──> done
 | Carpeta | Significado | Quién actúa |
 |---|---|---|
 | `new` | Pendiente | — |
-| `in-progress` | El worker está trabajando. Máximo 1. | `autopilot-worker` |
+| `in-progress` | El coder está trabajando. Máximo 1 (puesto coder). | `autopilot-worker` |
 | `qa` | El worker terminó y commiteó. Cola de certificación. | — |
-| `validando` | El reviewer está examinando. Máximo 1. | `qa-reviewer` |
+| `validando` | El QA está certificando. Máximo 1 (puesto qa), en paralelo con el coder. | `qa-reviewer` |
 | `bug-fix` | QA falló. Hay que corregir. **Se toma antes que cualquier otra cosa.** | `autopilot-worker` |
 | `stopped` | No se pudo. Requiere humano, con motivo escrito. | — |
 | `done` | **Certificado por QA.** No significa mergeado: el merge lo hace el humano. | — |
 
-## Las 3 acciones que puede devolver el watcher
+## Qué devuelve el watcher
 
-| accion | Qué hacer |
-|---|---|
-| `desarrollar-bugfix` | `rama existente`, lanzar `autopilot-worker` con el `Feedback de QA`. Estado: `in-progress`. |
-| `desarrollar` | `rama nueva`, lanzar `autopilot-worker` con la tarea. Estado: `in-progress`. |
-| `certificar` | Lanzar `qa-reviewer` con los criterios. Estado: `validando`, e `intento` +1. |
+```json
+{"acciones":   [{"puesto": "coder", "accion": "desarrollar|desarrollar-bugfix", "tarea": {…}},
+                {"puesto": "qa",    "accion": "certificar",                     "tarea": {…}}],
+ "terminadas": [{"puesto": "coder|qa", "tarea": {…}, "sesion": "ses_…", "outcome": "succeeded"}],
+ "ocupados":   {"coder": "bug-37271", "qa": null}, "cola": {…}, "avisos": […]}
+```
 
-Prioridad de selección en el watcher: `bug-fix` > `qa` > `new` (por prioridad, luego número).
+`acciones` solo trae puestos libres. `terminadas` solo aplica a OpenCode. Cada `tarea` trae
+`repo_path` (`<REPO>`), `base` (`<BASE>`), `adjuntos`, `notas_dev`, `reporte_qa`, `feedback`.
+Prioridad del coder: `bug-fix` > `new` (por prioridad, luego número).
 
 ## El ciclo de certificación
 
-1. Hay una tarea en `qa` y el watcher devuelve `certificar`
-2. `wi.sh certificar <clave> <intento+1>`
-3. Lanza `qa-reviewer` con la tarea, sus criterios, `<REPO>`, la rama, `<BASE>` y el número de
-   intento. El reviewer compara con `git -C <REPO> diff <BASE>...<clave>`.
-4. Lee el veredicto:
-   - `APROBADO` → `wi.sh aprobar <clave>` (va a `done`)
-   - `RECHAZADO` → si `intento >= 3` → `wi.sh stopped <clave> "<historial de los intentos>"`
-     → si no → `wi.sh rechazar <clave> "<motivos>"` (va a `bug-fix`)
-5. En `bug-fix`, el watcher devuelve `desarrollar-bugfix`. El worker arregla SOLO el feedback,
-   en la misma rama.
-6. Vuelve al paso 1. Se repite hasta 3 intentos.
+`qa` → (evento A) `validando` + worktree → (evento C) `done`, o `bug-fix` con el feedback →
+el coder corrige **solo** el feedback en la misma rama → `qa` otra vez. Hasta 3 intentos; al
+tercer rechazo, `stopped` con el historial.
 
 ## Los dos agentes
 
-**`autopilot-worker`** — desarrolla. Puede editar y commitear en la rama de la tarea.
-Le bloquean `git push`, `git merge`, `git pull`, `git rebase`, cambiar/crear/borrar ramas y `reset --hard`.
+**`autopilot-worker`** (coder) — desarrolla en `<REPO>`, en la rama de la tarea, y deja sus
+**notas del desarrollador**. Le bloquean `git push`, `git merge`, `git pull`, `git rebase`,
+cambiar/crear/borrar ramas y `reset --hard`.
 
-**`qa-reviewer`** — certifica. **No puede editar, commitear ni cambiar de rama.**
+**`qa-reviewer`** (QA) — certifica en **su propia copia de trabajo** (`git worktree` con HEAD en
+la punta de la rama, en `~/.cache/autopilot-kit/qa/`), así puede compilar, correr tests o la app
+sin tocar el repo donde trabaja el coder. **No puede editar código, commitear ni cambiar de rama.**
+Entrega un **reporte de QA**: criterios, qué probó, cómo verificarlo manualmente de punta a punta
+y puntos a tener en cuenta.
 
 Los bloqueos son reales, no instrucciones: en OpenCode son permisos `deny` del agente; en
-Claude Code, un hook `PreToolUse` (`$K/git-guard.sh`) que cancela el comando. En el proyecto,
-`install.sh --init` además prohíbe push/merge al agente principal (el orquestador).
+Claude Code, un hook `PreToolUse` (`$K/git-guard.sh`) que cancela el comando. `/autopilot-init`
+además prohíbe push/merge al agente principal.
 
 Ninguno de los dos subagentes usa el MCP de Azure DevOps: si hay que escribir en Azure, lo hace
 el orquestador.
-Contrasta el diff contra cada punto del criterio de aceptación, uno por uno.
-Debe marcar `NO VERIFICABLE` lo que no pueda comprobar, en vez de aprobarlo.
 
 ## Log de actividad
 
@@ -213,7 +287,9 @@ Debe marcar `NO VERIFICABLE` lo que no pueda comprobar, en vez de aprobarlo.
 - `git push` o `git merge`. **El merge lo hace el humano, siempre.**
 - Crear una rama desde otra que no sea `<BASE>`, o con otro nombre que `task-<n>`/`bug-<n>`.
 - Trabajar en `<BASE>` directamente.
-- Procesar más de una tarea a la vez.
+- Tener más de una tarea por puesto (dos en `in-progress` o dos en `validando`).
+- Lanzar un segundo watcher si ya hay uno corriendo.
+- Relanzar el watcher con `--inicio` fuera del arranque: marcaría huérfana la tarea del otro puesto.
 - Marcar `qa` sin commits verificables en la rama.
 - Marcar `stopped` sin escribir el motivo.
 - Editar o mover los `.md` del board sin `wi.sh`.
