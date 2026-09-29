@@ -23,6 +23,7 @@ NADA SE QUEDA COLGADO NI CORRIENDO:
 - Un vigilante mata los procesos que pasan HUNG_MINUTES sin usar CPU y los que quedan vivos al terminar tu tarea. Si un comando tuyo termina de golpe "terminado" o con error sin explicacion, probablemente se colgo: revisa por que (espera infinita, animacion, recurso que no responde), corrigelo y vuelve a intentar con un tiempo maximo; no lo relances igual.
 
 REGLAS INVIOLABLES:
+0. PRIMERO lee COMPLETO el archivo de la tarea (su ruta te la da el orquestador; es un .md): descripcion, criterio de aceptacion (en los bugs suele venir como pasos para reproducir + resultado actual + resultado esperado), adjuntos, notas y feedback. Es la fuente de verdad: si el encargo resume algo distinto, manda el archivo. El RESULTADO ESPERADO es lo que hay que cumplir.
 1. Trabaja SOLO la tarea recibida. Nada más.
 2. Trabajas en TU COPIA DE TRABAJO (worktree) del repo principal, que te indica el orquestador (ruta en `~/.cache/autopilot-kit/coder/<repo>-<clave>`): haz `cd <esa ruta>` antes de todo. Ahi ya estas en la rama de la tarea (task-<numero> o bug-<numero>), creada desde la rama base de ese repo. NUNCA trabajes en la copia principal del repo (es la del humano) ni cambies de rama. No crees otras ramas, no hagas rebase ni borres ramas.
    OTRO REPO DEL WORKSPACE: si la correccion (o parte de ella) esta en otro repo del workspace, NO TE DETENGAS, no reasignes ni pidas otro work item: hazlo tu. Abre la MISMA rama en ese repo con

@@ -320,7 +320,10 @@ def descargar_adjuntos(item, clave, imagenes):
     for n, (url, nombre, origen) in enumerate(lista, 1):
         nombre = nombre_seguro(nombre)
         destino = os.path.join(carpeta, "%02d-%s" % (n, nombre))
-        ok, info = descargar(url, destino)
+        if os.path.isfile(destino) and os.path.getsize(destino) > 0:
+            ok, info = True, ""  # ya descargado (p. ej. al refrescar): no se vuelve a bajar
+        else:
+            ok, info = descargar(url, destino)
         if not ok:
             lineas.append("- `%s` — %s" % (nombre, info))
             fallidos.append({"archivo": nombre, "motivo": info})
@@ -459,6 +462,41 @@ def one_pass(dry_run=False):
     return result
 
 
+def do_refrescar(claves):
+    """Vuelve a traer de Azure la descripcion, el criterio y los adjuntos de tareas YA importadas y
+    reescribe solo esas secciones con el formato actual (listas, pasos, imagenes en su lugar).
+    No cambia el estado ni toca notas, reporte, feedback ni resultado. Sin claves: todas las de Azure."""
+    hechas, errores = [], []
+    for t in BOARD.todas():
+        origen = ""
+        try:
+            origen = wi.parsear(open(t["archivo"], encoding="utf-8").read())[0].get("origen", "")
+        except OSError:
+            pass
+        if not origen.startswith("azure:") or (claves and t["id"] not in claves and t["numero"] not in claves):
+            continue
+        proyecto = origen.split(":", 1)[1]
+        try:
+            item = fetch_detail(proyecto, int(t["numero"]))
+            imagenes = []
+            desc, crit = textos(item["fields"], imagenes)
+            por_img, seccion, fallidos = descargar_adjuntos(item, t["id"], imagenes)
+            BOARD.modificar(t["id"], secs_set={
+                "Descripción": poner_imagenes(desc, por_img) or "-",
+                "Criterio de aceptación": poner_imagenes(crit, por_img) or "_Sin criterio en Azure._",
+                "Adjuntos": seccion or "_Ninguno. Podés dejar imágenes en adjuntos/%s/._" % t["id"]})
+            hechas.append({"tarea": t["id"], "estado": t["estado"], "adjuntos_fallidos": fallidos})
+        except SystemExit:
+            raise
+        except Exception as e:
+            errores.append({"tarea": t["id"], "error": str(e)[:200]})
+    if hechas:
+        BOARD.log("azure-sync refresco tareas", "sistema", "nota", ", ".join(h["tarea"] for h in hechas[:5]), "-", "-",
+                  "Descripcion, criterio y adjuntos actualizados desde Azure: %d tarea(s)" % len(hechas))
+    print(json.dumps({"action": "refrescar", "refrescadas": hechas, "errores": errores}, ensure_ascii=False, indent=2))
+    return 0 if not errores else 1
+
+
 def do_fotogramas():
     """Extrae fotogramas de los videos ya descargados que todavia no los tienen (tras instalar ffmpeg).
     Solo escribe en adjuntos/<clave>/<video>.frames/: no toca los .md (el agente los ve igual)."""
@@ -495,6 +533,8 @@ def main():
     ap.add_argument("--watch", type=int, metavar="SEG", help="bucle cada N segundos")
     ap.add_argument("--dry-run", action="store_true", help="muestra que haria sin escribir")
     ap.add_argument("--status", action="store_true", help="solo diagnostico")
+    ap.add_argument("--refrescar", nargs="*", metavar="CLAVE",
+                    help="re-trae descripcion/criterio/adjuntos de tareas ya importadas (sin claves: todas)")
     ap.add_argument("--fotogramas", action="store_true",
                     help="extrae fotogramas de videos ya descargados (tras instalar ffmpeg)")
     args = ap.parse_args()
@@ -530,6 +570,8 @@ def main():
 
     if args.status:
         return do_status()
+    if args.refrescar is not None:
+        return do_refrescar([c.lower() for c in args.refrescar])
     if args.fotogramas:
         return do_fotogramas()
 

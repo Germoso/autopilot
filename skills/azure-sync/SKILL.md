@@ -53,6 +53,7 @@ python3 "$K/azure-sync.py" --config "$P/azure-sync.env" --dry-run   # que haria,
 python3 "$K/azure-sync.py" --config "$P/azure-sync.env"             # una pasada
 python3 "$K/azure-sync.py" --config "$P/azure-sync.env" --status    # solo diagnostico
 python3 "$K/azure-sync.py" --config "$P/azure-sync.env" --watch 60  # bucle continuo
+python3 "$K/azure-sync.py" --config "$P/azure-sync.env" --refrescar [clave...]  # re-trae descripcion/criterio/adjuntos de tareas ya importadas (no cambia estado ni notas)
 ```
 
 ### azure-sync.py vs el MCP de Azure DevOps

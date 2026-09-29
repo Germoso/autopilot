@@ -256,9 +256,17 @@ Relanza el watcher después.
 
 Registra cada evento con `$W "$E" log`.
 
+### Regla de los encargos: la tarea completa, nunca un resumen
+
+El `.md` de la tarea (`tarea.archivo`) es la **fuente de verdad**. En todo encargo:
+- incluye **la ruta de ese archivo** y pídele al agente que lo lea **completo** antes de empezar
+  (descripción, criterio con pasos para reproducir y resultado esperado, adjuntos, notas, feedback);
+- si además copias la descripción o el criterio, cópialos **textuales**, sin resumir ni reescribir.
+  Un criterio resumido hace que el coder corrija otra cosa o que el QA certifique contra algo distinto.
+
 ### Encargo del coder (texto que le pasas)
 
-Clave y título; **la ruta de su worktree** (lo que devolvió `wi.sh rama`: ahí trabaja, nunca en
+**La ruta del archivo de la tarea** (`tarea.archivo`: léelo completo); clave y título; **la ruta de su worktree** (lo que devolvió `wi.sh rama`: ahí trabaja, nunca en
 `<REPO>`), `<REPO>`, rama y `<BASE>`; descripción y criterio de aceptación;
 la lista **`tarea.adjuntos`** (rutas completas); si es bug-fix, el `Feedback de QA`, las notas
 anteriores y **todos** los repos de la tarea (`tarea.repos`). En un workspace, además: la ruta de
@@ -268,9 +276,9 @@ sin detenerse. Pídele que termine con su formato `NOTAS DEL DESARROLLADOR` + `R
 
 ### Encargo del QA
 
-Clave y título; rama e intento; **cada worktree con su repo y su rama base** (lo que devuelve
-`qa-worktree`);
-descripción y criterio; las **`Notas del desarrollador`** (`tarea.notas_dev`); `tarea.adjuntos`.
+**La ruta del archivo de la tarea** (`tarea.archivo`: léelo completo); clave y título; rama e
+intento; **cada worktree con su repo y su rama base** (lo que devuelve `qa-worktree`);
+descripción y criterio **textuales**; las **`Notas del desarrollador`** (`tarea.notas_dev`); `tarea.adjuntos`.
 Pídele que termine con su formato `REPORTE DE QA` + `VEREDICTO`.
 
 ### Imágenes en el `.md`
