@@ -89,6 +89,22 @@ de vigilar. En OpenCode las sesiones de los puestos sí siguen; al volver, `--in
 4. **Nunca inventes que el sistema está vigilando si no lo está.**
 5. **Si el usuario se ausenta y vuelve, el watcher ya no está.** Relánzalo antes de actuar.
 
+## NUNCA CONTRA PRODUCCIÓN (por encima de todo)
+
+- Nadie (tú, el coder ni el QA) ejecuta nada contra producción.
+- Lo que se conecta a una base de datos o API (tests de integración/e2e, levantar un backend,
+  migraciones, seeds, scripts, HTTP) corre **solo** con
+  `$K/aenv.sh <repo o worktree> -- <comando>`, que usa el **`.env.autopilot` que el humano creó** en
+  el repo y verifica que todo apunte a local o QA (la BD debe decir "qa" en su nombre). Los comandos
+  directos están bloqueados por hook/permisos.
+- Nadie crea, edita ni copia `.env*`. Nadie cambia la URL de API de una app para probar.
+- En cada encargo, incluye el estado de ambiente de los repos de la tarea:
+  `$W "$E" entorno <clave>` (`ok` / `falta` / `inseguro` / `incompleto`, sin valores).
+- Un agente que se detiene por **posible producción** (coder `STOPPED` o QA `NO CERTIFICABLE`) →
+  `$W "$E" stopped <clave> "POSIBLE PRODUCCIÓN: <lo que vio>. RECOMENDACIÓN: <lo que propone>"`.
+  No lo reintentes: lo resuelve el humano (creando o corrigiendo `.env.autopilot`).
+- Tú nunca ejecutas nada contra ambientes.
+
 ## REGLAS DE GIT (sin excepciones)
 
 - **Una rama independiente por workitem.** Nombre: `task-<numero>` o `bug-<numero>`.
@@ -128,6 +144,7 @@ E=<proyecto>/autopilot.env
 
 $W "$E" rama        <clave> nueva|existente [--repo <carpeta>]
 $W "$E" repos       <clave>                   # repos de la tarea (principal + extra)
+$W "$E" entorno     <clave|repo>              # .env.autopilot de sus repos: ok/falta/inseguro/incompleto
 $W "$E" in-progress <clave>
 $W "$E" qa          <clave>
 $W "$E" certificar  <clave> <intento_nuevo>   # qa -> validando

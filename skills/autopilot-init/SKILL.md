@@ -40,7 +40,9 @@ I=~/.local/share/autopilot-kit/init.py
    Si hay avisos, explica qué hacer con cada uno (rama inexistente, cambios sin commitear, falta
    ffmpeg para ver los videos de los bugs, **faltan herramientas de un repo** — p. ej. `fvm` con la
    versión de `.fvmrc`, `flutter`, `node` —: sin ellas el QA no puede certificar las tareas de ese
-   repo y quedarán en `stopped`; di qué instalar).
+   repo y quedarán en `stopped`; di qué instalar; **falta o no es válido `.env.autopilot`** en
+   un repo con `.env`: explica que lo crea el humano copiando `.env` y apuntando BD y URLs a QA/local,
+   y que sin él no se ejecuta nada contra BD/API en ese repo).
 
 6. **Siguiente paso**, en una línea:
    - Azure: el sprint está en `@current` (sprint actual del equipo `<Proyecto> Team`). El PAT se

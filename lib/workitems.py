@@ -209,6 +209,14 @@ class Board:
             elif not os.path.isdir(r["path"]):
                 out.append("%s: no existe la carpeta %s" % (etiqueta, r["path"]))
             else:
+                import entorno
+                e = entorno.validar(r["path"])
+                if e["destinos_en_env_real"] and e["estado"] != "ok":
+                    out.append("%s: %s .env.autopilot (%s). Nada que se conecte a BD/API se va a ejecutar ahi: "
+                               "%s" % (n or os.path.basename(r["path"]),
+                                       {"falta": "no tiene", "inseguro": "no es seguro su",
+                                        "incompleto": "esta incompleto su"}[e["estado"]], e["estado"],
+                                       e.get("recomendacion", "")))
                 faltan = herramientas_faltantes(r["path"])
                 if faltan:
                     out.append("%s: faltan herramientas para compilar y probar: %s. El QA no va a poder "
@@ -661,7 +669,9 @@ USO = """uso: wi.sh <env> <comando> [args]
   reqa       <clave>                     -> qa, Intento a 0 (conserva el historial)
   add-task   <task|bug> <numero> <prioridad> <titulo> <descripcion> <criterio> [repo]
                                          (en un workspace, repo es obligatorio: la carpeta del repo)
-  check                                  avisos de configuracion (ramas base vacias, repos faltantes)
+  check                                  avisos de configuracion (ramas base vacias, repos faltantes,
+                                         herramientas, .env.autopilot)
+  entorno    <repo|clave>                valida el .env.autopilot (local/QA) sin mostrar valores
   log        <evento> <origen> <tipo> <tarea> <rama> <commit> <detalle>
   query      [estado]                    JSON con las tareas
   plan       [--recuperar]               lo que usa el watcher (--recuperar: solo al iniciar)
@@ -700,6 +710,19 @@ def main(argv):
         b.init()
         print(b.dir)
         return 0
+    if cmd == "entorno":
+        need(1)
+        import entorno
+        objetivo = a[0]
+        if re.match(r"^(task|bug)-\d+$", objetivo.lower()):
+            objetivo = [r["path"] for r in b.repos_de_tarea(b.leer(objetivo)[2])]
+        elif objetivo in b.cfg["repos"]:
+            objetivo = [b.cfg["repos"][objetivo]["path"]]
+        else:
+            objetivo = [objetivo]
+        res = [entorno.validar(x) for x in objetivo]
+        print(json.dumps(res if len(res) > 1 else res[0], ensure_ascii=False, indent=2))
+        return 0 if all(x["estado"] == "ok" for x in res) else 3
     if cmd == "check":
         for a_ in b.avisos():
             print("AVISO: " + a_)

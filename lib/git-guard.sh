@@ -83,6 +83,71 @@ def motivo(argv):
             return "git switch (cambiar de rama)"
     return None
 
+# ---- nunca contra produccion: lo que se conecta a un ambiente va SOLO con aenv.sh
+NPM_SEGUROS = {"build", "lint", "format", "prettier", "analyze", "typecheck", "type-check", "tsc", "check"}
+NPX_SEGUROS = {"tsc", "eslint", "prettier", "biome", "stylelint"}
+EJECUTORES = {"node", "nodejs", "nest", "jest", "vitest", "mocha", "ts-node", "tsx", "prisma", "typeorm",
+              "sequelize", "sequelize-cli", "knex", "bun", "deno", "nodemon", "pm2", "artisan", "rails"}
+
+
+def url_no_segura(a):
+    return re.match(r"^https?://", a) and not re.search(r"localhost|127\.0\.0\.1|0\.0\.0\.0|qa", a, re.I)
+
+
+def ambiente(argv):
+    """Motivo si el comando puede conectarse a un ambiente sin pasar por aenv.sh; si no, None."""
+    while argv and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", argv[0]):
+        argv = argv[1:]
+    for w in ("env", "command", "sudo", "exec", "nohup", "time", "timeout"):
+        if argv and argv[0] == w:
+            argv = argv[1:]
+            while argv and (argv[0].startswith("-") or re.match(r"^\d+[smh]?$", argv[0])):
+                argv = argv[1:]
+    if not argv:
+        return None
+    prog = os.path.basename(argv[0])
+    if prog == "aenv.sh":
+        return None                                   # envuelto: aenv.sh valida .env.autopilot
+    if re.search(r"(^|/)migrat|(^|/)seed", " ".join(argv[:2]), re.I):
+        return "migraciones o seeds"
+    if prog in ("npm", "yarn", "pnpm"):
+        sub = argv[1] if len(argv) > 1 else ""
+        if sub in ("run", "run-script") and len(argv) > 2:
+            return None if argv[2].split(":")[0] in NPM_SEGUROS else "%s run %s" % (prog, argv[2])
+        if sub in ("start", "test", "t", "exec", "x", "dlx", "restart", "stop") or (prog == "yarn" and sub not in (
+                "", "install", "add", "remove", "build", "lint", "--version", "-v")):
+            return "%s %s" % (prog, sub)
+        return None
+    if prog in ("npx", "pnpx"):
+        return None if len(argv) > 1 and argv[1] in NPX_SEGUROS else "npx %s" % (argv[1] if len(argv) > 1 else "")
+    if prog in EJECUTORES:
+        return prog
+    if prog == "fvm" and len(argv) > 1 and argv[1] == "flutter":
+        argv, prog = argv[1:], "flutter"
+    if prog in ("flutter", "dart"):
+        sub = argv[1] if len(argv) > 1 else ""
+        if sub in ("run", "drive", "attach"):
+            return "%s %s" % (prog, sub)
+        if sub == "test" and any("integration_test" in x for x in argv[2:]):
+            return "flutter test integration_test"
+        return None
+    if prog in ("curl", "wget", "http", "https", "xh"):
+        malas = [a for a in argv[1:] if url_no_segura(a)]
+        return "%s a una URL que no es local ni QA" % prog if malas else None
+    return None
+
+
+def env_escritura(argv, crudo):
+    """Motivo si el comando crea, copia, mueve, edita o borra un archivo .env* (salvo .example)."""
+    es_env = lambda x: re.match(r"^\.env", os.path.basename(x)) and not re.search(r"\.(example|sample|template)$", x)
+    if argv and os.path.basename(argv[0]) in ("cp", "mv", "ln", "rm", "sed", "tee", "truncate", "install", "rsync") \
+            and any(es_env(a) for a in argv[1:] if not a.startswith("-")):
+        return "modificar %s" % next(a for a in argv[1:] if es_env(a))
+    if re.search(r">>?\s*[^\s;&|]*\.env(?!\.(example|sample|template))", crudo):
+        return "escribir un archivo .env con una redireccion"
+    return None
+
+
 def revisar(c, prof=0):
     for argv in partes(c):
         # bash -c "..." / sh -c / eval "...": se revisa lo de adentro
@@ -96,12 +161,26 @@ def revisar(c, prof=0):
             if m: return m
         m = motivo(argv)
         if m: return m
+        if mode in ("coder", "qa"):
+            e = env_escritura(argv, c)
+            if e:
+                return ("`%s`: los archivos .env* los define el humano (.env.autopilot); ningun agente los crea, "
+                        "copia ni edita. Si hace falta otro ambiente, deten la tarea y recomienda que hacer (aenv.sh)" % e)
+        amb = ambiente(argv)
+        if amb:
+            return ("`%s` puede conectarse a un ambiente (BD/API). Nunca contra produccion: ejecutalo con "
+                    "`~/.local/share/autopilot-kit/aenv.sh <repo o worktree> -- <comando>`, que solo corre con el "
+                    ".env.autopilot que creo el humano apuntando a local/QA. Si aenv.sh no te deja, no insistas: "
+                    "deten la tarea y recomienda que hacer" % amb)
     return None
 
 m = revisar(cmd)
 if m:
-    print("BLOQUEADO por el autopilot: %s no esta permitido (modo %s). "
-          "Nunca push ni merge; el merge lo hace el humano." % (m, mode), file=sys.stderr)
+    if "aenv.sh" in m:
+        print("BLOQUEADO por el autopilot: " + m, file=sys.stderr)
+    else:
+        print("BLOQUEADO por el autopilot: %s no esta permitido (modo %s). "
+              "Nunca push ni merge; el merge lo hace el humano." % (m, mode), file=sys.stderr)
     sys.exit(2)
 sys.exit(0)
 '
