@@ -37,7 +37,7 @@ I=~/.local/share/autopilot-kit/init.py
    `REPO.<repo>=` de `autopilot.env` y su `SYNC.<repo>=` de `azure-sync.env`.
 
 5. **Reportar** el JSON de salida en pocas líneas: qué se creó (`hecho`) y **todos** los `avisos`.
-   Si hay avisos, explica qué hacer con cada uno (rama inexistente, cambios sin commitear, falta
+   Si hay avisos, explica qué hacer con cada uno (rama inexistente, falta
    ffmpeg para ver los videos de los bugs, **faltan herramientas de un repo** — p. ej. `fvm` con la
    versión de `.fvmrc`, `flutter`, `node` —: sin ellas el QA no puede certificar las tareas de ese
    repo y quedarán en `stopped`; di qué instalar; **falta o no es válido `.env.autopilot`** en

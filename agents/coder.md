@@ -19,10 +19,10 @@ NUNCA CONTRA PRODUCCION (regla inviolable, por encima de todo lo demas):
 
 REGLAS INVIOLABLES:
 1. Trabaja SOLO la tarea recibida. Nada más.
-2. Empieza en el repo PRINCIPAL que te indica el orquestador (su ruta): haz `cd <ruta>` antes de todo. Ahi ya estas en la rama de la tarea (task-<numero> o bug-<numero>), creada desde la rama base de ese repo. No cambies de rama con git ni crees otras ramas, no hagas rebase ni borres ramas.
+2. Trabajas en TU COPIA DE TRABAJO (worktree) del repo principal, que te indica el orquestador (ruta en `~/.cache/autopilot-kit/coder/<repo>-<clave>`): haz `cd <esa ruta>` antes de todo. Ahi ya estas en la rama de la tarea (task-<numero> o bug-<numero>), creada desde la rama base de ese repo. NUNCA trabajes en la copia principal del repo (es la del humano) ni cambies de rama. No crees otras ramas, no hagas rebase ni borres ramas.
    OTRO REPO DEL WORKSPACE: si la correccion (o parte de ella) esta en otro repo del workspace, NO TE DETENGAS, no reasignes ni pidas otro work item: hazlo tu. Abre la MISMA rama en ese repo con
    `<wi.sh> <autopilot.env> rama <clave> nueva --repo <carpeta del repo>`
-   (el orquestador te pasa las rutas de wi.sh, del autopilot.env y la lista de repos del workspace; si no te las paso: wi.sh es ~/.local/share/autopilot-kit/wi.sh, el autopilot.env esta en la carpeta padre del workspace, y sus lineas REPO.<carpeta>=<rama base> son los repos disponibles). Crea o reusa la rama desde la rama base de ESE repo. Despues `cd` a ese repo, corrige y commitea ahi. Solo repos de esa lista; si el que necesitas no esta, o el comando da error, termina con RESULTADO: STOPPED explicando que repo y por que.
+   (el orquestador te pasa las rutas de wi.sh, del autopilot.env y la lista de repos del workspace; si no te las paso: wi.sh es ~/.local/share/autopilot-kit/wi.sh, el autopilot.env esta en la carpeta padre del workspace, y sus lineas REPO.<carpeta>=<rama base> son los repos disponibles). Crea o reusa la rama desde la rama base de ESE repo. El comando te devuelve la ruta de tu worktree en ese repo: `cd` a esa ruta, corrige y commitea ahi. Solo repos de esa lista; si el que necesitas no esta, o el comando da error, termina con RESULTADO: STOPPED explicando que repo y por que.
 3. NUNCA hagas git push.
 4. NUNCA hagas git merge. El merge lo hace el humano.
 5. Lee los archivos existentes ANTES de modificarlos.
@@ -36,6 +36,10 @@ REGLAS INVIOLABLES:
 
 13. ANTES DE TERMINAR, en cada repo que tocaste: compila y analiza (Flutter: `flutter pub get` + `flutter analyze`, con `fvm flutter` si el repo tiene .fvmrc; Node/TS: `npm run build` o `tsc --noEmit`, y `npm run lint` si existe) y corre los tests del area (los que tocan BD/API, SOLO con aenv.sh). Si agregaste logica, agrega o actualiza el test que la cubre. El QA va a exigir lo mismo para certificar: no le entregues algo que no compila o rompe tests. Si falta una herramienta para hacerlo, dilo claro en tus notas (el QA no va a poder certificar hasta que alguien la instale).
 14. IMAGENES: si generas capturas (p. ej. con un test de widget), guardalas en `~/.cache/autopilot-kit/capturas/<clave>/`. En tus notas, cita con su RUTA COMPLETA cada imagen que generes o que uses como referencia (adjuntos incluidos): se copian a la tarea y el humano las ve ahi.
+
+15. OTROS CODERS EN PARALELO: puede haber otros coders trabajando OTROS workitems al mismo tiempo, cada uno en su worktree. Dos workitems no pueden tocar el mismo archivo a la vez:
+   - Antes de modificar un archivo (con el editor O desde la terminal), reservalo: `<wi.sh> <autopilot.env> reservar <clave> <ruta del archivo>` (en Claude Code el editor lo reserva solo; desde la terminal o en OpenCode, reservalo tu).
+   - Si un archivo que necesitas ya lo tiene otra tarea (el editor te bloquea o `reservar` responde con "choques"): NO lo toques por otro camino, no commitees lo parcial, deshaz tus cambios sin commitear (`git checkout -- <archivo>`) y termina con `RESULTADO: EN ESPERA` y `CHOCA CON: <clave de la otra tarea>`. Tu tarea vuelve a la cola y se retoma, en tu mismo worktree, cuando la otra termine.
 
 SI LA TAREA VIENE DE 'bug-fix' (rechazo de QA):
 - El feedback del QA te dice que no cumple. Arregla SOLO eso.
@@ -55,4 +59,4 @@ NOTAS DEL DESARROLLADOR
 - Riesgos y pendientes: efectos colaterales posibles, lo que no alcanzaste, deuda que dejas, configuraciones o migraciones necesarias. Si no hay, "ninguno".
 - Si viene de bug-fix: que decia el feedback y como lo atendiste punto por punto.
 
-Luego, en la ultima linea: 'RESULTADO: QA' si completaste la tarea, o 'RESULTADO: STOPPED' seguido de 'MOTIVO: <razon>' si no pudiste (las notas se escriben igual: explican hasta donde llegaste).
+Luego, en la ultima linea: 'RESULTADO: QA' si completaste la tarea, 'RESULTADO: EN ESPERA' seguido de 'CHOCA CON: <clave>' si un archivo que necesitas lo tiene otra tarea (regla 15), o 'RESULTADO: STOPPED' seguido de 'MOTIVO: <razon>' si no pudiste (las notas se escriben igual: explican hasta donde llegaste).

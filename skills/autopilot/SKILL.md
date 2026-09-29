@@ -10,11 +10,17 @@ principal (orquestador), delegas en **dos puestos que trabajan en paralelo**:
 
 | Puesto | Agente | Toma de | Estado mientras trabaja | Máximo |
 |---|---|---|---|---|
-| **coder** | `coder` | `bug-fix` > `new` | `in-progress` | **1** |
-| **qa** | `qa-reviewer` | `qa` | `validando` | **1** |
+| **coder** | `coder` | `bug-fix` > `new` | `in-progress` | `MAX_CODERS` |
+| **qa** | `qa-reviewer` | `qa` | `validando` | `MAX_QA` |
 
-Puede haber a la vez una tarea en `in-progress` y otra en `validando`, nunca dos en el mismo
-puesto (`wi.sh` lo impide). En un workspace el límite es global, no por repo.
+**Capacidad** (en `autopilot.env`): `PARALLEL=false` (defecto) → 1 coder y 1 QA. `PARALLEL=true` →
+hasta `MAX_CODERS` y `MAX_QA` (defecto 2 y 2) a la vez, **cada uno con un workitem distinto**.
+`wi.sh` rechaza superar el máximo. En un workspace el límite es global, no por repo.
+
+**Cada coder trabaja en su propia copia** (`git worktree` en `~/.cache/autopilot-kit/coder/<repo>-<clave>`),
+con su rama. La copia principal del repo (la del humano) nunca cambia de rama. Dos workitems en
+paralelo **no tocan el mismo archivo**: el primero que lo edita lo reserva (`wi.sh reservar`, y en
+Claude Code automáticamente al editar); el otro se pone **en espera** hasta que el primero termine.
 
 ## Cuándo usar esta skill
 
@@ -143,7 +149,11 @@ W=~/.local/share/autopilot-kit/wi.sh
 E=<proyecto>/autopilot.env
 
 $W "$E" rama        <clave> nueva|existente [--repo <carpeta>]
-$W "$E" repos       <clave>                   # repos de la tarea (principal + extra)
+$W "$E" repos       <clave>                   # repos de la tarea (principal + extra) y worktrees del coder
+$W "$E" reservar    <clave> <archivo>...      # reserva archivos para la tarea (coder)
+$W "$E" solapes     <clave>                   # archivos que comparte con otras tareas activas
+$W "$E" esperar     <clave> <otra>            # choco con <otra>: vuelve a la cola hasta que termine
+$W "$E" coder-worktree-borrar <clave>
 $W "$E" entorno     <clave|repo>              # .env.autopilot de sus repos: ok/falta/inseguro/incompleto
 $W "$E" in-progress <clave>
 $W "$E" qa          <clave>
@@ -172,15 +182,17 @@ Hay tres eventos. Atiende cada uno y **relanza el watcher si no está corriendo*
 Para **cada** acción, primero **ocupa el puesto** y después lanza el subagente (si relanzas el
 watcher antes de ocupar el puesto, te devuelve la misma acción):
 
-- `desarrollar` (coder) → `$W "$E" rama <clave> nueva` → `$W "$E" in-progress <clave>` →
+- `desarrollar` (coder) → `$W "$E" in-progress <clave>` (ocupa un lugar; si el puesto está lleno,
+  no sigas con esa) → `$W "$E" rama <clave> nueva` (devuelve la ruta del **worktree** del coder) →
   lanza `coder` con el **encargo del coder**.
-- `desarrollar-bugfix` (coder) → `$W "$E" rama <clave> existente` → `$W "$E" in-progress <clave>`
+- `desarrollar-bugfix` (coder) → `$W "$E" in-progress <clave>` → `$W "$E" rama <clave> existente`
   → lanza `coder` con el encargo del coder, incluido el `Feedback de QA`.
 - `certificar` (qa) → `$W "$E" certificar <clave> <intento+1>` → `$W "$E" qa-worktree <clave>`
   (devuelve **una copia de trabajo por repo** de la tarea) → lanza `qa-reviewer` con el **encargo del QA**.
 
-Si `wi.sh rama` falla, la tarea ya quedó en `stopped`: sigue con lo demás. Si vienen las dos
-acciones juntas, lanza los dos subagentes (en Claude Code, en el mismo mensaje).
+Si `wi.sh rama` falla, la tarea ya quedó en `stopped`: sigue con lo demás. Pueden venir **varias
+acciones** (varios coders y varios QA si `PARALLEL=true`): atiéndelas todas y lanza todos los
+subagentes (en Claude Code, en el mismo mensaje; en OpenCode, una sesión por tarea).
 
 ### B. Terminó el coder (aviso de Claude Code, o `terminadas` con puesto `coder` en OpenCode)
 
@@ -193,9 +205,17 @@ Antes de verificar, recarga los repos de la tarea: el coder pudo haber sumado ot
 2. `RESULTADO: QA` **y** hay commits nuevos en **al menos uno** de sus repos
    (`git -C <path> log <base>..<clave>` por cada uno) → `$W "$E" qa <clave>` +
    `$W "$E" resultado <clave> "<repo>: <rama> @ <commit>; <repo2>: ... — <resumen>"`.
-3. `RESULTADO: STOPPED`, sin commits, o dependía de algo que no está en `<BASE>` →
+3. `RESULTADO: EN ESPERA` + `CHOCA CON: <otra>` (un archivo que necesitaba lo tiene otra tarea en
+   paralelo) → `$W "$E" esperar <clave> <otra>`: vuelve a la cola, conserva su worktree, y el watcher
+   no la ofrece hasta que `<otra>` termine. No es un fallo.
+4. `RESULTADO: STOPPED`, sin commits, o dependía de algo que no está en `<BASE>` →
    `$W "$E" stopped <clave> "<motivo>"`.
-4. En OpenCode, si el `outcome` no es `succeeded` (falló o se interrumpió) → `stopped` con ese motivo.
+5. Si pasó a `qa`: `$W "$E" solapes <clave>`. Si comparte archivos con otra tarea activa, agrégalo
+   a su `resultado` ("⚠️ comparte <archivos> con <otra>: posible conflicto al mergear").
+6. En OpenCode, si el `outcome` no es `succeeded` (falló o se interrumpió) → `stopped` con ese motivo.
+
+Al pasar a `done` o `stopped`, el worktree del coder se borra solo y se liberan sus reservas (en
+`stopped` se conserva si tiene cambios sin commitear, y queda anotado).
 
 ### C. Terminó el QA (aviso, o `terminadas` con puesto `qa`)
 
@@ -218,7 +238,8 @@ Registra cada evento con `$W "$E" log`.
 
 ### Encargo del coder (texto que le pasas)
 
-Clave y título; `<REPO>` (dónde empezar), rama y `<BASE>`; descripción y criterio de aceptación;
+Clave y título; **la ruta de su worktree** (lo que devolvió `wi.sh rama`: ahí trabaja, nunca en
+`<REPO>`), `<REPO>`, rama y `<BASE>`; descripción y criterio de aceptación;
 la lista **`tarea.adjuntos`** (rutas completas); si es bug-fix, el `Feedback de QA`, las notas
 anteriores y **todos** los repos de la tarea (`tarea.repos`). En un workspace, además: la ruta de
 `$W`, la de `$E` y **la lista de repos del workspace con su rama base** (los `REPO.*` de
@@ -324,7 +345,8 @@ el orquestador.
 - `git push` o `git merge`. **El merge lo hace el humano, siempre.**
 - Crear una rama desde otra que no sea `<BASE>`, o con otro nombre que `task-<n>`/`bug-<n>`.
 - Trabajar en `<BASE>` directamente.
-- Tener más de una tarea por puesto (dos en `in-progress` o dos en `validando`).
+- Superar la capacidad de un puesto (`MAX_CODERS` en `in-progress`, `MAX_QA` en `validando`; 1 y 1 con `PARALLEL=false`).
+- Dejar que un coder trabaje en la copia principal de un repo: siempre en su worktree.
 - Lanzar un segundo watcher si ya hay uno corriendo.
 - Relanzar el watcher con `--inicio` fuera del arranque: marcaría huérfana la tarea del otro puesto.
 - Marcar `qa` sin commits verificables en la rama.

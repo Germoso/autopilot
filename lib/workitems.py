@@ -46,7 +46,8 @@ SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Notas del d
 PUESTOS = {"coder": "in-progress", "qa": "validando"}
 IMAGEN = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 VIDEO = {".mp4", ".mov", ".webm", ".avi", ".mkv", ".m4v", ".3gp"}
-CAMPOS = ["id", "tipo", "prioridad", "intento", "rama", "repo", "repos_extra", "origen", "sesion", "actualizado"]
+CAMPOS = ["id", "tipo", "prioridad", "intento", "rama", "repo", "repos_extra", "origen", "sesion", "espera",
+          "actualizado"]
 
 RE_ARCHIVO = re.compile(r"^(task|bug)-(\d+)(?:-.*)?\.md$")
 
@@ -66,6 +67,7 @@ def cargar_config(env_path=None):
       REPO.<carpeta>=<rama base>   una por repo; <carpeta> es relativa al .env
     Ambos:
       WORKITEMS_DIR default: <raiz>/.workitems. Relativo = relativo al .env.
+      PARALLEL=true|false  (default false: 1 coder + 1 QA). Con true: MAX_CODERS y MAX_QA (default 2 y 2).
     """
     vals = {}
     base = os.getcwd()
@@ -92,7 +94,14 @@ def cargar_config(env_path=None):
         raiz = absoluta(vals.get("REPO_PATH") or base)
         repos = {"": {"path": raiz, "base": vals.get("BASE_BRANCH", "").strip()}}
     wdir = absoluta(vals.get("WORKITEMS_DIR") or os.path.join(raiz, ".workitems"))
-    return {"workspace": bool(ws), "raiz": raiz, "dir": wdir, "repos": repos}
+    valor_parallel = vals.get("PARALLEL", "false").strip().lower()
+    paralelo = valor_parallel == "true"   # solo true/false; cualquier otro valor = false (y aviso)
+    entero = lambda k, d: max(1, int(vals.get(k, d))) if str(vals.get(k, d)).strip().isdigit() else d
+    capacidad = ({"coder": entero("MAX_CODERS", 2), "qa": entero("MAX_QA", 2)} if paralelo
+                 else {"coder": 1, "qa": 1})
+    return {"workspace": bool(ws), "raiz": raiz, "dir": wdir, "repos": repos,
+            "paralelo": paralelo, "capacidad": capacidad,
+            "parallel_invalido": None if valor_parallel in ("true", "false") else vals.get("PARALLEL")}
 
 
 # ----------------------------------------------------------------- util
@@ -123,6 +132,84 @@ def herramientas_faltantes(repo):
 def filecmp_iguales(a, b):
     import filecmp
     return filecmp.cmp(a, b, shallow=False)
+
+
+def cache_kit(*partes):
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    return os.path.join(base, "autopilot-kit", *partes)
+
+
+RE_WT = re.compile(r"^(?P<repo>.+)-(?P<clave>(task|bug)-\d+)$")
+
+
+def coder_wt_activo(repo, clave):
+    return os.path.isdir(cache_kit("coder", "%s-%s" % (repo, clave)))
+
+
+def reservar(repo, clave, rels):
+    """Reserva archivos (rutas relativas al repo) para una tarea. Devuelve [(archivo, otra_clave)] de
+    los que ya tiene OTRA tarea activa (su worktree de coder existe); esos no se reservan."""
+    os.makedirs(cache_kit("reservas"), exist_ok=True)
+    path = cache_kit("reservas", repo + ".json")
+    with open(path + ".lock", "w") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        try:
+            data = json.load(open(path))
+        except (OSError, ValueError):
+            data = {}
+        choques = []
+        for rel in rels:
+            rel = os.path.normpath(rel)
+            otra = data.get(rel)
+            if otra and otra != clave and coder_wt_activo(repo, otra):
+                choques.append((rel, otra))
+            else:
+                data[rel] = clave
+        escribir_atomico(path, json.dumps(data, ensure_ascii=False, indent=1))
+    return choques
+
+
+def liberar(repo, clave):
+    path = cache_kit("reservas", repo + ".json")
+    if not os.path.exists(path):
+        return 0
+    with open(path + ".lock", "w") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        try:
+            data = json.load(open(path))
+        except (OSError, ValueError):
+            data = {}
+        n = len(data)
+        data = {k: v for k, v in data.items() if v != clave}
+        escribir_atomico(path, json.dumps(data, ensure_ascii=False, indent=1))
+    return n - len(data)
+
+
+def reservas_de(repo, clave=None):
+    try:
+        data = json.load(open(cache_kit("reservas", repo + ".json")))
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in data.items() if clave is None or v == clave}
+
+
+def reservar_ruta(ruta):
+    """Para el hook: si `ruta` esta dentro del worktree de un coder, la reserva para esa tarea.
+    Devuelve None si esta bien, o el motivo del bloqueo."""
+    real = os.path.realpath(os.path.expanduser(ruta))
+    raiz = os.path.realpath(cache_kit("coder")) + os.sep
+    if not real.startswith(raiz):
+        return None
+    wt, _, rel = real[len(raiz):].partition(os.sep)
+    m = RE_WT.match(wt)
+    if not m or not rel:
+        return None
+    choques = reservar(m.group("repo"), m.group("clave"), [rel])
+    if choques:
+        return ("%s ya lo esta trabajando la tarea %s (reservado). Para no pisarse, dos tareas en paralelo no "
+                "tocan el mismo archivo: no commitees lo parcial y termina con RESULTADO: EN ESPERA y "
+                "CHOCA CON: %s" % (rel, choques[0][1], choques[0][1]))
+    return None
 
 
 def ahora():
@@ -202,6 +289,9 @@ class Board:
     def avisos(self):
         """Problemas de configuracion que dejarian tareas en stopped."""
         out = []
+        if self.cfg.get("parallel_invalido") is not None:
+            out.append("PARALLEL=%s no es valido: usa true o false. Se usa false (1 coder + 1 QA)"
+                       % self.cfg["parallel_invalido"])
         for n, r in sorted(self.cfg["repos"].items()):
             etiqueta = "REPO.%s" % n if n else "BASE_BRANCH"
             if not r["base"]:
@@ -359,6 +449,7 @@ class Board:
             "notas_dev": secs.get("Notas del desarrollador", ""),
             "reporte_qa": secs.get("Reporte de QA", ""),
             "sesion": meta.get("sesion") or None,
+            "espera": meta.get("espera") or None,
             **self.adjuntos(clave),
         }
 
@@ -381,8 +472,12 @@ class Board:
             try:
                 repos = self.repos_de_tarea(parsear(open(p, encoding="utf-8").read())[0])
                 t["repo_path"], t["base"] = repos[0]["path"], repos[0]["base"]
-                t["repos"] = [{"nombre": r["nombre"] or os.path.basename(r["path"]), "path": r["path"],
-                               "base": r["base"], "principal": i == 0} for i, r in enumerate(repos)]
+                t["repos"] = []
+                for i, r in enumerate(repos):
+                    wt = self.coder_worktree_path(r, c)
+                    t["repos"].append({"nombre": r["nombre"] or os.path.basename(r["path"]), "path": r["path"],
+                                       "base": r["base"], "principal": i == 0,
+                                       "worktree": wt if os.path.isdir(wt) else None})
             except Error as err:
                 t["repo_error"], t["repos"] = str(err), []
             out.append(t)
@@ -404,9 +499,11 @@ class Board:
                     raise Error("estado invalido: %s" % estado_nuevo)
                 puesto = next((p for p, e in PUESTOS.items() if e == estado_nuevo), None)
                 ocupada = [c for e, c, _ in self.archivos() if e == estado_nuevo and c != clave.lower()]
-                if puesto and ocupada:
-                    raise Error("el puesto %s esta ocupado por %s: maximo una tarea en %s"
-                                % (puesto, ocupada[0], estado_nuevo))
+                if puesto and len(ocupada) >= self.cfg["capacidad"][puesto]:
+                    raise Error("el puesto %s esta lleno (%d de %d: %s). Maximo en %s: %d%s"
+                                % (puesto, len(ocupada), self.cfg["capacidad"][puesto], ", ".join(ocupada),
+                                   estado_nuevo, self.cfg["capacidad"][puesto],
+                                   "" if self.cfg["paralelo"] else " (PARALLEL=false)"))
                 destino = os.path.join(self.dir, estado_nuevo, os.path.basename(path))
                 os.makedirs(os.path.dirname(destino), exist_ok=True)
                 os.rename(path, destino)
@@ -414,6 +511,8 @@ class Board:
             meta, titulo, secs = parsear(open(path, encoding="utf-8").read())
             if estado_nuevo and estado_nuevo not in PUESTOS.values():
                 meta.pop("sesion", None)  # la sesion de OpenCode es del puesto, no de la tarea
+            if estado_nuevo == "in-progress":
+                meta.pop("espera", None)  # la toma un coder: ya no espera a nadie
             for k, v in (meta_set or {}).items():
                 meta[k] = v
             for k, v in (secs_set or {}).items():
@@ -423,7 +522,9 @@ class Board:
                 secs[k] = (prev + "\n\n" + v).strip() if prev else v
             meta["actualizado"] = ahora()
             escribir_atomico(path, serializar(meta, titulo, secs))
-            return path
+        if estado_nuevo in ("done", "stopped"):
+            self._cerrar_coder(clave.lower(), estado_nuevo)
+        return path
 
     def crear(self, tipo, numero, prioridad, titulo, descripcion, criterio, repo="", origen="manual",
               adjuntos=""):
@@ -467,8 +568,8 @@ class Board:
     def plan(self, recuperar=False):
         """Lo que el watcher le devuelve al agente principal.
 
-        Dos puestos independientes, una tarea como maximo cada uno:
-          coder  (in-progress): toma bug-fix > new
+        Dos puestos independientes, con capacidad (PARALLEL=false -> 1 y 1; true -> MAX_CODERS y MAX_QA):
+          coder  (in-progress): toma bug-fix > new (saltando las que esperan a otra tarea)
           qa     (validando):   toma qa
         `acciones`: trabajo para cada puesto LIBRE. `terminadas`: tareas de un puesto cuya sesion de
         OpenCode ya termino (en Claude Code el fin del subagente lo avisa el propio cliente).
@@ -477,7 +578,7 @@ class Board:
         """
         import oc_sesion
         huerfanas, terminadas = [], []
-        ocupados = {p: None for p in PUESTOS}
+        ocupados = {p: [] for p in PUESTOS}
         for t in self.todas():
             puesto = next((p for p, e in PUESTOS.items() if e == t["estado"]), None)
             if not puesto:
@@ -494,22 +595,30 @@ class Board:
                          t["id"], t["rama"], "-", "Estaba en %s sin agente. Marcada stopped." % t["estado"])
                 huerfanas.append(t["id"])
                 continue
-            ocupados[puesto] = t["id"]
+            ocupados[puesto].append(t["id"])
 
         ts = self.todas()
+        estado_de = {t["id"]: t["estado"] for t in ts}
+        # Una tarea "en espera" (choco con archivos de otra) no se ofrece hasta que la otra termine.
+        libre = lambda t: not t.get("espera") or estado_de.get(t["espera"]) in (None, "done", "stopped")
         orden = lambda t: (PRIO.get(t["prioridad"], 9), int(t["numero"]))
         by = lambda s: sorted([t for t in ts if t["estado"] == s], key=orden)
         bugfix, qa, nuevas = by("bug-fix"), by("qa"), by("new")
+        cap = self.cfg["capacidad"]
 
         acciones = []
-        if not ocupados["coder"]:
-            if bugfix:
-                acciones.append({"puesto": "coder", "accion": "desarrollar-bugfix", "tarea": bugfix[0]})
-            elif nuevas:
-                acciones.append({"puesto": "coder", "accion": "desarrollar", "tarea": nuevas[0]})
-        if not ocupados["qa"] and qa:
-            acciones.append({"puesto": "qa", "accion": "certificar", "tarea": qa[0]})
+        huecos = cap["coder"] - len(ocupados["coder"])
+        for t in [t for t in bugfix if libre(t)] + [t for t in nuevas if libre(t)]:
+            if huecos <= 0:
+                break
+            acciones.append({"puesto": "coder", "tarea": t,
+                             "accion": "desarrollar-bugfix" if t["estado"] == "bug-fix" else "desarrollar"})
+            huecos -= 1
+        for t in qa[:max(0, cap["qa"] - len(ocupados["qa"]))]:
+            acciones.append({"puesto": "qa", "accion": "certificar", "tarea": t})
         return {"acciones": acciones, "terminadas": terminadas, "ocupados": ocupados,
+                "capacidad": cap, "parallel": self.cfg["paralelo"],
+                "en_espera": [{"id": t["id"], "espera": t["espera"]} for t in bugfix + nuevas if not libre(t)],
                 "huerfanas_recuperadas": huerfanas, "stopped": [t["id"] for t in by("stopped")],
                 "workspace": self.cfg["workspace"], "avisos": self.avisos(),
                 "cola": {"bugfix": len(bugfix), "qa": len(qa), "new": len(nuevas)}}
@@ -558,51 +667,142 @@ class Board:
             raise Error("git %s: %s" % (" ".join(args), (r.stderr or r.stdout).strip()[:300]))
         return r
 
+    @staticmethod
+    def coder_worktree_path(repo, clave):
+        nombre = repo["nombre"] or os.path.basename(repo["path"])
+        return cache_kit("coder", "%s-%s" % (nombre, clave))
+
     def _rama_en(self, r, clave, modo):
-        """Deja el repo `r` en la rama <clave>. modo: nueva | existente | nueva-o-existente."""
+        """Deja la rama <clave> del repo `r` lista en el WORKTREE del coder (nunca en la copia
+        principal del humano, que no cambia de rama). modo: nueva | existente | nueva-o-existente.
+        Si el worktree ya existe (bug-fix, o una tarea que volvio de 'en espera'), se reusa."""
         repo, base = r["path"], r["base"]
         if not base:
             raise Error("falta la rama base en autopilot.env (%s): define desde que rama se crean las ramas"
                         % ("REPO.%s" % r["nombre"] if r["nombre"] else "BASE_BRANCH"))
         if self.git(repo, "rev-parse", "--is-inside-work-tree", check=False).returncode != 0:
             raise Error("%s no es un repositorio git" % repo)
+        wt = self.coder_worktree_path(r, clave)
+        nombre = os.path.basename(repo)
+        if os.path.isdir(wt):
+            actual = self.git(wt, "branch", "--show-current", check=False).stdout.strip()
+            if actual != clave:
+                raise Error("%s: el worktree %s esta en '%s', no en %s" % (nombre, wt, actual or "HEAD separado", clave))
+            return wt
         existe = lambda ref: self.git(repo, "rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
+        # Donde esta abierta la rama (git no deja abrirla dos veces con nombre)
+        lista = self.git(repo, "worktree", "list", "--porcelain").stdout
+        for bloque in lista.strip().split("\n\n"):
+            if "branch refs/heads/%s" % clave in bloque.split("\n"):
+                donde = bloque.split("\n")[0][len("worktree "):]
+                raise Error("%s: la rama %s esta abierta en %s. Cambia esa copia a otra rama y reencola la tarea"
+                            % (nombre, clave, donde))
         if modo == "nueva-o-existente":
             modo = "existente" if existe("refs/heads/%s" % clave) else "nueva"
-        if self.git(repo, "branch", "--show-current").stdout.strip() == clave and modo == "existente":
-            return  # ya esta ahi
-        # Solo cuentan archivos rastreados: los untracked (.env, etc.) viajan entre ramas sin problema.
-        if self.git(repo, "status", "--porcelain", "--untracked-files=no").stdout.strip():
-            raise Error("%s: hay cambios sin commitear en archivos rastreados; no se cambia de rama"
-                        % os.path.basename(repo))
+        os.makedirs(os.path.dirname(wt), exist_ok=True)
         if modo == "nueva":
             if existe("refs/heads/%s" % base):
                 origen = base
             elif existe("refs/remotes/origin/%s" % base):
                 origen = "origin/%s" % base
             else:
-                raise Error("%s: no existe la rama base '%s' (ni local ni origin/%s)"
-                            % (os.path.basename(repo), base, base))
+                raise Error("%s: no existe la rama base '%s' (ni local ni origin/%s)" % (nombre, base, base))
             if existe("refs/heads/%s" % clave):
                 propios = self.git(repo, "rev-list", "--count", "%s..%s" % (origen, clave)).stdout.strip()
                 if propios != "0":
                     raise Error("%s: la rama %s ya existe con %s commit(s) que no estan en %s; no se recrea "
-                                "para no pisar trabajo previo" % (os.path.basename(repo), clave, propios, origen))
-                # Sin commits propios (p. ej. un intento que se detuvo antes de commitear): no hay nada que
-                # pisar; se reusa y se pone en la punta actual de la base.
-                self.git(repo, "switch", "--no-track", "-C", clave, origen)
+                                "para no pisar trabajo previo" % (nombre, clave, propios, origen))
+                # Sin commits propios (un intento que se detuvo antes de commitear): se reusa en la punta de la base.
+                self.git(repo, "worktree", "add", "--no-track", "-B", clave, wt, origen)
             else:
-                self.git(repo, "switch", "--no-track", "-c", clave, origen)
+                self.git(repo, "worktree", "add", "--no-track", "-b", clave, wt, origen)
         elif modo == "existente":
             if not existe("refs/heads/%s" % clave):
-                raise Error("%s: la rama %s no existe" % (os.path.basename(repo), clave))
-            self.git(repo, "switch", clave)
+                raise Error("%s: la rama %s no existe" % (nombre, clave))
+            self.git(repo, "worktree", "add", wt, clave)
         else:
             raise Error("modo invalido: %s (nueva|existente)" % modo)
+        return wt
 
     def _info_rama(self, r, clave):
+        wt = self.coder_worktree_path(r, clave)
         return {"rama": clave, "base": r["base"], "repo": r["nombre"] or os.path.basename(r["path"]),
-                "repo_path": r["path"], "head": self.git(r["path"], "rev-parse", "--short", "HEAD").stdout.strip()}
+                "repo_path": r["path"], "worktree": wt,
+                "head": self.git(wt, "rev-parse", "--short", "HEAD").stdout.strip()}
+
+    def coder_worktree_borrar(self, clave, forzar=True):
+        """Quita los worktrees del coder de la tarea y libera sus reservas de archivos."""
+        clave = clave.lower()
+        borrados, conservados = [], []
+        for r in self.repos_de_tarea(self.leer(clave)[2]):
+            wt = self.coder_worktree_path(r, clave)
+            nombre = r["nombre"] or os.path.basename(r["path"])
+            if os.path.isdir(wt):
+                sucio = self.git(wt, "status", "--porcelain", check=False).stdout.strip()
+                if sucio and not forzar:
+                    conservados.append(wt)
+                    continue
+                self.git(r["path"], "worktree", "remove", "--force", wt)
+                borrados.append(wt)
+            self.git(r["path"], "worktree", "prune", check=False)
+            liberar(nombre, clave)
+        return {"borrados": borrados, "conservados_con_cambios": conservados}
+
+    def _cerrar_coder(self, clave, estado):
+        """done -> se borra el worktree del coder; stopped -> se borra si no tiene cambios sin commitear
+        (si los tiene se conserva para que el humano los vea). En ambos casos se liberan las reservas."""
+        try:
+            r = self.coder_worktree_borrar(clave, forzar=(estado == "done"))
+        except Error:
+            return
+        for wt in r["conservados_con_cambios"]:
+            self.modificar(clave, secs_append={"Motivo de stopped": "Cambios sin commitear conservados en %s" % wt})
+
+    def solapes(self, clave):
+        """Archivos que la tarea cambio (o reservo) y que tambien cambio o reservo otra tarea activa del
+        mismo repo: posible conflicto al mergear."""
+        clave = clave.lower()
+        out = []
+        activas = {t["id"]: t for t in self.todas() if t["estado"] not in ("done", "stopped") and t["id"] != clave}
+        for r in self.repos_de_tarea(self.leer(clave)[2]):
+            nombre = r["nombre"] or os.path.basename(r["path"])
+            mios = set(self._cambiados(r, clave)) | set(reservas_de(nombre, clave))
+            for otra in activas:
+                suyos = set(self._cambiados(r, otra)) | set(reservas_de(nombre, otra))
+                comunes = sorted(mios & suyos)
+                if comunes:
+                    out.append({"repo": nombre, "con": otra, "archivos": comunes})
+        return out
+
+    def _cambiados(self, r, clave):
+        existe = lambda ref: self.git(r["path"], "rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
+        base = r["base"] if existe("refs/heads/%s" % r["base"]) else "origin/%s" % r["base"]
+        if not existe("refs/heads/%s" % clave) or not existe(base):
+            return []
+        cambios = self.git(r["path"], "diff", "--name-only", "%s...%s" % (base, clave), check=False).stdout.split()
+        wt = self.coder_worktree_path(r, clave)
+        if os.path.isdir(wt):  # lo que todavia no se commiteo tambien cuenta
+            cambios += [l[3:] for l in self.git(wt, "status", "--porcelain", check=False).stdout.splitlines()]
+        return cambios
+
+    def esperar(self, clave, otra):
+        """El coder choco con archivos de `otra`: la tarea vuelve a la cola (new o bug-fix) y el watcher no la
+        ofrece hasta que `otra` termine. Conserva su worktree y su rama para retomarla."""
+        clave, otra = clave.lower(), otra.lower()
+        meta = self.leer(clave)[2]
+        destino = "bug-fix" if int(meta.get("intento") or 0) > 0 else "new"
+        with self.lock():
+            estado, path = self.buscar(clave)
+            dst = os.path.join(self.dir, destino, os.path.basename(path))
+            os.rename(path, dst)
+            meta, titulo, secs = parsear(open(dst, encoding="utf-8").read())
+            meta.pop("sesion", None)
+            meta["espera"] = otra
+            meta["actualizado"] = ahora()
+            escribir_atomico(dst, serializar(meta, titulo, secs))
+        self.log("Tarea en espera", "sistema", "nota", clave, clave, "-",
+                 "Choca con archivos de %s: vuelve a %s hasta que %s termine" % (otra, destino, otra))
+        return {"tarea": clave, "estado": destino, "espera": otra}
 
     def preparar_rama(self, clave, modo, repo=None):
         """Deja los repos de la tarea parados en su rama <clave>.
@@ -681,6 +881,11 @@ USO = """uso: wi.sh <env> <comando> [args]
                                          Las imagenes mencionadas en el texto (y las de --imagenes)
                                          se copian a adjuntos/<clave>/ y quedan como ![..](..) en el .md
   qa-worktree        <clave>             copia de trabajo aislada para el QA (en la punta de la rama)
+  coder-worktree-borrar <clave>          quita los worktrees del coder y libera sus reservas
+  reservar   <clave> <archivo>...        reserva archivos para la tarea (ruta en su worktree o relativa
+                                         al repo principal); falla si otra tarea activa los tiene
+  solapes    <clave>                     archivos que la tarea comparte con otras activas (JSON)
+  esperar    <clave> <otra>              choco con <otra>: vuelve a la cola hasta que <otra> termine
   qa-worktree-borrar <clave>
 
 <clave> = task-<numero> | bug-<numero>   (es tambien el nombre de la rama)"""
@@ -798,6 +1003,28 @@ def main(argv):
         texto = b.incrustar_imagenes(a[0].lower(), texto, carpetas,
                                      "%s-intento%d" % ("coder" if cmd == "notas-dev" else "qa", n))
         b.modificar(a[0], secs_append={seccion: "### Intento %d (%s)\n\n%s" % (n, ahora(), texto)})
+    elif cmd == "coder-worktree-borrar":
+        need(1); print(json.dumps(b.coder_worktree_borrar(a[0]), ensure_ascii=False)); return 0
+    elif cmd == "reservar":
+        need(2)
+        clave = a[0].lower()
+        principal = b.repos_de_tarea(b.leer(clave)[2])[0]
+        choques = []
+        for f in a[1:]:
+            if os.path.isabs(os.path.expanduser(f)) and reservar_ruta(f) is None \
+                    and os.path.realpath(os.path.expanduser(f)).startswith(os.path.realpath(cache_kit("coder"))):
+                continue
+            nombre = principal["nombre"] or os.path.basename(principal["path"])
+            choques += reservar(nombre, clave, [f])
+        if choques:
+            print(json.dumps({"choques": [{"archivo": x, "con": o} for x, o in choques]}, ensure_ascii=False))
+            return 4
+        print("ok")
+        return 0
+    elif cmd == "solapes":
+        need(1); print(json.dumps(b.solapes(a[0]), ensure_ascii=False, indent=2)); return 0
+    elif cmd == "esperar":
+        need(2); print(json.dumps(b.esperar(a[0], a[1]), ensure_ascii=False)); return 0
     elif cmd == "qa-worktree":
         need(1); print(json.dumps(b.qa_worktree(a[0]), ensure_ascii=False)); return 0
     elif cmd == "qa-worktree-borrar":
