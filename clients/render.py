@@ -39,6 +39,17 @@ DENY = {
                   "git branch --delete"],
 }
 
+# Nunca contra produccion (mismo criterio que git-guard.sh): lo que se conecta a un ambiente solo
+# pasa envuelto en aenv.sh, que valida el .env.autopilot del humano. OpenCode: gana la ultima regla.
+AMBIENTE_DENY = ["npm run *", "npm start*", "npm test*", "npm t *", "npm exec *", "npx *", "yarn *", "pnpm *",
+                 "node *", "nest *", "jest*", "vitest*", "ts-node *", "tsx *", "prisma *", "typeorm *",
+                 "sequelize *", "knex *", "nodemon *", "*migrat*", "*seed*", "flutter run*", "flutter drive*",
+                 "fvm flutter run*", "fvm flutter drive*", "*integration_test*", "curl http*", "wget http*",
+                 "*> .env*", "*>.env*", "cp *.env*", "mv *.env*", "sed *.env*", "tee *.env*"]
+AMBIENTE_ALLOW = ["npm run build*", "npm run lint*", "npm run format*", "npm run typecheck*", "npx tsc*",
+                  "npx eslint*", "npx prettier*", "yarn install*", "yarn build*", "yarn lint*", "pnpm install*",
+                  "curl http://localhost*", "curl http://127.0.0.1*", "*aenv.sh *"]
+
 COMANDOS = {
     "autopilot-init": "Prepara esta carpeta (repo o workspace de varios repos) para el autopilot: rama base, board y Azure",
     "autopilot": "Enciende el watcher del sistema autonomo sobre el board de workitems de este proyecto",
@@ -79,12 +90,19 @@ def front_opencode(meta):
         # Solo escribe pruebas temporales y capturas en sus copias de trabajo; nada mas.
         out += ["  edit:", '    "*": deny', "    %s: allow" % q(qa_dir() + "/**")]
     else:
-        out += ["  edit: allow"]
+        out += ["  edit:", '    "*": allow']
+    # Nadie escribe .env* (salvo .env.example): los ambientes los define el humano. Va al final: gana.
+    out += ['    "**/.env*": deny'] + (['    "**/.env.example": allow'] if role == "coder" else [])
     out += ["  bash:", '    "*": allow']
     # OpenCode evalua en orden y gana la ultima regla que coincide: primero allow, despues deny.
     for c in DENY[role]:
         for p in patrones(c):
             out.append("    %s: deny" % q(p))
+    out += ["    %s: deny" % q(p) for p in AMBIENTE_DENY]
+    out += ["    %s: allow" % q(p) for p in AMBIENTE_ALLOW]  # excepciones seguras y aenv.sh: al final, ganan
+    for c in DENY[role]:                                       # push/merge siguen prohibidos aun con aenv.sh
+        for p in patrones(c):
+            out.append("    %s: deny" % q("*aenv.sh* " + p))
     return out
 
 
@@ -97,10 +115,14 @@ def front_claude(meta, kit):
            "background: true",
            "hooks:", "  PreToolUse:", '    - matcher: "Bash"', "      hooks:",
            "        - type: command", "          command: " + q(guard)]
+    if role == "coder":
+        # El coder escribe codigo, pero nunca archivos .env* (los ambientes los define el humano).
+        out += ['    - matcher: "Edit|Write|NotebookEdit"', "      hooks:", "        - type: command",
+                "          command: " + q(shlex.quote(os.path.join(kit, "escritura.sh")) + " coder")]
     if role == "qa":
         # El QA escribe pruebas temporales y capturas, pero SOLO en sus copias de trabajo.
         out += ['    - matcher: "Edit|Write|NotebookEdit"', "      hooks:", "        - type: command",
-                "          command: " + q(shlex.quote(os.path.join(kit, "qa-escritura.sh")))]
+                "          command: " + q(shlex.quote(os.path.join(kit, "escritura.sh")) + " qa")]
     return out
 
 

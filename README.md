@@ -362,6 +362,34 @@ Mientras el coder desarrolla una tarea, el QA puede estar certificando otra.
   en la punta de la rama de la tarea): puede compilar y correr tests o la app sin pisar al coder.
   Se borra al dar el veredicto.
 
+### Nunca contra producción: `.env.autopilot`
+
+Los agentes **nunca** ejecutan nada contra un ambiente con el `.env` del repo. Solo usan un archivo
+que **creas tú a mano** en cada repo que lo necesite (backends con base de datos o APIs):
+
+```sh
+cd ~/code/codika/konectame/Konectame_BackOffice_BE
+cp .env .env.autopilot     # y cambia la BD y las URLs a las de QA (o a local)
+```
+
+- Todo lo que se conecta a una BD o API (tests de integración/e2e, levantar el backend,
+  migraciones, seeds, scripts, HTTP) corre solo con `aenv.sh <repo> -- <comando>`, que valida
+  `.env.autopilot` y exporta sus valores. Los comandos directos (`npm test`, `npm run start`,
+  `node`, `npx jest`, `prisma`, `flutter run`...) los bloquea el hook (Claude Code) o los permisos
+  (OpenCode).
+- `.env.autopilot` es válido si **todo destino** es local (`localhost`, `127.0.0.1`, sqlite...) o de
+  QA — **la base de datos tiene que decir "qa" en su nombre** — y si define **todas** las variables
+  de BD/URL que tiene el `.env` real (si no, se colaría el valor real). `NODE_ENV=production`
+  o una URL sin "qa" lo invalidan.
+- ¿Un servicio externo sin versión de QA (p. ej. una API de mapas de solo lectura)? Permítelo a
+  propósito en tu archivo: `AUTOPILOT_PERMITIR=GEOCODING_API_URL`.
+- Revisarlo sin ver valores: `wi.sh <env> entorno <repo>`. `/autopilot-init`, `wi.sh check` y el
+  watcher avisan de los repos sin un `.env.autopilot` válido.
+- Ningún agente crea, copia ni edita `.env*`. Ante la duda de si algo es producción, la tarea va a
+  `stopped` con la recomendación de qué hacer.
+- Apps Flutter: la URL de la API está fija en `config.dart`, así que no se levantan contra una API
+  real; los tests unitarios y de widget (sin red) sí corren.
+
 ### El QA certifica al 100% o no certifica
 
 `APROBADO` solo si **probó** todo: compila y analiza sin errores nuevos, los tests pasan y **cada
