@@ -23,6 +23,7 @@ Que hace:
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -196,6 +197,9 @@ def init(carpeta, bases, sin_azure=False):
                 git(r["path"], "rev-parse", "--verify", "--quiet", "refs/heads/" + r["base"]) or
                 git(r["path"], "rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + r["base"])):
             avisos.append("%s: la rama '%s' no existe (ni local ni en origin)" % (nombre or "repo", r["base"]))
+    if os.path.exists(os.path.join(raiz, "azure-sync.env")) and not shutil.which("ffmpeg"):
+        avisos.append("falta ffmpeg: los videos de los work items se descargan pero sin fotogramas, "
+                      "y el agente no los puede ver (sudo apt install ffmpeg)")
     for r in det["repos"]:
         if r["sucio"]:
             avisos.append("%s tiene cambios sin commitear: el autopilot no cambiara de rama ahi hasta resolverlos"

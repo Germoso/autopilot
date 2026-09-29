@@ -225,7 +225,24 @@ konectame/                      <- abrís el cliente acá
 
 - Cada repo tiene **su propia rama base**. La rama de cada tarea se crea dentro de su repo.
 - azure-sync lee **un proyecto de Azure por repo** y le pone a cada tarea su `repo:`.
-- Sigue siendo **una tarea a la vez** en todo el workspace.
+- Los puestos son globales: **un coder y un QA** para todo el workspace (ver *Dos puestos en paralelo*).
+
+### Una tarea en varios repos
+
+Si la corrección de un work item está (también) en **otro repo del workspace** — p. ej. el bug es
+de la app pero la causa está en el backend —, el coder **no se detiene ni pide otro work item**:
+
+- abre la **misma rama** (`bug-37271`) en ese repo con
+  `wi.sh <env> rama bug-37271 nueva --repo Konectame_BackOffice_BE`, desde la rama base **de ese
+  repo**; queda registrado en la tarea (`repos_extra:`);
+- corrige y commitea ahí; en sus **notas del desarrollador** detalla repo por repo (rama, commits,
+  archivos), por qué tocó cada uno y en qué orden levantarlos o desplegarlos;
+- el QA recibe **una copia de trabajo por repo** y los revisa y prueba todos; un rechazo vuelve a
+  poner la rama en todos los repos de la tarea.
+
+Solo repos declarados en `autopilot.env` (`REPO.<carpeta>`); si hace falta uno que no está, el
+coder termina en `stopped` explicando cuál. El bloqueo de git no cambia: el coder no crea ramas con
+git, lo hace `wi.sh` con las mismas validaciones (base del repo, árbol limpio).
 
 `autopilot.env`:
 
@@ -288,7 +305,24 @@ SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
   cambiar de sprint); `@current:<Equipo>` para otro equipo; o una ruta fija `Proyecto\Sprint X`.
 - En un workspace cada tarea se crea con su `repo:`. Cada `SYNC.<repo>` necesita su `REPO.<repo>`.
 - Si **cualquier** fuente falla, no se escribe nada en el board.
-- `--dry-run` muestra qué importaría; `--status` cuenta por fuente; `--watch 60` en bucle.
+- `--dry-run` muestra qué importaría (con cuántas imágenes/videos); `--status` cuenta por fuente;
+  `--watch 60` en bucle; `--fotogramas` procesa videos ya descargados (tras instalar ffmpeg).
+
+### Adjuntos: capturas y videos
+
+Cada work item importado trae sus adjuntos a `.workitems/adjuntos/<clave>/`:
+
+- **Imágenes incrustadas** en la descripción o los pasos: se descargan y quedan en su lugar en el
+  texto como `![imagen N](../adjuntos/<clave>/...)`.
+- **Adjuntos** del work item (imágenes, videos, otros), listados en la sección `## Adjuntos`.
+- **Videos:** con `ffmpeg` instalado se extraen hasta 12 fotogramas (primer cuadro + cambios de
+  escena, repartidos) en `<video>.frames/fNN.png`, porque ningún modelo ve video directamente.
+  Sin ffmpeg se guarda el video y queda la nota; después: `azure-sync.py --config ... --fotogramas`.
+- Límite de 50 MB por archivo. Un adjunto que falla no frena la importación: queda anotado.
+
+El autopilot le pasa las imágenes y fotogramas al worker y al QA (`tarea.adjuntos`).
+
+**Requisito:** `sudo apt install ffmpeg` para los fotogramas.
 
 ### El watcher
 
@@ -309,14 +343,44 @@ setsid nohup python3 ~/.local/share/autopilot-kit/azure-sync.py \
 
 ---
 
+## Dos puestos en paralelo
+
+| Puesto | Agente | Toma de | Mientras trabaja | Máximo |
+|---|---|---|---|---|
+| coder | `autopilot-worker` | `bug-fix` > `new` | `in-progress` | 1 |
+| QA | `qa-reviewer` | `qa` | `validando` | 1 |
+
+Mientras el coder desarrolla una tarea, el QA puede estar certificando otra.
+
+- **Claude Code:** los dos subagentes corren en segundo plano; Claude Code avisa al agente
+  principal cuando terminan.
+- **OpenCode:** cada puesto corre como **su propia sesión** de OpenCode, lanzada por la API del
+  servicio local (`oc_sesion.py`). Las ves en tu lista de sesiones y podés mirarlas en vivo. El
+  watcher avisa cuando una termina. Si cerrás OpenCode, esas sesiones siguen; al volver,
+  `/autopilot` las retoma.
+- **El QA trabaja en su propia copia del repo** (`git worktree` en `~/.cache/autopilot-kit/qa/`,
+  en la punta de la rama de la tarea): puede compilar y correr tests o la app sin pisar al coder.
+  Se borra al dar el veredicto.
+
+### Qué queda escrito en cada tarea
+
+- **`## Notas del desarrollador`** (por intento): qué se hizo y por qué, archivos cambiados,
+  decisiones, cómo probarlo, pruebas que corrió, riesgos y pendientes.
+- **`## Reporte de QA`** (por intento): cada criterio (CUMPLE / NO CUMPLE / NO VERIFICABLE con
+  evidencia), **qué probó** (comandos y resultados), **cómo verificarlo manualmente de punta a
+  punta** (preparación, pasos, resultado esperado, casos borde) y **puntos a tomar en cuenta**
+  (regresiones, migraciones, configuración, datos...).
+
 ## Reglas de trabajo
 
 Fijadas en `SKILL.md`, se aplican sin que nadie las recuerde:
 
-- **Una sola tarea a la vez.** Máximo 1 en `in-progress`.
+- **Dos puestos en paralelo, una tarea cada uno:** 1 coder (`in-progress`) y 1 QA (`validando`).
+  `wi.sh` rechaza una segunda tarea en el mismo puesto.
 - **Una rama por workitem:** `task-<numero>` / `bug-<numero>` desde `BASE_BRANCH`.
 - **Nadie hace `push` ni `merge`** (ni `pull`, que mergea). Bloqueado por permiso/hook, no por instrucción.
-- **QA solo lee.** No puede editar, commitear ni cambiar de rama.
+- **QA no toca el código:** prueba en su propia copia (worktree); no edita, no commitea, no cambia de rama.
+- **Todo queda escrito en la tarea:** notas del desarrollador y reporte de QA, por intento.
 - **Los subagentes no usan el MCP de Azure.**
 - **`bug-fix` tiene prioridad** sobre trabajo nuevo: siempre se toma primero.
 - **3 intentos** de certificación. Al cuarto, `stopped` con el historial.

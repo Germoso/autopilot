@@ -84,6 +84,20 @@ SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
   cambiar de sprint.
 - Si **cualquier** fuente falla, no se escribe nada en el board.
 
+## Adjuntos: capturas y videos
+
+Cada work item importado trae sus adjuntos a `.workitems/adjuntos/<clave>/`:
+
+- **Imágenes incrustadas** en la descripción o los pasos: se descargan y quedan en su lugar en el
+  texto como `![imagen N](../adjuntos/<clave>/...)`.
+- **Adjuntos** del work item (imágenes, videos, otros), listados en la sección `## Adjuntos`.
+- **Videos:** con `ffmpeg` instalado se extraen hasta 12 fotogramas (primer cuadro + cambios de
+  escena, repartidos) en `<video>.frames/fNN.png`, porque ningún modelo ve video directamente.
+  Sin ffmpeg se guarda el video y queda la nota; después: `azure-sync.py --config ... --fotogramas`.
+- Límite de 50 MB por archivo. Un adjunto que falla no frena la importación: queda anotado.
+
+El autopilot le pasa las imágenes y fotogramas al worker y al QA (`tarea.adjuntos`).
+
 ## Criterio de filtro
 
 Solo entra lo que está en estado **`New`** en Azure, del sprint de cada fuente,
@@ -116,8 +130,9 @@ Un archivo `new/<tipo>-<id>-<slug>.md`:
 | `prioridad` | mapeada desde Azure |
 | `rama` | `<tipo>-<id>`: la rama que el autopilot creará desde `BASE_BRANCH` |
 | `origen` | `azure:<project>` |
-| `## Descripción` | descripción del work item, HTML limpiado a texto |
-| `## Criterio de aceptación` | `AcceptanceCriteria`, si no `ReproSteps`, si no `_Sin criterio en Azure._` |
+| `## Descripción` | descripción del work item, HTML convertido a Markdown |
+| `## Criterio de aceptación` | `AcceptanceCriteria`, si no `ReproSteps`, si no `_Sin criterio en Azure._` (HTML convertido a Markdown: listas, encabezados e imágenes en su lugar) |
+| `## Adjuntos` | capturas, videos y fotogramas (ver arriba) |
 
 `<tipo>-<id>` es a la vez la clave de la tarea, la base del dedup y el nombre de la rama.
 

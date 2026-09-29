@@ -143,7 +143,7 @@ fi
 # ------------------------------------------------------------------
 echo "==> Scripts en $KIT"
 mkdir -p "$KIT"
-cp "$KIT_DIR"/lib/* "$KIT_DIR/clients/render.py" "$KIT/" && chmod +x "$KIT"/*.sh "$KIT"/*.py
+cp "$KIT_DIR"/lib/*.py "$KIT_DIR"/lib/*.sh "$KIT_DIR/clients/render.py" "$KIT/" && chmod +x "$KIT"/*.sh "$KIT"/*.py
 say "$(ls "$KIT" | tr '\n' ' ')"
 
 # ------------------------------------------------------------------
