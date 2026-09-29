@@ -170,8 +170,9 @@ acciones juntas, lanza los dos subagentes (en Claude Code, en el mismo mensaje).
 Antes de verificar, recarga los repos de la tarea: el coder pudo haber sumado otros
 (`$W "$E" repos <clave>`).
 
-1. Toma su respuesta. Guarda su bloque `NOTAS DEL DESARROLLADOR` completo:
-   `$W "$E" notas-dev <clave> - <<'FIN'` … `FIN`.
+1. Toma su respuesta. Guarda su bloque `NOTAS DEL DESARROLLADOR` completo, con sus capturas:
+   `$W "$E" notas-dev <clave> - --imagenes ~/.cache/autopilot-kit/capturas/<clave> <<'FIN'` … `FIN`.
+   Las imágenes que mencione (y las de esa carpeta) quedan copiadas y **visibles en el `.md`**.
 2. `RESULTADO: QA` **y** hay commits nuevos en **al menos uno** de sus repos
    (`git -C <path> log <base>..<clave>` por cada uno) → `$W "$E" qa <clave>` +
    `$W "$E" resultado <clave> "<repo>: <rama> @ <commit>; <repo2>: ... — <resumen>"`.
@@ -181,7 +182,9 @@ Antes de verificar, recarga los repos de la tarea: el coder pudo haber sumado ot
 
 ### C. Terminó el QA (aviso, o `terminadas` con puesto `qa`)
 
-1. Guarda su bloque `REPORTE DE QA` completo: `$W "$E" reporte-qa <clave> - <<'FIN'` … `FIN`.
+1. Guarda su bloque `REPORTE DE QA` completo, **antes** de borrar sus copias de trabajo:
+   `$W "$E" reporte-qa <clave> - --imagenes <worktree>/.qa-capturas [--imagenes <worktree2>/.qa-capturas] <<'FIN'` … `FIN`.
+   Así sus capturas se copian al board y quedan visibles en el `.md` (si no, se pierden con el worktree).
 2. Veredicto (el QA solo aprueba lo que **probó**: compilación, tests y cada criterio con una
    ejecución; "por lectura de código" no alcanza):
    - `APROBADO` → `$W "$E" aprobar <clave>` (va a `done`).
@@ -211,6 +214,13 @@ Clave y título; rama e intento; **cada worktree con su repo y su rama base** (l
 `qa-worktree`);
 descripción y criterio; las **`Notas del desarrollador`** (`tarea.notas_dev`); `tarea.adjuntos`.
 Pídele que termine con su formato `REPORTE DE QA` + `VEREDICTO`.
+
+### Imágenes en el `.md`
+
+`notas-dev` y `reporte-qa` convierten toda ruta de imagen que aparezca en el texto (y las de
+`--imagenes <carpeta>`) en `![nombre](../adjuntos/<clave>/...)`: las que están fuera del board se
+copian a `adjuntos/<clave>/coder-intentoN/` o `qa-intentoN/`. Así el humano ve en la tarea las
+capturas del bug, las del coder y las del QA. Pásales siempre el texto tal cual, con las rutas completas.
 
 ### Adjuntos (capturas y videos)
 

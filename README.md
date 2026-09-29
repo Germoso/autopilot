@@ -379,6 +379,19 @@ copia de trabajo). "Cumple por lectura de código" no alcanza.
 - El QA solo puede escribir dentro de sus copias de trabajo (hook en Claude Code, permiso por ruta
   en OpenCode): nunca en el repo del coder ni en el board.
 
+### Las imágenes se ven en la tarea
+
+Todas las imágenes quedan **enlazadas en el `.md`** de la tarea, para verlas junto al texto en VS
+Code, Obsidian o GitHub:
+
+- las del work item (capturas y fotogramas), en `## Adjuntos` y en su lugar dentro del texto;
+- las que el **coder** genera o usa, en sus notas (`adjuntos/<clave>/coder-intentoN/`);
+- las **capturas del QA** (sus tests de widget), en su reporte (`adjuntos/<clave>/qa-intentoN/`).
+  Se copian del worktree del QA antes de borrarlo, así no se pierden.
+
+Cualquier ruta de imagen que un agente escriba en sus notas o su reporte se convierte en
+`![nombre](../adjuntos/...)`; si está fuera del board, primero se copia.
+
 ### Qué queda escrito en cada tarea
 
 - **`## Notas del desarrollador`** (por intento): qué se hizo y por qué, archivos cambiados,
