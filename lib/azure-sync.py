@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """
-azure-sync.py — Importador ADITIVO de Azure DevOps al tablero de Notion.
+azure-sync.py — Importador ADITIVO de Azure DevOps al board de workitems.
 
 COPIA aditiva de /home/user/sync_workitems.py, adaptada para alimentar
-el tablero nativo de Notion en vez de editar Kanban.md de Obsidian.
+el board de carpetas + Markdown del autopilot (workitems.py, misma carpeta).
+
+Cada Work Item se escribe como new/<tipo>-<numero>-<slug>.md, donde tipo es
+task o bug segun System.WorkItemType. <tipo>-<numero> es tambien el nombre de
+la rama que el autopilot crea desde BASE_BRANCH.
 
 GARANTIAS (identicas a las del original):
   - Solo AGREGA tareas nuevas. Nunca mueve, borra ni sobrescribe.
-  - Dedup por idempotency: busca 'azure-<id>' en el titulo de cada tarea
-    del tablero. Si ya existe, la salta.
+  - Dedup por numero: si ya hay un archivo *-<numero>-*.md en CUALQUIER
+    estado del board, lo salta.
   - Es idempotente: correrlo N veces crea la tarea una sola vez.
   - Si Azure falla, sale con codigo != 0 y NO toca el tablero.
   - El PAT se lee del entorno o de azure-sync.secrets.env. NO se hardcodea.
@@ -31,10 +35,19 @@ import sys
 import time
 import urllib.parse
 
-API = "https://api.notion.com/v1"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Prioridad de Azure (1=alta) -> Notion
+# El formato del board vive en un solo lugar: workitems.py, en esta misma carpeta.
+sys.path.insert(0, SCRIPT_DIR)
+try:
+    import workitems as wi
+except ImportError:
+    print(json.dumps({"action": "error",
+                      "message": "no encuentro workitems.py junto a azure-sync.py",
+                      "hint": "reinstala el kit con install.sh"}, ensure_ascii=False, indent=2))
+    sys.exit(2)
+
+# Prioridad de Azure (1=alta) -> board
 PRIO_MAP = {1: "Critical", 2: "High", 3: "Medium", 4: "Low"}
 PRIO_DEFAULT = "Medium"
 
@@ -44,11 +57,8 @@ CFG = {
     "iteration": "",
     "user": "",
     "pat": "",
-    "notion_token": "",
-    "notion_database_id": "",
-    "notion_log_db_id": "",
-    "workitem_dir": "",
 }
+BOARD = None  # wi.Board, se arma en main()
 
 
 # ----------------------------------------------------------------- config
@@ -56,7 +66,7 @@ def load_config(path):
     """Carga el .env del proyecto y, encima, el archivo de secretos."""
     if not os.path.exists(path):
         die("No existe el archivo de config: %s" % path,
-            "Copiá la plantilla desde ~/.config/opencode/skills/azure-sync/plantilla.env")
+            "Crealo con: install.sh --init <proyecto>")
     secrets = path.replace(".env", ".secrets.env")
     for f in ([path, secrets] if os.path.exists(secrets) else [path]):
         for raw in open(f, encoding="utf-8"):
@@ -75,21 +85,10 @@ def load_config(path):
                 CFG["iteration"] = v
             elif k == "AZURE_USER":
                 CFG["user"] = v
-            elif k == "NOTION_TOKEN":
-                CFG["notion_token"] = v
-            elif k == "NOTION_DATABASE_ID":
-                CFG["notion_database_id"] = v
-            elif k == "NOTION_LOG_DB_ID":
-                CFG["notion_log_db_id"] = v
-            elif k == "WORKITEM_DIR":
-                CFG["workitem_dir"] = v
 
     # El entorno tiene prioridad sobre el archivo (pat tipico)
-    for k in ("AZURE_DEVOPS_PAT", "NOTION_TOKEN"):
-        if os.environ.get(k):
-            CFG["pat" if k == "AZURE_DEVOPS_PAT" else "notion_token"] = os.environ[k]
-
-    CFG.setdefault("workitem_dir", os.path.join(SCRIPT_DIR, "workitems"))
+    if os.environ.get("AZURE_DEVOPS_PAT"):
+        CFG["pat"] = os.environ["AZURE_DEVOPS_PAT"]
 
 
 def die(msg, hint=None, code=2):
@@ -158,79 +157,16 @@ def fetch_detail(wid):
     return azure_get(azure_base() + "/_apis/wit/workitems/%d?api-version=7.1&$expand=all" % wid)["fields"]
 
 
-# ----------------------------------------------------------------- notion
-def n_post(path, data):
-    r = subprocess.run(
-        ["curl", "-sS", "-X", "POST", API + path,
-         "-H", "Authorization: Bearer %s" % CFG["notion_token"],
-         "-H", "Notion-Version: 2022-06-28",
-         "-H", "Content-Type: application/json",
-         "-d", json.dumps(data, ensure_ascii=False)],
-        capture_output=True, text=True)
-    try:
-        return json.loads(r.stdout)
-    except json.JSONDecodeError:
-        die("Notion devolvio algo que no es JSON: %s" % r.stdout[:200])
+# ----------------------------------------------------------------- board
+def tipo_de(f):
+    """Bug -> bug; todo lo demas (Task) -> task."""
+    return "bug" if (f.get("System.WorkItemType") or "").lower() == "bug" else "task"
 
 
-def n_query_titles():
-    """Devuelve el set de azure-<id> ya presentes en el titulo de cualquier tarea."""
-    r = subprocess.run(
-        ["curl", "-sS", "-X", "POST", API + "/databases/%s/query" % CFG["notion_database_id"],
-         "-H", "Authorization: Bearer %s" % CFG["notion_token"],
-         "-H", "Notion-Version: 2022-06-28",
-         "-H", "Content-Type: application/json",
-         "-d", '{"page_size":100}'],
-        capture_output=True, text=True)
-    try:
-        d = json.loads(r.stdout)
-    except json.JSONDecodeError:
-        die("Notion devolvio algo que no es JSON: %s" % r.stdout[:200])
-    if d.get("object") == "error":
-        die("Notion erro: %s" % d.get("message", "?"))
-    seen = set()
-    for pg in d.get("results", []):
-        for t in pg.get("properties", {}).get("Name", {}).get("title", []):
-            txt = t.get("plain_text", "")
-            m = re.search(r"azure-(\d+)", txt, re.IGNORECASE)
-            if m:
-                seen.add(m.group(1))
-    return seen
-
-
-def n_create_task(wid, title, desc, criterio, prioridad):
-    props = {
-        "Name": {"title": [{"type": "text", "text": {"content": title[:1900]}}]},
-        "Estado": {"select": {"name": "New"}},
-        "Prioridad": {"select": {"name": prioridad}},
-        "Descripción": {"rich_text": [{"type": "text", "text": {"content": (desc or "-")[:1900]}}]},
-        "Criterio de aceptación": {"rich_text": [{"type": "text", "text": {"content": (criterio or "-")[:1900]}}]},
-        "Repo": {"rich_text": [{"type": "text", "text": {"content": "_azure:_"}}]},
-        "Resultado": {"rich_text": [{"type": "text", "text": {
-            "content": "_Sincronizado desde Azure DevOps. Project: %s. WI: %d._" % (CFG["project"], wid)}}]},
-    }
-    return n_post("/pages", {"parent": {"database_id": CFG["notion_database_id"]}, "properties": props})
-
-
-def n_log(evento, tipo, tarea, detalle):
-    if not CFG["notion_log_db_id"]:
-        return
-    from datetime import datetime, timezone
-    c = lambda v: {"rich_text": [{"type": "text", "text": {"content": (v or "-")[:1900]}}]}
-    body = {
-        "parent": {"database_id": CFG["notion_log_db_id"]},
-        "properties": {
-            "Evento": {"title": [{"type": "text", "text": {"content": evento}}]},
-            "Origen": {"select": {"name": "sistema"}},
-            "Tipo": {"select": {"name": tipo}},
-            "Tarea": c(tarea),
-            "Rama": c("-"),
-            "Commit": c("-"),
-            "Detalle": c(detalle),
-            "Hora": {"date": {"start": datetime.now(timezone.utc).isoformat()}},
-        },
-    }
-    n_post("/pages", body)
+def criterio_de(f):
+    return (strip_html(f.get("Microsoft.VSTS.Common.AcceptanceCriteria"))
+            or strip_html(f.get("Microsoft.VSTS.TCM.ReproSteps"))
+            or "_Sin criterio en Azure._")
 
 
 # ----------------------------------------------------------------- sync
@@ -240,13 +176,13 @@ def one_pass(dry_run=False):
         return {"action": "no-op", "added": [], "skipped": [],
                 "message": "Azure sin tareas New en el sprint"}
 
-    already = n_query_titles()
+    already = BOARD.numeros()
     added, skipped, errors = [], [], []
 
     for wid in ids:
         key = str(wid)
         if key in already:
-            skipped.append({"id": wid, "reason": "ya en el tablero (azure-%s)" % key})
+            skipped.append({"id": wid, "reason": "ya en el board (numero %s)" % key})
             continue
         try:
             f = fetch_detail(wid)
@@ -258,35 +194,38 @@ def one_pass(dry_run=False):
 
         title = f.get("System.Title") or "Work Item #%d" % wid
         desc = strip_html(f.get("System.Description"))
-        criterio = strip_html(f.get("Microsoft.VSTS.TCM.ReproSteps")) or "_Sin criterio en Azure._"
+        criterio = criterio_de(f)
         prio = PRIO_MAP.get(f.get("Microsoft.VSTS.Common.Priority"), PRIO_DEFAULT)
-        task_title = "[azure-%d] %s" % (wid, title)
+        tipo = tipo_de(f)
+        clave = "%s-%d" % (tipo, wid)
 
         if dry_run:
-            added.append({"id": wid, "title": task_title, "prioridad": prio})
+            added.append({"id": wid, "clave": clave, "title": title, "prioridad": prio})
             already.add(key)  # evita duplicados en la misma pasada
             continue
 
-        resp = n_create_task(wid, task_title, desc, criterio, prio)
-        if resp.get("object") == "error":
-            errors.append({"id": wid, "error": resp.get("message", "?")[:200]})
+        try:
+            path = BOARD.crear(tipo, wid, prio, title, desc, criterio,
+                               origen="azure:%s" % CFG["project"])
+        except wi.Error as e:
+            errors.append({"id": wid, "error": str(e)[:200]})
         else:
-            added.append({"id": wid, "title": task_title})
+            added.append({"id": wid, "clave": clave, "title": title, "archivo": path})
             already.add(key)
 
     action = "dry-run" if dry_run else ("added" if added else ("partial" if errors else "no-op"))
     result = {"action": action, "added": added, "skipped": skipped, "errors": errors}
 
     if added and not dry_run:
-        n_log("azure-sync importo tareas", "deteccion",
-              ", ".join("azure-%d" % a["id"] for a in added[:5]),
+        BOARD.log("azure-sync importo tareas", "sistema", "deteccion",
+              ", ".join(a["clave"] for a in added[:5]), "-", "-",
               "Importadas %d tarea(s) de Azure DevOps: %s" % (len(added), ", ".join(str(a["id"]) for a in added)))
     return result
 
 
 def do_status():
     ids = fetch_new_workitems()
-    already = n_query_titles()
+    already = BOARD.numeros()
     nuevos = [i for i in ids if str(i) not in already]
     print(json.dumps({
         "action": "status",
@@ -315,10 +254,15 @@ def main():
     if not CFG["pat"]:
         die("Falta AZURE_DEVOPS_PAT. Ponelo en el entorno o en azure-sync.secrets.env",
             "echo 'AZURE_DEVOPS_PAT=xxx' >> %s" % args.config.replace(".env", ".secrets.env"))
-    if not CFG["notion_token"]:
-        die("Falta NOTION_TOKEN en %s" % args.config)
-    if not CFG["notion_database_id"]:
-        die("Falta NOTION_DATABASE_ID en %s" % args.config)
+
+    global BOARD
+    try:
+        BOARD = wi.Board(wi.cargar_config(args.config))
+    except wi.Error as e:
+        die(str(e))
+    if not args.dry_run and not args.status and not os.path.isdir(BOARD.dir):
+        die("No existe el board %s" % BOARD.dir,
+            "Crealo con: %s %s init" % (os.path.join(SCRIPT_DIR, "wi.sh"), args.config))
 
     if args.status:
         return do_status()
