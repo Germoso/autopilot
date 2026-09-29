@@ -24,7 +24,7 @@ DOS MODOS (autopilot.env):
                 Cada tarea indica su repo en el frontmatter (repo: <carpeta>) y su rama
                 se crea DENTRO de ese repo, desde la base de ese repo.
 
-EL BOARD NO VA EN GIT. Si viviera en el repo, cada cambio de rama del worker
+EL BOARD NO VA EN GIT. Si viviera en el repo, cada cambio de rama del coder
 cambiaria el tablero. install.sh --init lo agrega al .gitignore.
 """
 import datetime
