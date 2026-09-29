@@ -10,7 +10,7 @@ principal (orquestador), delegas en **dos puestos que trabajan en paralelo**:
 
 | Puesto | Agente | Toma de | Estado mientras trabaja | Máximo |
 |---|---|---|---|---|
-| **coder** | `autopilot-worker` | `bug-fix` > `new` | `in-progress` | **1** |
+| **coder** | `coder` | `bug-fix` > `new` | `in-progress` | **1** |
 | **qa** | `qa-reviewer` | `qa` | `validando` | **1** |
 
 Puede haber a la vez una tarea en `in-progress` y otra en `validando`, nunca dos en el mismo
@@ -62,7 +62,7 @@ son `wi.sh` y el `autopilot.env` (ver *Una sola vía de escritura*).
 | | **Claude Code** | **OpenCode** |
 |---|---|---|
 | Watcher | Bash con `run_in_background: true`. Te re-invoca cuando retorna. Mientras, no sondees su salida. | Bash en primer plano, con el timeout más largo posible. |
-| Subagente de un puesto | Tool Agent con `subagent_type: autopilot-worker` o `qa-reviewer`. Corren **en segundo plano** (definido en el agente): no los esperes; Claude Code te avisa cuando terminan. | **Sesión propia** vía API: `python3 $K/oc_sesion.py lanzar <agente> <carpeta abierta> "<clave>: <puesto>" - --adjunto <img>...` con el encargo por stdin. Devuelve `{"sesion": "ses_..."}`: regístralo con `$W "$E" sesion <clave> <ses>`. No espera. |
+| Subagente de un puesto | Tool Agent con `subagent_type: coder` o `qa-reviewer`. Corren **en segundo plano** (definido en el agente): no los esperes; Claude Code te avisa cuando terminan. | **Sesión propia** vía API: `python3 $K/oc_sesion.py lanzar <agente> <carpeta abierta> "<clave>: <puesto>" - --adjunto <img>...` con el encargo por stdin. Devuelve `{"sesion": "ses_..."}`: regístralo con `$W "$E" sesion <clave> <ses>`. No espera. |
 | Fin de un subagente | Llega como aviso de tarea terminada, con su respuesta. | El watcher lo devuelve en `terminadas`; la respuesta se lee con `python3 $K/oc_sesion.py resultado <ses>`. |
 | Imágenes | Pásale las rutas en el encargo: las abre con Read. | Van como `--adjunto` (las ve directo) **y** también listadas en el encargo. |
 
@@ -156,9 +156,9 @@ Para **cada** acción, primero **ocupa el puesto** y después lanza el subagente
 watcher antes de ocupar el puesto, te devuelve la misma acción):
 
 - `desarrollar` (coder) → `$W "$E" rama <clave> nueva` → `$W "$E" in-progress <clave>` →
-  lanza `autopilot-worker` con el **encargo del coder**.
+  lanza `coder` con el **encargo del coder**.
 - `desarrollar-bugfix` (coder) → `$W "$E" rama <clave> existente` → `$W "$E" in-progress <clave>`
-  → lanza `autopilot-worker` con el encargo del coder, incluido el `Feedback de QA`.
+  → lanza `coder` con el encargo del coder, incluido el `Feedback de QA`.
 - `certificar` (qa) → `$W "$E" certificar <clave> <intento+1>` → `$W "$E" qa-worktree <clave>`
   (devuelve **una copia de trabajo por repo** de la tarea) → lanza `qa-reviewer` con el **encargo del QA**.
 
@@ -228,10 +228,10 @@ new ──> in-progress ──> qa ──> validando ──┬──> done
 | Carpeta | Significado | Quién actúa |
 |---|---|---|
 | `new` | Pendiente | — |
-| `in-progress` | El coder está trabajando. Máximo 1 (puesto coder). | `autopilot-worker` |
-| `qa` | El worker terminó y commiteó. Cola de certificación. | — |
+| `in-progress` | El coder está trabajando. Máximo 1 (puesto coder). | `coder` |
+| `qa` | El coder terminó y commiteó. Cola de certificación. | — |
 | `validando` | El QA está certificando. Máximo 1 (puesto qa), en paralelo con el coder. | `qa-reviewer` |
-| `bug-fix` | QA falló. Hay que corregir. **Se toma antes que cualquier otra cosa.** | `autopilot-worker` |
+| `bug-fix` | QA falló. Hay que corregir. **Se toma antes que cualquier otra cosa.** | `coder` |
 | `stopped` | No se pudo. Requiere humano, con motivo escrito. | — |
 | `done` | **Certificado por QA.** No significa mergeado: el merge lo hace el humano. | — |
 
@@ -256,7 +256,7 @@ tercer rechazo, `stopped` con el historial.
 
 ## Los dos agentes
 
-**`autopilot-worker`** (coder) — desarrolla en `<REPO>`, en la rama de la tarea, y deja sus
+**`coder`** (el programador) — desarrolla en `<REPO>`, en la rama de la tarea, y deja sus
 **notas del desarrollador**. Le bloquean `git push`, `git merge`, `git pull`, `git rebase`,
 cambiar/crear/borrar ramas y `reset --hard`.
 

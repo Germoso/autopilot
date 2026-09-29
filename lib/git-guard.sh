@@ -12,7 +12,7 @@
 #
 #  uso: git-guard.sh <modo>
 #    todos        push, merge, pull (hace merge), gh pr merge
-#    worker       + rebase, borrar ramas, reset --hard, switch/checkout -b
+#    coder        + rebase, borrar ramas, reset --hard, switch/checkout -b
 #    qa           + commit, add, switch, checkout, reset, stash, rebase, borrar ramas
 # ============================================================
 MODE="${1:-todos}" exec python3 -c '
@@ -60,7 +60,7 @@ def sub_git(argv):
 
 BASE = {"push", "merge", "pull"}
 EXTRA = {
-    "worker": {"rebase"},
+    "coder": {"rebase"},
     "qa": {"rebase", "commit", "add", "switch", "checkout", "reset", "stash", "cherry-pick", "revert", "am", "apply", "restore", "rm", "mv"},
 }
 
@@ -72,14 +72,14 @@ def motivo(argv):
         return None
     if sub in BASE or sub in EXTRA.get(mode, set()):
         return "git " + sub
-    if mode in ("worker", "qa"):
+    if mode in ("coder", "qa"):
         if sub == "branch" and any(a in ("-d", "-D", "--delete", "-m", "-M", "--move") for a in args):
             return "git branch " + " ".join(args)
         if sub == "reset" and "--hard" in args:
             return "git reset --hard"
-        if mode == "worker" and sub in ("switch", "checkout") and any(a in ("-b", "-B", "-c", "-C", "--orphan") for a in args):
+        if mode == "coder" and sub in ("switch", "checkout") and any(a in ("-b", "-B", "-c", "-C", "--orphan") for a in args):
             return "git %s (crear otra rama)" % sub
-        if mode == "worker" and sub == "switch":
+        if mode == "coder" and sub == "switch":
             return "git switch (cambiar de rama)"
     return None
 

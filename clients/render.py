@@ -32,7 +32,7 @@ MARCA = "# generado por autopilot-kit (install.sh). No editar: se regenera."
 # Comandos de git prohibidos por rol. Mismo criterio que lib/git-guard.sh.
 BASE = ["git push", "git merge", "git pull", "gh pr merge"]
 DENY = {
-    "worker": BASE + ["git rebase", "git branch -d", "git branch -D", "git branch --delete",
+    "coder": BASE + ["git rebase", "git branch -d", "git branch -D", "git branch --delete",
                       "git reset --hard", "git switch", "git checkout -b", "git checkout -B"],
     "qa": BASE + ["git rebase", "git commit", "git add", "git switch", "git checkout", "git reset",
                   "git stash", "git cherry-pick", "git revert", "git branch -d", "git branch -D",
@@ -100,10 +100,18 @@ def escribir(path, front, cuerpo):
 
 
 def install(cliente, cfg, kit):
+    actuales = set()
     for src in sorted(glob.glob(os.path.join(KIT_SRC, "agents", "*.md"))):
         meta, cuerpo = leer_agente(src)
+        actuales.add(meta["name"] + ".md")
         front = front_opencode(meta) if cliente == "opencode" else front_claude(meta, kit)
         escribir(os.path.join(cfg, "agents", meta["name"] + ".md"), front, cuerpo)
+    # Agentes que el kit instalo antes y ya no existen (p. ej. renombrados): se borran.
+    # Solo archivos con la marca del kit; nunca uno ajeno.
+    for p in glob.glob(os.path.join(cfg, "agents", "*.md")):
+        if os.path.basename(p) not in actuales and MARCA in open(p, encoding="utf-8").read():
+            os.remove(p)
+            print("  - %s (ya no existe en el kit)" % p)
     if cliente == "opencode":
         for nombre, desc in COMANDOS.items():
             cuerpo = ("Carga la skill `%s` y sigue su seccion \"Arranque\" en ESTE proyecto, "

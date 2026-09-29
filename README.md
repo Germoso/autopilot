@@ -32,7 +32,7 @@ dotenvs/
 │   ├── autopilot-init/SKILL.md # /autopilot-init
 │   └── azure-sync/SKILL.md
 ├── agents/                     # fuente unica de los subagentes
-│   ├── autopilot-worker.md
+│   ├── coder.md
 │   └── qa-reviewer.md
 ├── clients/render.py           # genera agentes/comandos/guardas para cada cliente
 └── examples/proyecto/          # autopilot.env, azure-sync.env
@@ -77,7 +77,7 @@ mi-proyecto/
   Podés mover tareas a mano (explorador, VS Code, Obsidian); el watcher lo ve en segundos.
 - **El nombre del archivo es `<tipo>-<numero>-<slug>.md`.** `<tipo>-<numero>` es la clave de
   la tarea y **el nombre de su rama**.
-- **El board no está en git.** Si lo estuviera, cada vez que el worker cambia de rama el
+- **El board no está en git.** Si lo estuviera, cada vez que el coder cambia de rama el
   tablero cambiaría con ella. `install.sh --init` lo agrega al `.gitignore`. Con
   `WORKITEMS_DIR` se puede poner en otra carpeta (un vault de Obsidian, una carpeta compartida).
 
@@ -320,7 +320,7 @@ Cada work item importado trae sus adjuntos a `.workitems/adjuntos/<clave>/`:
   Sin ffmpeg se guarda el video y queda la nota; después: `azure-sync.py --config ... --fotogramas`.
 - Límite de 50 MB por archivo. Un adjunto que falla no frena la importación: queda anotado.
 
-El autopilot le pasa las imágenes y fotogramas al worker y al QA (`tarea.adjuntos`).
+El autopilot le pasa las imágenes y fotogramas al coder y al QA (`tarea.adjuntos`).
 
 **Requisito:** `sudo apt install ffmpeg` para los fotogramas.
 
@@ -347,7 +347,7 @@ setsid nohup python3 ~/.local/share/autopilot-kit/azure-sync.py \
 
 | Puesto | Agente | Toma de | Mientras trabaja | Máximo |
 |---|---|---|---|---|
-| coder | `autopilot-worker` | `bug-fix` > `new` | `in-progress` | 1 |
+| coder | `coder` | `bug-fix` > `new` | `in-progress` | 1 |
 | QA | `qa-reviewer` | `qa` | `validando` | 1 |
 
 Mientras el coder desarrolla una tarea, el QA puede estar certificando otra.

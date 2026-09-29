@@ -6,7 +6,7 @@
 #    - scripts (board, watcher, azure-sync, guardas de git, MCP) en
 #      ~/.local/share/autopilot-kit/   (compartidos por ambos clientes)
 #    - skills autopilot y azure-sync   en la carpeta de skills de cada cliente
-#    - agentes autopilot-worker y qa-reviewer, generados desde agents/*.md
+#    - agentes coder y qa-reviewer, generados desde agents/*.md
 #      con los bloqueos de git propios de cada cliente
 #    - (OpenCode) comandos /autopilot y /azure-sync
 #      (en Claude Code las skills ya son /autopilot y /azure-sync)

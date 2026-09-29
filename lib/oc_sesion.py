@@ -6,7 +6,7 @@ OpenCode puede correr varios subagentes en paralelo, pero el agente principal es
 terminen. Para que el coder y el QA trabajen de verdad en paralelo (y el principal siga
 atendiendo el board), cada tarea corre en SU PROPIA SESION de OpenCode:
 
-  lanzar    crea la sesion con el agente (autopilot-worker / qa-reviewer) en la carpeta del
+  lanzar    crea la sesion con el agente (coder / qa-reviewer) en la carpeta del
             proyecto, le manda el encargo (con imagenes adjuntas) y NO espera: /prompt agenda
             la ejecucion y devuelve enseguida.
   estado    activa / terminada (+ outcome: succeeded, failed, interrupted).
