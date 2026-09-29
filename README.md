@@ -77,7 +77,7 @@ mi-proyecto/
   Podés mover tareas a mano (explorador, VS Code, Obsidian); el watcher lo ve en segundos.
 - **El nombre del archivo es `<tipo>-<numero>-<slug>.md`.** `<tipo>-<numero>` es la clave de
   la tarea y **el nombre de su rama**.
-- **El board no está en git.** Si lo estuviera, cada vez que el coder cambia de rama el
+- **El board no está en git.** Si lo estuviera, cada vez que una rama cambia el
   tablero cambiaría con ella. `install.sh --init` lo agrega al `.gitignore`. Con
   `WORKITEMS_DIR` se puede poner en otra carpeta (un vault de Obsidian, una carpeta compartida).
 
@@ -131,7 +131,8 @@ El feedback de QA **se acumula por intento**: al llegar a `stopped`, el historia
   no se inventa otra base.
 - **Workspace:** la rama se crea **dentro del repo de la tarea** (`repo:` en su frontmatter).
   Una tarea sin repo, o con un repo que no está en `autopilot.env`, pasa a `stopped`.
-- Si el repo tiene cambios sin commitear en archivos rastreados, no se cambia de rama: `stopped`.
+- Cada tarea se trabaja en su **propia copia del repo** (`git worktree`): tu copia principal no se
+  toca ni cambia de rama, aunque tenga cambios sin commitear.
 - Si la rama de una tarea nueva ya existe, `stopped`: no se pisa trabajo previo.
 - Un rechazo de QA se corrige **en la misma rama**.
 - **Nunca `push`, nunca `merge`.** Bloqueados por permiso. El merge lo hace el humano.
@@ -209,7 +210,7 @@ Qué hace:
 - **no toca archivos de los repos**: en un repo, lo del kit se ignora solo en tu copia local
   (`.git/info/exclude`); en un workspace todo vive en la carpeta padre. No hay nada que commitear.
 - prohíbe push/merge también al agente principal (en cada cliente instalado)
-- avisa si falta alguna rama base, si no existe, o si un repo tiene cambios sin commitear
+- avisa si falta alguna rama base o si no existe
 
 ### Workspace: varios repos, un board
 
@@ -347,20 +348,42 @@ setsid nohup python3 ~/.local/share/autopilot-kit/azure-sync.py \
 
 | Puesto | Agente | Toma de | Mientras trabaja | Máximo |
 |---|---|---|---|---|
-| coder | `coder` | `bug-fix` > `new` | `in-progress` | 1 |
-| QA | `qa-reviewer` | `qa` | `validando` | 1 |
+| coder | `coder` | `bug-fix` > `new` | `in-progress` | `MAX_CODERS` |
+| QA | `qa-reviewer` | `qa` | `validando` | `MAX_QA` |
 
-Mientras el coder desarrolla una tarea, el QA puede estar certificando otra.
+Mientras un coder desarrolla una tarea, el QA puede estar certificando otra.
 
-- **Claude Code:** los dos subagentes corren en segundo plano; Claude Code avisa al agente
-  principal cuando terminan.
-- **OpenCode:** cada puesto corre como **su propia sesión** de OpenCode, lanzada por la API del
+- **Claude Code:** los subagentes corren en segundo plano; Claude Code avisa al agente principal
+  cuando terminan.
+- **OpenCode:** cada tarea corre como **su propia sesión** de OpenCode, lanzada por la API del
   servicio local (`oc_sesion.py`). Las ves en tu lista de sesiones y podés mirarlas en vivo. El
   watcher avisa cuando una termina. Si cerrás OpenCode, esas sesiones siguen; al volver,
   `/autopilot` las retoma.
 - **El QA trabaja en su propia copia del repo** (`git worktree` en `~/.cache/autopilot-kit/qa/`,
   en la punta de la rama de la tarea): puede compilar y correr tests o la app sin pisar al coder.
   Se borra al dar el veredicto.
+
+### Cuántos agentes a la vez
+
+En `autopilot.env`:
+
+```ini
+PARALELO=no     # no = 1 coder + 1 QA (defecto). si = hasta MAX_CODERS y MAX_QA a la vez
+MAX_CODERS=2
+MAX_QA=2
+```
+
+- **Cada agente trabaja un workitem distinto.** Nunca hay dos coders en la misma tarea.
+- **Cada coder en su propia copia del repo** (`git worktree` en `~/.cache/autopilot-kit/coder/<repo>-<clave>`)
+  con su propia rama. Tu copia principal del repo **nunca cambia de rama** (también con `PARALELO=no`).
+- **Dos workitems en paralelo no tocan el mismo archivo:** el primero que lo edita lo reserva (en
+  Claude Code, automáticamente al editar; con `wi.sh reservar` desde la terminal o en OpenCode).
+  El otro se pone **en espera** y se retoma, en su misma copia, cuando el primero termina.
+- Al terminar un coder, `wi.sh solapes` compara sus archivos con los de las demás tareas activas y
+  avisa si comparten alguno (posible conflicto al mergear).
+- Límites: dos tareas pueden tocar archivos distintos y aun así depender una de otra; eso lo ve el
+  QA o se ve al mergear. **Cada agente gasta tokens y memoria**: con 7 GB de RAM y Flutter, 2 + 2 es
+  el máximo razonable.
 
 ### Nunca contra producción: `.env.autopilot`
 

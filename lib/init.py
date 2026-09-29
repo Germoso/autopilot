@@ -18,7 +18,7 @@ Que hace:
   - crea el board .workitems/
   - nada entra al repo: en modo un repo ignora lo del kit en .git/info/exclude
   - prohibe push/merge al agente principal (OpenCode / Claude Code, los que esten instalados)
-  - reporta avisos: ramas base vacias o inexistentes, cambios sin commitear
+  - reporta avisos: ramas base vacias o inexistentes, herramientas y .env.autopilot
 """
 import json
 import os
@@ -99,7 +99,11 @@ def env_autopilot(det, bases):
               "# Para sacar un repo del sistema, borra su linea."]
         L += ["REPO.%s=%s" % (r["nombre"], bases.get(r["nombre"], "")) for r in det["repos"]]
     L += ["", "# Carpeta del board. Vacio = .workitems/ junto a este archivo.", "WORKITEMS_DIR=",
-          "", "# Segundos entre lecturas del board.", "POLL_INTERVAL=5", ""]
+          "", "# Segundos entre lecturas del board.", "POLL_INTERVAL=5",
+          "", "# Paralelismo: no = 1 coder y 1 QA a la vez. si = hasta MAX_CODERS y MAX_QA, cada uno con un",
+          "# workitem distinto, en su propia copia del repo; dos workitems nunca tocan el mismo archivo.",
+          "# Cada agente gasta tokens y memoria (Flutter ~1,5-2 GB por analisis/test).",
+          "PARALELO=no", "MAX_CODERS=2", "MAX_QA=2", ""]
     return "\n".join(L)
 
 
@@ -203,7 +207,8 @@ def init(carpeta, bases, sin_azure=False):
                       "y el agente no los puede ver (sudo apt install ffmpeg)")
     for r in det["repos"]:
         if r["sucio"]:
-            avisos.append("%s tiene cambios sin commitear: el autopilot no cambiara de rama ahi hasta resolverlos"
+            avisos.append("%s tiene cambios sin commitear en tu copia (no afecta al autopilot, que trabaja en su "
+                          "propia copia; es solo informativo)"
                           % r["nombre"])
     return {"modo": det["modo"], "carpeta": raiz, "hecho": hecho, "avisos": avisos}
 

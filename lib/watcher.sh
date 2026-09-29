@@ -12,7 +12,7 @@
 #  (Claude Code: en segundo plano; OpenCode: como sesiones propias via oc_sesion.py).
 #  Leer el board es leer archivos locales: no hay red ni tokens.
 #
-#  Dos puestos en paralelo, UNA tarea como maximo cada uno:
+#  Dos puestos en paralelo, con capacidad (PARALELO=no -> 1 y 1; si -> MAX_CODERS y MAX_QA):
 #    coder (in-progress): bug-fix primero, despues new (Critical>High>Medium>Low)
 #    qa    (validando):   la cola qa
 #  Retorna cuando hay trabajo para un puesto LIBRE (`acciones`) o cuando termino una sesion de
@@ -74,8 +74,10 @@ print(", ".join(ev))' <<<"$plan")"
 import json,sys
 p = json.load(sys.stdin); c = p["cola"]
 o = p["ocupados"]
-print("coder=%s qa=%s | cola bugfix=%d qa=%d new=%d stopped=%d" % (o["coder"] or "libre", o["qa"] or "libre",
-      c["bugfix"], c["qa"], c["new"], len(p["stopped"])))' <<<"$plan")"
+k = p["capacidad"]
+f = lambda x: "%d/%d%s" % (len(o[x]), k[x], (" " + ",".join(o[x])) if o[x] else "")
+print("coder %s | qa %s | cola bugfix=%d qa=%d new=%d en_espera=%d stopped=%d" % (f("coder"), f("qa"),
+      c["bugfix"], c["qa"], c["new"], len(p["en_espera"]), len(p["stopped"])))' <<<"$plan")"
   log " #$iter idle ($c). Espero ${POLL_INTERVAL}s."
   sleep "$POLL_INTERVAL"
 done

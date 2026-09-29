@@ -6,9 +6,13 @@
 #    escritura.sh qa     solo dentro de sus copias de trabajo (~/.cache/autopilot-kit/qa/)
 #    escritura.sh coder  cualquier archivo del codigo, MENOS los .env* (salvo .env.example):
 #                        los ambientes los define el humano (.env.autopilot), nunca un agente.
+#                        Ademas, dentro de su worktree (~/.cache/autopilot-kit/coder/<repo>-<clave>/)
+#                        RESERVA el archivo para su tarea; si otra tarea activa ya lo tiene, bloquea:
+#                        dos workitems en paralelo nunca tocan el mismo archivo.
 #  Una escritura no permitida sale con codigo 2: Claude Code la cancela y muestra el motivo.
 # ============================================================
-MODO="${1:-coder}" exec python3 -c '
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MODO="${1:-coder}" KIT="$DIR" exec python3 -c '
 import json, os, re, sys
 modo = os.environ.get("MODO", "coder")
 try:
@@ -29,6 +33,16 @@ if modo == "qa":
     if not real.startswith(permitida):
         print("BLOQUEADO por el autopilot: el QA solo puede escribir dentro de sus copias de trabajo (%s). "
               "Ruta pedida: %s" % (permitida, ruta or "-"), file=sys.stderr)
+        sys.exit(2)
+if modo == "coder" and real:
+    sys.path.insert(0, os.environ.get("KIT", ""))
+    try:
+        import workitems
+        motivo = workitems.reservar_ruta(real)
+    except Exception:
+        motivo = None
+    if motivo:
+        print("BLOQUEADO por el autopilot: " + motivo, file=sys.stderr)
         sys.exit(2)
 sys.exit(0)
 '
