@@ -82,7 +82,8 @@ def env_herramientas():
     """Entorno con Java, Android SDK y el AVD del kit (sin tocar la config global del usuario)."""
     env = dict(os.environ)
     env.update({"JAVA_HOME": JDK, "ANDROID_HOME": SDK, "ANDROID_SDK_ROOT": SDK, "ANDROID_AVD_HOME": AVD_HOME,
-                "GRADLE_OPTS": (env.get("GRADLE_OPTS", "") + " -Dorg.gradle.daemon=false").strip(),
+                # Java del kit para Gradle aunque el repo fije otro (p. ej. una ruta de Mac en gradle.properties)
+                "GRADLE_OPTS": (env.get("GRADLE_OPTS", "") + " -Dorg.gradle.daemon=false -Dorg.gradle.java.home=" + JDK).strip(),
                 "NODE_PATH": NODE_MODULES, "E2E_NODE_MODULES": NODE_MODULES,
                 "E2E_PASOS": os.path.join(AQUI, "e2e-pasos.cjs")})
     env["PATH"] = os.pathsep.join([os.path.join(JDK, "bin"), os.path.join(SDK, "platform-tools"),
@@ -219,7 +220,7 @@ def backend_local(cfg, nombre):
         raise Error("el backend %s no esta en autopilot.env (REPO.%s)" % (nombre, nombre))
     backs = [nombre]
     archivo_env = entorno.archivo_e2e(be["path"])
-    v = entorno.validar(be["path"], archivo_env)
+    v = entorno.validar(be["path"], archivo_env, copia=True)  # el backend corre en su copia
     if v["estado"] != "ok":
         raise Error("%s de %s: %s. %s" % (archivo_env, backs[0], v["estado"], v.get("recomendacion", "")))
     puerto = puerto_backend(be["path"])
