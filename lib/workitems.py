@@ -42,7 +42,7 @@ ESTADOS = ["new", "in-progress", "qa", "validando", "e2e", "probando-e2e", "bug-
 CERRADAS = ("done", "stopped", "reviewed")
 PRIO = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 TIPOS = ("task", "bug")
-SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Notas del desarrollador",
+SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Repos modificados", "Notas del desarrollador",
              "Reporte de QA", "Feedback de QA", "Reporte E2E", "Feedback de E2E", "Resultado", "Motivo de stopped"]
 # Puestos que trabajan en paralelo: estado en el que esta la tarea mientras el puesto la trabaja.
 # e2e solo recibe tareas con E2E=true (QA APROBADO -> e2e en vez de done).
@@ -507,6 +507,7 @@ class Board:
             "resultado": secs.get("Resultado", ""),
             "motivo": secs.get("Motivo de stopped", ""),
             "notas_dev": secs.get("Notas del desarrollador", ""),
+            "repos_modificados": secs.get("Repos modificados", ""),
             "reporte_qa": secs.get("Reporte de QA", ""),
             "reporte_e2e": secs.get("Reporte E2E", ""),
             "feedback_e2e": secs.get("Feedback de E2E", ""),
@@ -584,6 +585,11 @@ class Board:
                 secs[k] = (prev + "\n\n" + v).strip() if prev else v
             meta["actualizado"] = ahora()
             escribir_atomico(path, serializar(meta, titulo, secs))
+        if estado_nuevo == "qa":
+            try:
+                self._escribir_repos_modificados(clave.lower())
+            except Error:
+                pass
         if estado_nuevo in CERRADAS:
             self._cerrar_coder(clave.lower(), estado_nuevo)
         return path
@@ -1003,6 +1009,62 @@ class Board:
                     out.append({"repo": nombre, "con": otra, "archivos": comunes})
         return out
 
+    def repos_modificados(self, clave):
+        """Desde git (no desde lo que dice el agente): por cada repo de la tarea, commits base..rama
+        y archivos cambiados. Un repo de la tarea sin commits aparece con commits vacios."""
+        clave = clave.lower()
+        out = []
+        for r in self.repos_de_tarea(self.leer(clave)[2]):
+            nombre = r["nombre"] or os.path.basename(r["path"])
+            existe = lambda ref: self.git(r["path"], "rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
+            base = r["base"] if existe("refs/heads/%s" % r["base"]) else "origin/%s" % r["base"]
+            item = {"repo": nombre, "rama": clave, "base": r["base"], "commits": [], "archivos": []}
+            if existe("refs/heads/%s" % clave) and existe(base):
+                log = self.git(r["path"], "log", "--format=%h %s", "%s..%s" % (base, clave), check=False).stdout
+                item["commits"] = [l for l in log.splitlines() if l.strip()]
+                item["archivos"] = self.git(r["path"], "diff", "--name-only", "%s...%s" % (base, clave),
+                                            check=False).stdout.split()
+            out.append(item)
+        return out
+
+    def _escribir_repos_modificados(self, clave):
+        """Seccion '## Repos modificados' (se reemplaza cada vez que la tarea pasa a qa) y aviso si no
+        coincide con el bloque REPOS MODIFICADOS que declaro el coder en su ultima nota."""
+        datos = self.repos_modificados(clave)
+        filas = ["| Repo | Rama | Base | Commits | Archivos |", "|---|---|---|---|---|"]
+        detalle = []
+        for d in datos:
+            filas.append("| %s | %s | %s | %s | %s |" % (d["repo"], d["rama"], d["base"],
+                                                    len(d["commits"]) or "sin cambios", len(d["archivos"]) or "-"))
+            if d["commits"]:
+                detalle.append("**%s** (`%s`, desde `%s`):\n\n%s\n\nArchivos: %s" % (
+                    d["repo"], d["rama"], d["base"], "\n".join("- `%s`" % c for c in d["commits"]),
+                    ", ".join("`%s`" % f for f in d["archivos"][:40]) + (" …" if len(d["archivos"]) > 40 else "")))
+        notas = self.leer(clave)[4].get("Notas del desarrollador", "")
+        ultima = notas.split("### Intento")[-1] if notas else ""
+        bloque = re.search(r"REPOS MODIFICADOS:?\s*\n((?:\s*[-*].*\n?)+)", ultima)
+        declarados = set()
+        if bloque:
+            for l in bloque.group(1).splitlines():
+                m = re.match(r"\s*[-*]\s*`?([\w.\-]+)`?\s*[—–-]+\s*rama\b", l)  # "- <repo> — rama ..."
+                if m:
+                    declarados.add(m.group(1))
+        con_cambios = {d["repo"] for d in datos if d["commits"]}
+        avisos = []
+        if not bloque:
+            avisos.append("⚠️ El coder no declaró el bloque REPOS MODIFICADOS en sus notas.")
+        else:
+            if declarados - con_cambios:
+                avisos.append("⚠️ No coincide con lo que declaró el coder: declaró %s pero no tienen commits en la rama."
+                              % ", ".join(sorted(declarados - con_cambios)))
+            if con_cambios - declarados:
+                avisos.append("⚠️ No coincide con lo que declaró el coder: hay commits en %s y no los declaró."
+                              % ", ".join(sorted(con_cambios - declarados)))
+        texto = "\n".join(filas) + ("\n\n" + "\n\n".join(detalle) if detalle else "") + \
+                ("\n\n" + "\n".join(avisos) if avisos else "") + "\n\n_Calculado desde git al pasar a qa (%s)._" % ahora()
+        self.modificar(clave, secs_set={"Repos modificados": texto})
+        return datos
+
     def _cambiados(self, r, clave):
         existe = lambda ref: self.git(r["path"], "rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
         base = r["base"] if existe("refs/heads/%s" % r["base"]) else "origin/%s" % r["base"]
@@ -1088,6 +1150,8 @@ USO = """uso: wi.sh <env> <comando> [args]
                                          --repo (workspace): abre la MISMA rama en otro repo
                                          declarado y lo suma a la tarea (lo usa el coder)
   repos      <clave>                     repos de la tarea (principal + extra) en JSON
+  repos-modificados <clave>              desde git: commits y archivos por repo (JSON). Al pasar a qa
+                                         se escribe en la seccion '## Repos modificados' de la tarea
   resultado  <clave> <texto>
   motivo     <clave> <texto>
   feedback   <clave> <texto>             agrega al historial de Feedback de QA
@@ -1189,6 +1253,8 @@ def main(argv):
         need(2)
         repo = a[a.index("--repo") + 1] if "--repo" in a and a.index("--repo") + 1 < len(a) else None
         print(json.dumps(b.preparar_rama(a[0], a[1], repo), ensure_ascii=False)); return 0
+    elif cmd == "repos-modificados":
+        need(1); print(json.dumps(b.repos_modificados(a[0]), ensure_ascii=False, indent=2)); return 0
     elif cmd == "repos":
         need(1)
         t = next((t for t in b.todas() if t["id"] == a[0].lower()), None)

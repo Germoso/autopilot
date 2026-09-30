@@ -227,6 +227,15 @@ def revisar(c, prof=0):
                     "deten la tarea y recomienda que hacer" % amb)
     return None
 
+# Sin atribucion de herramienta en commits ni PRs (preferencia del usuario): un `git commit` o
+# `gh pr create/edit` cuyo mensaje trae esos trailers se rechaza para que se rehaga sin ellos.
+ATRIBUCION = re.compile(r"co-authored-by:\s*claude|claude-session:|generated with \[?claude code", re.I)
+if re.search(r"\bgit\b[^;&|]*\bcommit\b|\bgh\s+pr\s+(create|edit)\b", cmd) and ATRIBUCION.search(cmd):
+    print("BLOQUEADO por el autopilot: el mensaje trae atribucion de herramienta (Co-Authored-By: Claude, "
+          "Claude-Session o Generated with Claude Code). Los commits y PRs van sin datos de autor: "
+          "repite el comando sin esas lineas.", file=sys.stderr)
+    sys.exit(2)
+
 m = revisar(cmd)
 if m:
     if "aenv.sh" in m or "e2e.sh" in m:

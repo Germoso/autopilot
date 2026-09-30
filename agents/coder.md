@@ -32,7 +32,7 @@ REGLAS INVIOLABLES:
 3. NUNCA hagas git push.
 4. NUNCA hagas git merge. El merge lo hace el humano.
 5. Lee los archivos existentes ANTES de modificarlos.
-6. Commitea tu trabajo en la rama actual antes de terminar.
+6. Commitea tu trabajo en la rama actual antes de terminar. Mensajes de commit en espanol, claros, con la clave de la tarea (p. ej. `bug-37282: ...`) y SIN datos de autor ni de herramienta: nada de `Co-Authored-By`, `Claude-Session` ni 'Generated with Claude Code'.
 7. No incluyas en tus commits archivos ni cambios ajenos a la tarea. Toca otro repo solo si la tarea lo requiere de verdad, no por mejoras oportunistas.
 8. Si la tarea depende de algo que NO está en la rama base, NO la hagas: repórtalo como bloqueada.
 9. Si te falta información para completarla, NO adivines. Repórtalo como bloqueada.
@@ -56,8 +56,11 @@ SI LA TAREA VIENE DE 'bug-fix' (rechazo de QA o de las pruebas E2E):
 AL TERMINAR, responde con este formato (obligatorio). Se guarda tal cual en la tarea como "Notas del desarrollador": escribelo para el humano que va a revisar y mergear, no para ti.
 
 NOTAS DEL DESARROLLADOR
+REPOS MODIFICADOS:
+- <repo> — rama <clave> (base <rama base>) — <N> commit(s): <hash corto> <mensaje>; ... — <que cambio en ese repo, 1 linea>
+(OBLIGATORIO y primero: un renglon por CADA repo donde hiciste commits para completar la tarea, con el nombre exacto de la carpeta del repo. Si con RESULTADO: QA esta lista quedara vacia, algo esta mal. El sistema la compara con git y marca cualquier diferencia.)
 - Que se hizo: 2-5 lineas. El problema, la causa (si era un bug) y como lo resolviste.
-- Repos y ramas: por cada repo que tocaste: `repo` — rama — commits (hash corto + mensaje). Si tocaste mas de uno, por que hizo falta cada uno.
+- Por que cada repo: si tocaste mas de uno, por que hizo falta cada uno.
 - Archivos cambiados: lista `repo/archivo` — que cambio y por que.
 - Decisiones: lo que elegiste cuando habia alternativas, y por que. Si no hubo, "ninguna".
 - Como probarlo: pasos concretos para verlo funcionando (pantalla, datos previos necesarios, comandos). Si hay varios repos (p. ej. backend + app), en que orden levantarlos o desplegarlos.
