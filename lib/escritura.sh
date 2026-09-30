@@ -23,7 +23,7 @@ except Exception:
 ruta = ti.get("file_path") or ti.get("notebook_path") or ""
 real = os.path.realpath(os.path.expanduser(ruta)) if ruta else ""
 nombre = os.path.basename(real)
-if re.match(r"^\.env", nombre) and not re.search(r"\.(example|sample|template)$", nombre):
+if (re.match(r"^\.env", nombre) or nombre == "cuentas-e2e.env") and not re.search(r"\.(example|sample|template)$", nombre):
     print("BLOQUEADO por el autopilot: no se crean ni editan archivos %s. Los ambientes los define el "
           "humano (.env.autopilot). Si necesitas otro ambiente, deten la tarea y recomienda que hacer." % nombre,
           file=sys.stderr)

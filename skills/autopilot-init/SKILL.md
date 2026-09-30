@@ -47,8 +47,8 @@ I=~/.local/share/autopilot-kit/init.py
    `~/.local/share/autopilot-kit/e2e-setup.sh`; ambiente de un backend/front web que no está `ok` →
    el E2E usa su `.env.autopilot` (base de QA) o, si existe, su `.env.autopilot.e2e`: que el humano
    lo corrija según la recomendación (y que el backend tenga `PORT`); un front web sin
-   `E2E_API.<front>=env:...` → usaría la API de QA en vez del backend local de la tarea; faltan cuentas → `E2E_<ROL>_USER` / `E2E_<ROL>_PASSWORD` en `.env.autopilot.e2e` junto
-   a `autopilot.env`; falta `E2E_API.<app>` → cómo apuntar esa app Flutter al backend local.
+   `E2E_API.<front>=env:...` → usaría la API de QA en vez del backend local de la tarea; faltan cuentas → variables `E2E_*` (p. ej. `E2E_<ROL>_USER` / `E2E_<ROL>_PASSWORD`) en `cuentas-e2e.env` junto
+   a `autopilot.env` (nunca en `autopilot.env`); falta `E2E_API.<app>` → cómo apuntar esa app Flutter al backend local.
 
 6. **Config E2E.** `init.py` deja en `autopilot.env` un bloque E2E **apagado** (`E2E=false`) con lo que
    dedujo: `E2E_CLIENTS` (qué frontends consumen cada backend, por el nombre), `E2E_PLATFORMS` y

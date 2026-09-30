@@ -160,22 +160,25 @@ paso. Actívalo cuando quieras más confianza antes de mergear.
 ~/.local/share/autopilot-kit/e2e-setup.sh
 ```
 
-**2. Poner las cuentas de prueba** en un archivo `.env.autopilot.e2e` en la carpeta del proyecto
-(junto a `autopilot.env`), una por rol, que existan en la base de QA:
+**2. Poner las cuentas de prueba** en **`cuentas-e2e.env`**, en la carpeta del proyecto (junto a
+`autopilot.env`). Una por rol, que existan en la base de QA. El nombre es libre si empieza con `E2E_`:
 
 ```
+E2E_BO_ADMIN_USER=admin@prueba.com
+E2E_BO_ADMIN_PASSWORD=...
 E2E_CLIENTE_USER=cliente@prueba.com
 E2E_CLIENTE_PASSWORD=...
-E2E_ADMIN_USER=admin@prueba.com
-E2E_ADMIN_PASSWORD=...
 ```
+
+No las pongas en `autopilot.env`: ese archivo lo leen los agentes y no debe tener contraseñas.
+Ejemplo: [`examples/proyecto/cuentas-e2e.env.example`](examples/proyecto/cuentas-e2e.env.example).
 
 **3. Base de datos.** Por defecto el E2E usa **la misma base de QA** del `.env.autopilot` de cada
 backend: no tienes que crear nada. Solo asegúrate de que ese `.env.autopilot` tenga `PORT` (el
 puerto del backend; si no, se toma el del `.env`).
 
-¿Prefieres otra base u otro puerto solo para E2E? Crea un `.env.autopilot.e2e` en ese backend (igual
-que `.env.autopilot`, con los cambios). Si existe, el E2E usa ese. Ejemplo:
+¿Prefieres otra base u otro puerto solo para E2E? *(opcional)* Crea un `.env.autopilot.e2e` en ese
+backend (igual que `.env.autopilot`, con los cambios). Si existe, el E2E usa ese. Ejemplo:
 [`examples/proyecto/env.autopilot.e2e.example`](examples/proyecto/env.autopilot.e2e.example).
 
 **4. Activarlo.** En `autopilot.env`, `/autopilot-init` ya dejó un bloque E2E sugerido. Revísalo
@@ -190,6 +193,17 @@ backend local.
 ```
 
 Luego `/autopilot`. Las tareas aprobadas por el QA pasan por E2E antes de llegar a `done`.
+
+**Resumen de archivos** (todos los creas tú; ningún agente los crea ni los edita):
+
+| Archivo | Dónde | Qué tiene |
+|---|---|---|
+| `autopilot.env` | carpeta del proyecto | Configuración del kit. **Sin contraseñas.** |
+| `cuentas-e2e.env` | carpeta del proyecto | Cuentas de prueba del E2E |
+| `.env.autopilot` | cada repo con BD o API | Ambiente de QA (coder, QA y E2E) |
+| `.env.autopilot.e2e` | un repo, opcional | Otra base u otro puerto solo para E2E |
+
+Los `.env`, `.env.local`, `.env.qa`… de tu equipo el autopilot no los usa para correr nada.
 
 **Cómo protege producción:** los backends corren en tu máquina contra la base de QA (o la que
 pongas en `.env.autopilot.e2e`), el kit apunta las apps y el BackOffice a ese backend local, y el

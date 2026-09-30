@@ -25,7 +25,7 @@ a ese backend local:
         guarda nada), SIN DNS: la app solo alcanza 10.0.2.2 (el backend local). Arranca dentro de la
         copia E2E: el vigia lo termina si la tarea deja de estar en probando-e2e.
   adb <args...>                 adb del kit (capturas: adb -s <serial> exec-out screencap -p > x.png)
-  cuentas <worktree>            cuentas de prueba (E2E_*) del .env.autopilot.e2e junto a autopilot.env
+  cuentas <worktree>            cuentas de prueba (E2E_*) de cuentas-e2e.env, junto a autopilot.env
   doctor                        herramientas E2E (JSON)
 
 Herramientas en ~/.local/share/autopilot-e2e (AUTOPILOT_E2E_HOME), las instala e2e-setup.sh.
@@ -52,7 +52,7 @@ JDK = os.path.join(E2E_HOME, "jdk")
 AVD_HOME = os.path.join(E2E_HOME, "avd")
 AVD = "autopilot_e2e"
 NODE_MODULES = os.path.join(E2E_HOME, "node", "node_modules")
-ARCHIVO_CUENTAS = entorno.ARCHIVO_E2E
+ARCHIVO_CUENTAS = "cuentas-e2e.env"   # junto a autopilot.env; lo crea el humano (secretos, fuera de git)
 HOSTS_LOCALES = ("localhost", "127.0.0.1", "10.0.2.2")
 DNS_MUERTO = "127.0.0.2"   # loopback donde no escucha nadie: el emulador no resuelve ningun nombre
 
@@ -121,8 +121,12 @@ def config_de(path):
 
 
 def cuentas(cfg):
-    return {k: v for k, v in entorno.leer(os.path.join(cfg["raiz"], ARCHIVO_CUENTAS)).items()
-            if k.startswith("E2E_") and v}
+    """Variables E2E_* de cuentas-e2e.env (junto a autopilot.env). Compatibilidad: si no existe, el
+    .env.autopilot.e2e de esa carpeta (donde iban antes)."""
+    path = os.path.join(cfg["raiz"], ARCHIVO_CUENTAS)
+    if not os.path.isfile(path):
+        path = os.path.join(cfg["raiz"], entorno.ARCHIVO_E2E)
+    return {k: v for k, v in entorno.leer(path).items() if k.startswith("E2E_") and v}
 
 
 def worktree_e2e(path):
@@ -435,8 +439,8 @@ def main(a):
     elif cmd == "cuentas" and r:
         c = cuentas(config_de(worktree_e2e(r[0])[0]))
         if not c:
-            raise Error("no hay cuentas de prueba (E2E_<ROL>_USER / E2E_<ROL>_PASSWORD) en %s junto a autopilot.env"
-                        % ARCHIVO_CUENTAS)
+            raise Error("no hay cuentas de prueba (variables E2E_*, p. ej. E2E_<ROL>_USER / E2E_<ROL>_PASSWORD) en "
+                        "%s junto a autopilot.env" % ARCHIVO_CUENTAS)
         print("\n".join("%s=%s" % kv for kv in sorted(c.items())))
         return 0
     else:

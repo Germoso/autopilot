@@ -542,10 +542,11 @@ y saca **capturas en cada paso** (y video). Veredicto:
 - Apps, emulador y navegador solo por `e2e.sh`; el hook/permisos bloquean `flutter build/run/drive`,
   `playwright` y `emulator` directos.
 
-Ejemplo comentado (cuentas y, opcional, otra base/puerto para un backend):
-`examples/proyecto/env.autopilot.e2e.example`.
+Ejemplos: `examples/proyecto/cuentas-e2e.env.example` (cuentas) y
+`examples/proyecto/env.autopilot.e2e.example` (opcional: otra base/puerto para un backend).
 
-**Cuentas de prueba:** en `.env.autopilot.e2e` junto a `autopilot.env`:
+**Cuentas de prueba:** en `cuentas-e2e.env` junto a `autopilot.env` (nunca en `autopilot.env`, que
+leen los agentes). Nombre libre si empieza con `E2E_`:
 `E2E_CLIENTE_USER=…`, `E2E_CLIENTE_PASSWORD=…`, `E2E_ADMIN_USER=…` (un par por rol; solo cuentas
 de QA que existan en la base que usa el E2E). El agente nunca las escribe en el reporte.
 
@@ -555,7 +556,7 @@ de QA que existan en la base que usa el E2E). El agente nunca las escribe en el 
    `~/.local/share/autopilot-e2e`: Java 17, Android SDK + emulador + AVD `autopilot_e2e`, Playwright +
    Chromium). No toca tu Flutter, tu Java ni `~/.android`. Si no tienes acceso a `/dev/kvm`:
    `sudo usermod -aG kvm $USER`. Para quitarlo: `rm -rf ~/.local/share/autopilot-e2e`.
-2. Pon las cuentas de prueba en `.env.autopilot.e2e` junto a `autopilot.env`. Revisa que el
+2. Pon las cuentas de prueba en `cuentas-e2e.env` junto a `autopilot.env`. Revisa que el
    `.env.autopilot` de cada backend tenga `PORT` (puertos distintos entre backends). Opcional: un
    `.env.autopilot.e2e` en un backend si quieres otra base u otro puerto solo para E2E.
 3. Revisa en `autopilot.env` el bloque E2E que propone `/autopilot-init`:
@@ -581,7 +582,7 @@ Comandos útiles (todos los de `wi.sh`: `wi.sh <env> help`):
 ```sh
 K=~/.local/share/autopilot-kit
 $K/e2e.sh doctor                                  # qué herramientas E2E faltan
-$K/wi.sh <env> check                              # avisos: herramientas, .env.autopilot.e2e, cuentas, E2E_API
+$K/wi.sh <env> check                              # avisos: herramientas, ambientes, cuentas, E2E_API
 $K/wi.sh <env> entorno <repo>                     # .env.autopilot (sin mostrar valores)
 python3 $K/entorno.py <repo> --e2e                # ambiente que usa el E2E en ese repo (ok / inseguro...)
 $K/wi.sh <env> validar-e2e <clave>                # ¿el último Reporte E2E alcanza para aprobar?
@@ -709,7 +710,7 @@ dotenvs/
 │   ├── qa-reviewer.md
 │   └── e2e-tester.md           # pruebas E2E en web y Android (con E2E=true)
 ├── clients/render.py           # genera agentes/comandos/guardas para cada cliente
-└── examples/proyecto/          # autopilot.env, azure-sync.env, .env.autopilot.e2e (ejemplos)
+└── examples/proyecto/          # autopilot.env, azure-sync.env, cuentas-e2e.env, .env.autopilot.e2e (ejemplos)
 ```
 
 ### Qué se instala en cada cliente
@@ -734,7 +735,7 @@ cliente. Todo lo generado lleva una marca y `--uninstall` solo borra lo que tien
 
 - El kit **no contiene secretos**. Solo plantillas.
 - `.gitignore` bloquea `*.env`, `*.secrets.env` y los `.log`.
-- En los proyectos, `.env.autopilot` y `.env.autopilot.e2e` los crea solo el humano; ningún agente
+- En los proyectos, `.env.autopilot`, `.env.autopilot.e2e` y `cuentas-e2e.env` los crea solo el humano; ningún agente
   los crea, edita ni imprime sus valores. En modo un repo se ignoran en `.git/info/exclude`.
 - Las cuentas de prueba del E2E son solo de QA y nunca se escriben en reportes ni capturas.
 - El PAT **nunca** se hardcodea: va en variable de entorno o en `*.secrets.env`.

@@ -35,7 +35,7 @@ import workitems as wi  # noqa: E402
 
 PREFERIDAS = ["develop", "dev", "main", "master"]
 IGNORAR = [".workitems/", "autopilot.env", "azure-sync.env", "*.secrets.env", ".claude/settings.local.json",
-           ".env.autopilot", ".env.autopilot.e2e"]
+           ".env.autopilot", ".env.autopilot.e2e", "cuentas-e2e.env"]
 RE_AZURE = re.compile(r"dev\.azure\.com/([^/]+)/([^/]+)/_git/|([^/.]+)\.visualstudio\.com/([^/]+)/_git/")
 
 
@@ -149,8 +149,8 @@ def bloque_e2e(det):
     backs = [n for n, t in tipos.items() if t == "backend"]
     fronts = [n for n, t in tipos.items() if t in ("flutter", "web")]
     L = ["", "# ---- Pruebas E2E (agente e2e-tester, despues del QA). Antes de activar: e2e-setup.sh y las cuentas",
-         "# de prueba (E2E_<ROL>_USER / E2E_<ROL>_PASSWORD) en .env.autopilot.e2e junto a este archivo. Los",
-         "# backends usan su .env.autopilot (base de QA) o, si lo creas, un .env.autopilot.e2e. Ver README.",
+         "# de prueba (E2E_<ROL>_USER / E2E_<ROL>_PASSWORD) en cuentas-e2e.env junto a este archivo (NO aqui:",
+         "# este archivo no lleva contrasenas). Los backends usan su .env.autopilot (base de QA). Ver README.",
          "E2E=false", "MAX_E2E=1", "E2E_COMMAND_TIMEOUT=2400"]
     if det["modo"] == "workspace" and backs:
         L.append("# Que frontends consumen cada backend (revisalo: se dedujo por el nombre).")

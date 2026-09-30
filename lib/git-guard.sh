@@ -144,11 +144,12 @@ def ambiente(argv):
 
 def env_escritura(argv, crudo):
     """Motivo si el comando crea, copia, mueve, edita o borra un archivo .env* (salvo .example)."""
-    es_env = lambda x: re.match(r"^\.env", os.path.basename(x)) and not re.search(r"\.(example|sample|template)$", x)
+    es_env = lambda x: (re.match(r"^\.env", os.path.basename(x)) or os.path.basename(x) == "cuentas-e2e.env") \
+        and not re.search(r"\.(example|sample|template)$", x)
     if argv and os.path.basename(argv[0]) in ("cp", "mv", "ln", "rm", "sed", "tee", "truncate", "install", "rsync") \
             and any(es_env(a) for a in argv[1:] if not a.startswith("-")):
         return "modificar %s" % next(a for a in argv[1:] if es_env(a))
-    if re.search(r">>?\s*[^\s;&|]*\.env(?!\.(example|sample|template))", crudo):
+    if re.search(r">>?\s*[^\s;&|]*(\.env|cuentas-e2e\.env)(?!\.(example|sample|template))", crudo):
         return "escribir un archivo .env con una redireccion"
     return None
 

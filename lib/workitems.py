@@ -899,8 +899,8 @@ class Board:
                 if v["estado"] != "ok":
                     out.append("%s: %s para E2E (%s). %s" % (nombre, archivo_env, v["estado"], v.get("recomendacion", "")))
         if not e2e_mod.cuentas(self.cfg):
-            out.append("E2E=true pero no hay cuentas de prueba: crea %s junto a autopilot.env con "
-                       "E2E_<ROL>_USER / E2E_<ROL>_PASSWORD (solo cuentas de QA)" % e2e_mod.ARCHIVO_CUENTAS)
+            out.append("E2E=true pero no hay cuentas de prueba: crea %s junto a autopilot.env con variables "
+                       "E2E_* (p. ej. E2E_<ROL>_USER / E2E_<ROL>_PASSWORD; solo cuentas de QA)" % e2e_mod.ARCHIVO_CUENTAS)
         return out
 
     # -- git
