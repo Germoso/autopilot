@@ -1038,9 +1038,10 @@ class Board:
         return {"acciones": acciones, "terminadas": terminadas, "ocupados": ocupados,
                 "capacidad": cap, "parallel": self.cfg["paralelo"],
                 "en_espera": [{"id": t["id"], "espera": t["espera"]} for t in bugfix + nuevas if not libre(t)],
-                "huerfanas_recuperadas": huerfanas, "permisos_rechazados": rechazados, "stopped": [t["id"] for t in by("stopped")],
+                "huerfanas_recuperadas": huerfanas, "stopped": [t["id"] for t in by("stopped")],
                 "workspace": self.cfg["workspace"], "avisos": self.avisos(),
                 "e2e": self.cfg["e2e"]["activo"], "pausa": pausa,
+                "permisos_rechazados": rechazados,
                 "cola": {"bugfix": len(bugfix), "qa": len(qa), "new": len(nuevas), "e2e": len(e2e)}}
 
     def _rechazar_permisos(self, oc_sesion, t, puesto, ses):
