@@ -35,7 +35,7 @@ import workitems as wi  # noqa: E402
 
 PREFERIDAS = ["develop", "dev", "main", "master"]
 IGNORAR = [".workitems/", "autopilot.env", "azure-sync.env", "*.secrets.env", ".claude/settings.local.json",
-           ".env.autopilot", ".env.autopilot.e2e"]
+           ".env.autopilot", ".env.autopilot.e2e", "cuentas-e2e.env"]
 RE_AZURE = re.compile(r"dev\.azure\.com/([^/]+)/([^/]+)/_git/|([^/.]+)\.visualstudio\.com/([^/]+)/_git/")
 
 
@@ -133,15 +133,24 @@ def api_flutter(path):
     return None
 
 
+def vars_url_web(path):
+    """Variables de un front web (en sus .env) que apuntan al backend: VITE_API_URL, VITE_WEBSOCKET_URL..."""
+    import entorno
+    claves = set()
+    for n in (".env", ".env.local", ".env.autopilot"):
+        claves |= set(entorno.leer(os.path.join(path, n)))
+    return sorted(k for k in claves if re.search(r"(API|BACKEND|SERVER|SOCKET|WS).*(URL|URI|HOST)|BASE_URL", k, re.I))
+
+
 def bloque_e2e(det):
     """Config E2E sugerida (apagada): que front consume que backend, plataformas y como apuntar las apps."""
     import e2e
     tipos = {r["nombre"]: e2e.tipo_repo(r["path"]) for r in det["repos"]}
     backs = [n for n, t in tipos.items() if t == "backend"]
     fronts = [n for n, t in tipos.items() if t in ("flutter", "web")]
-    L = ["", "# ---- Pruebas E2E (agente e2e-tester, despues del QA). Antes de activar: e2e-setup.sh, una base de",
-         "# datos EXCLUSIVA para E2E en .env.autopilot.e2e de cada backend/front web, y las cuentas de prueba",
-         "# (E2E_<ROL>_USER / E2E_<ROL>_PASSWORD) en .env.autopilot.e2e junto a este archivo. Ver README.",
+    L = ["", "# ---- Pruebas E2E (agente e2e-tester, despues del QA). Antes de activar: e2e-setup.sh y las cuentas",
+         "# de prueba (E2E_<ROL>_USER / E2E_<ROL>_PASSWORD) en cuentas-e2e.env junto a este archivo (NO aqui:",
+         "# este archivo no lleva contrasenas). Los backends usan su .env.autopilot (base de QA). Ver README.",
          "E2E=false", "MAX_E2E=1", "E2E_COMMAND_TIMEOUT=2400"]
     if det["modo"] == "workspace" and backs:
         L.append("# Que frontends consumen cada backend (revisalo: se dedujo por el nombre).")
@@ -161,6 +170,10 @@ def bloque_e2e(det):
             api = api_flutter(r["path"])
             L.append("E2E_API.%s=%s" % (r["nombre"], api) if api else
                      "# E2E_API.%s=<archivo>|<regex de la linea de la URL>|<reemplazo con {API}>" % r["nombre"])
+        elif tipos[r["nombre"]] == "web":
+            vs = vars_url_web(r["path"])
+            L.append("E2E_API.%s=env:%s" % (r["nombre"], ",".join(vs)) if vs else
+                     "# E2E_API.%s=env:<variables de URL del backend, p. ej. VITE_API_URL>" % r["nombre"])
     return "\n".join(L) + "\n"
 
 

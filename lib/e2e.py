@@ -4,13 +4,14 @@ e2e.py — Herramientas del agente e2e-tester (se usa via e2e.sh). Nunca contra 
 
 El agente E2E recorre el flujo real (app/BackOffice -> backend -> base de datos) en SUS copias
 (~/.cache/autopilot-kit/e2e/<repo>-<clave>). Los backends corren LOCALES con aenv.sh --e2e
-(.env.autopilot.e2e: base de datos exclusiva de E2E). Las apps se apuntan a ese backend local:
+(.env.autopilot.e2e si el humano lo creo; si no, .env.autopilot: la base de QA). Las apps se apuntan
+a ese backend local:
 
   api <worktree> <web|android> [<backend>]
         Aplica E2E_API.<repo> (autopilot.env) en la copia E2E de una app Flutter: reemplaza la linea
         de la URL del API por http://localhost:<PORT> (web) o http://10.0.2.2:<PORT> (android, el
-        localhost de la maquina visto desde el emulador). <PORT> sale del .env.autopilot.e2e del
-        backend (E2E_CLIENTS). El agente no elige la URL: solo puede ser local.
+        localhost de la maquina visto desde el emulador). <PORT> sale del ambiente E2E del backend
+        (.env.autopilot.e2e o .env.autopilot; si no lo define, el .env del repo). Backend: E2E_CLIENTS. El agente no elige la URL: solo puede ser local.
   app <worktree> -- <comando>
         Corre flutter (build, drive, test, install...) en la copia E2E SOLO si el override de la API
         sigue aplicado y es local (si alguien edito ese archivo despues, no corre).
@@ -24,7 +25,7 @@ El agente E2E recorre el flujo real (app/BackOffice -> backend -> base de datos)
         guarda nada), SIN DNS: la app solo alcanza 10.0.2.2 (el backend local). Arranca dentro de la
         copia E2E: el vigia lo termina si la tarea deja de estar en probando-e2e.
   adb <args...>                 adb del kit (capturas: adb -s <serial> exec-out screencap -p > x.png)
-  cuentas <worktree>            cuentas de prueba (E2E_*) del .env.autopilot.e2e junto a autopilot.env
+  cuentas <worktree>            cuentas de prueba (E2E_*) de cuentas-e2e.env, junto a autopilot.env
   doctor                        herramientas E2E (JSON)
 
 Herramientas en ~/.local/share/autopilot-e2e (AUTOPILOT_E2E_HOME), las instala e2e-setup.sh.
@@ -51,7 +52,7 @@ JDK = os.path.join(E2E_HOME, "jdk")
 AVD_HOME = os.path.join(E2E_HOME, "avd")
 AVD = "autopilot_e2e"
 NODE_MODULES = os.path.join(E2E_HOME, "node", "node_modules")
-ARCHIVO_CUENTAS = entorno.ARCHIVO_E2E
+ARCHIVO_CUENTAS = "cuentas-e2e.env"   # junto a autopilot.env; lo crea el humano (secretos, fuera de git)
 HOSTS_LOCALES = ("localhost", "127.0.0.1", "10.0.2.2")
 DNS_MUERTO = "127.0.0.2"   # loopback donde no escucha nadie: el emulador no resuelve ningun nombre
 
@@ -120,8 +121,12 @@ def config_de(path):
 
 
 def cuentas(cfg):
-    return {k: v for k, v in entorno.leer(os.path.join(cfg["raiz"], ARCHIVO_CUENTAS)).items()
-            if k.startswith("E2E_") and v}
+    """Variables E2E_* de cuentas-e2e.env (junto a autopilot.env). Compatibilidad: si no existe, el
+    .env.autopilot.e2e de esa carpeta (donde iban antes)."""
+    path = os.path.join(cfg["raiz"], ARCHIVO_CUENTAS)
+    if not os.path.isfile(path):
+        path = os.path.join(cfg["raiz"], entorno.ARCHIVO_E2E)
+    return {k: v for k, v in entorno.leer(path).items() if k.startswith("E2E_") and v}
 
 
 def worktree_e2e(path):
@@ -152,6 +157,16 @@ def sha(path):
     return hashlib.sha256(open(path, "rb").read()).hexdigest()
 
 
+def puerto_backend(repo):
+    """PORT del backend: el de su ambiente E2E y, si no lo define, el de sus .env (no es un secreto)."""
+    candidatos = [entorno.archivo_e2e(repo), ".env.local", ".env"]
+    for n in candidatos:
+        p = entorno.leer(os.path.join(repo, n)).get("PORT", "").strip()
+        if p.isdigit():
+            return p
+    return None
+
+
 def puerto_libre():
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
@@ -171,11 +186,11 @@ def aplicar_api(path, plataforma, backend=None):
     if plataforma not in ("web", "android"):
         raise Error("plataforma invalida: %s (web|android)" % plataforma)
     if tipo_repo(wt) != "flutter":
-        raise Error("e2e.sh api es para apps Flutter (%s es %s). Un front web toma la URL del backend de su "
-                    ".env.autopilot.e2e (aenv.sh --e2e)" % (repo, tipo_repo(wt)))
+        raise Error("e2e.sh api es para apps Flutter (%s es %s). Un front web se apunta solo al backend local "
+                    "al levantarlo con aenv.sh --e2e (E2E_API.%s=env:<variables>)" % (repo, tipo_repo(wt), repo))
     cfg = config_de(wt)
     api = cfg["e2e"]["api"].get(repo)
-    if not api or "invalido" in api:
+    if not api or "invalido" in api or "env" in api:
         raise Error("falta E2E_API.%s en autopilot.env (<archivo>|<regex de la linea>|<reemplazo con {API}>). "
                     "Sin eso no se puede apuntar la app al backend local: NO CERTIFICABLE" % repo)
     backs = [be for be, fs in cfg["e2e"]["clients"].items() if repo in fs]
@@ -186,17 +201,28 @@ def aplicar_api(path, plataforma, backend=None):
     if len(backs) != 1:
         raise Error("no se de que backend es %s: %s. Define E2E_CLIENTS.<backend>=%s o pasalo como tercer argumento"
                     % (repo, ", ".join(backs) or "ninguno en E2E_CLIENTS", repo))
-    be = cfg["repos"].get(backs[0])
-    if not be:
-        raise Error("el backend %s no esta en autopilot.env (REPO.%s)" % (backs[0], backs[0]))
-    v = entorno.validar(be["path"], entorno.ARCHIVO_E2E)
-    if v["estado"] != "ok":
-        raise Error("%s de %s: %s. %s" % (entorno.ARCHIVO_E2E, backs[0], v["estado"], v.get("recomendacion", "")))
-    puerto = entorno.leer(os.path.join(be["path"], entorno.ARCHIVO_E2E)).get("PORT", "").strip()
-    if not puerto.isdigit():
-        raise Error("define PORT en %s de %s: es el puerto donde corre el backend local para E2E"
-                    % (entorno.ARCHIVO_E2E, backs[0]))
+    be, puerto = backend_local(cfg, backs[0])
     url = "http://%s:%s" % ("localhost" if plataforma == "web" else "10.0.2.2", puerto)
+    return _aplicar_linea(wt, repo, api, url, plataforma, backs[0])
+
+
+def backend_local(cfg, nombre):
+    """(repo, puerto) del backend que el E2E levanta en local; valida su ambiente."""
+    be = cfg["repos"].get(nombre)
+    if not be:
+        raise Error("el backend %s no esta en autopilot.env (REPO.%s)" % (nombre, nombre))
+    backs = [nombre]
+    archivo_env = entorno.archivo_e2e(be["path"])
+    v = entorno.validar(be["path"], archivo_env)
+    if v["estado"] != "ok":
+        raise Error("%s de %s: %s. %s" % (archivo_env, backs[0], v["estado"], v.get("recomendacion", "")))
+    puerto = puerto_backend(be["path"])
+    if not puerto:
+        raise Error("no se en que puerto corre %s: define PORT en su %s" % (backs[0], archivo_env))
+    return be, puerto
+
+
+def _aplicar_linea(wt, repo, api, url, plataforma, backend):
     archivo = os.path.join(wt, api["archivo"])
     if not os.path.isfile(archivo):
         raise Error("E2E_API.%s: no existe %s" % (repo, api["archivo"]))
@@ -215,11 +241,37 @@ def aplicar_api(path, plataforma, backend=None):
     open(archivo, "w", encoding="utf-8").write(nuevo)
     os.makedirs(os.path.dirname(marca(wt)), exist_ok=True)
     wi.escribir_atomico(marca(wt), json.dumps({"archivo": archivo, "sha": sha(archivo), "url": url,
-                                                "plataforma": plataforma, "backend": backs[0]}))
-    return {"repo": repo, "archivo": api["archivo"], "url": url, "plataforma": plataforma, "backend": backs[0],
+                                                "plataforma": plataforma, "backend": backend}))
+    return {"repo": repo, "archivo": api["archivo"], "url": url, "plataforma": plataforma, "backend": backend,
             "linea": linea,
             "nota": "cambio TEMPORAL solo en la copia E2E (nunca se commitea). Levanta %s con: "
-                    "aenv.sh --e2e <su copia E2E> -- <comando de arranque>" % backs[0]}
+                    "aenv.sh --e2e <su copia E2E> -- <comando de arranque>" % backend}
+
+
+def url_a_local(valor, puerto):
+    """Misma URL (ruta, query) pero en localhost:<puerto>; https->http y wss->ws (el backend local no usa TLS)."""
+    from urllib.parse import urlsplit, urlunsplit
+    u = urlsplit(valor)
+    esquema = {"https": "http", "wss": "ws"}.get(u.scheme, u.scheme or "http")
+    return urlunsplit((esquema, "localhost:%s" % puerto, u.path, u.query, u.fragment))
+
+
+def web_env(path):
+    """Para aenv.sh --e2e en un front web con E2E_API.<repo>=env:VARS: {VAR: URL al backend local}."""
+    try:
+        wt, repo, clave = worktree_e2e(path)
+    except Error:
+        return {}
+    cfg = config_de(wt)
+    api = cfg["e2e"]["api"].get(repo) or {}
+    if "env" not in api:
+        return {}
+    backs = [be for be, fs in cfg["e2e"]["clients"].items() if repo in fs]
+    if len(backs) != 1:
+        raise Error("no se de que backend es %s (E2E_CLIENTS): %s" % (repo, ", ".join(backs) or "ninguno"))
+    _, puerto = backend_local(cfg, backs[0])
+    vals = entorno.leer(os.path.join(entorno.repo_principal(wt), entorno.archivo_e2e(wt)))
+    return {var: url_a_local(vals.get(var) or "http://localhost/", puerto) for var in api["env"]}
 
 
 def verificar_api(wt):
@@ -362,7 +414,11 @@ def main(a):
         return 0
     cmd, r = a[0], a[1:]
     out = None
-    if cmd == "doctor":
+    if cmd == "web-env" and r:
+        for k, v in web_env(r[0]).items():
+            sys.stdout.write("%s\0%s\0" % (k, v))
+        return 0
+    elif cmd == "doctor":
         out = {"home": E2E_HOME, "faltan": herramientas_faltantes()}
     elif cmd == "api" and len(r) >= 2:
         out = aplicar_api(r[0], r[1], r[2] if len(r) > 2 else None)
@@ -383,8 +439,8 @@ def main(a):
     elif cmd == "cuentas" and r:
         c = cuentas(config_de(worktree_e2e(r[0])[0]))
         if not c:
-            raise Error("no hay cuentas de prueba (E2E_<ROL>_USER / E2E_<ROL>_PASSWORD) en %s junto a autopilot.env"
-                        % ARCHIVO_CUENTAS)
+            raise Error("no hay cuentas de prueba (variables E2E_*, p. ej. E2E_<ROL>_USER / E2E_<ROL>_PASSWORD) en "
+                        "%s junto a autopilot.env" % ARCHIVO_CUENTAS)
         print("\n".join("%s=%s" % kv for kv in sorted(c.items())))
         return 0
     else:

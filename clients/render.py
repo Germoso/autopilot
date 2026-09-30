@@ -97,7 +97,7 @@ def front_opencode(meta):
     else:
         out += ["  edit:", '    "*": allow']
     # Nadie escribe .env* (salvo .env.example): los ambientes los define el humano. Va al final: gana.
-    out += ['    "**/.env*": deny'] + (['    "**/.env.example": allow'] if role == "coder" else [])
+    out += ['    "**/.env*": deny', '    "**/cuentas-e2e.env": deny'] + (['    "**/.env.example": allow'] if role == "coder" else [])
     out += ["  bash:", '    "*": allow']
     # OpenCode evalua en orden y gana la ultima regla que coincide: primero allow, despues deny.
     for c in DENY[role]:

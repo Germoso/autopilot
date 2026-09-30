@@ -80,6 +80,8 @@ def cargar_config(env_path=None):
       E2E_PLATFORMS.<front>=web,android       en que plataformas se prueba cada frontend
       E2E_API.<front-flutter>=<archivo>|<regex de la linea>|<reemplazo con {API}>
                                               como apuntar la app al backend LOCAL en la copia E2E
+      E2E_API.<front-web>=env:VAR1,VAR2       variables de URL del front web que aenv.sh --e2e apunta al
+                                              backend LOCAL (conserva ruta; https->http, wss->ws)
     """
     vals = {}
     base = os.getcwd()
@@ -114,7 +116,9 @@ def cargar_config(env_path=None):
     lista = lambda v: [x.strip() for x in v.split(",") if x.strip()]
     e2e_api = {}
     for k, v in vals.items():
-        if k.startswith("E2E_API.") and k[8:]:
+        if k.startswith("E2E_API.") and k[8:] and v.strip().startswith("env:"):
+            e2e_api[k[8:]] = {"env": [x.strip() for x in v.strip()[4:].split(",") if x.strip()]}
+        elif k.startswith("E2E_API.") and k[8:]:
             partes = v.split("|")
             e2e_api[k[8:]] = ({"archivo": partes[0].strip(), "regex": partes[1], "reemplazo": "|".join(partes[2:])}
                               if len(partes) >= 3 and partes[0].strip() else {"invalido": v})
@@ -787,11 +791,12 @@ class Board:
                     "head": self.git(destino, "rev-parse", "--short", "HEAD").stdout.strip()}
             if tipo in ("flutter", "web"):
                 info["plataformas"] = cfg["platforms"].get(n) or (["web", "android"] if tipo == "flutter" else ["web"])
-            if tipo == "flutter":
+            if tipo in ("flutter", "web"):
                 info["api"] = cfg["api"].get(n)
             if tipo in ("backend", "web"):
-                v = entorno.validar(destino, entorno.ARCHIVO_E2E)
-                info["entorno_e2e"] = {k: v[k] for k in ("estado", "recomendacion") if k in v}
+                v = entorno.validar(destino, entorno.archivo_e2e(destino))
+                info["entorno_e2e"] = dict({k: v[k] for k in ("estado", "recomendacion") if k in v},
+                                           archivo=os.path.basename(v["archivo"]))
             out.append(info)
         return out
 
@@ -884,14 +889,18 @@ class Board:
             if tipo == "flutter" and nombre not in cfg["api"]:
                 out.append("%s (Flutter): falta E2E_API.%s. Sin eso el E2E no puede apuntar la app al backend "
                            "local y la deja NO CERTIFICABLE" % (nombre, nombre))
+            if tipo == "web" and nombre not in cfg["api"] and any(nombre in fs for fs in cfg["clients"].values()):
+                out.append("%s (web): sin E2E_API.%s=env:<VARIABLES DE URL> usara la API de su %s, no el backend "
+                           "local de la tarea" % (nombre, nombre, entorno.archivo_e2e(r["path"])))
             if tipo in ("backend", "web"):
                 import entorno
-                v = entorno.validar(r["path"], entorno.ARCHIVO_E2E)
+                archivo_env = entorno.archivo_e2e(r["path"])
+                v = entorno.validar(r["path"], archivo_env)
                 if v["estado"] != "ok":
-                    out.append("%s: %s (%s). %s" % (nombre, entorno.ARCHIVO_E2E, v["estado"], v.get("recomendacion", "")))
+                    out.append("%s: %s para E2E (%s). %s" % (nombre, archivo_env, v["estado"], v.get("recomendacion", "")))
         if not e2e_mod.cuentas(self.cfg):
-            out.append("E2E=true pero no hay cuentas de prueba: crea %s junto a autopilot.env con "
-                       "E2E_<ROL>_USER / E2E_<ROL>_PASSWORD (solo cuentas de QA)" % e2e_mod.ARCHIVO_CUENTAS)
+            out.append("E2E=true pero no hay cuentas de prueba: crea %s junto a autopilot.env con variables "
+                       "E2E_* (p. ej. E2E_<ROL>_USER / E2E_<ROL>_PASSWORD; solo cuentas de QA)" % e2e_mod.ARCHIVO_CUENTAS)
         return out
 
     # -- git

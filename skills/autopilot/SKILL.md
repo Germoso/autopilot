@@ -18,8 +18,8 @@ principal (orquestador), delegas en **puestos que trabajan en paralelo**:
 hasta `MAX_CODERS`, `MAX_QA` y `MAX_E2E` (defecto 2, 2 y 1) a la vez, **cada uno con un workitem distinto**.
 
 **Pruebas E2E** (`E2E=true`): lo que el QA aprueba no va a `done` sino a la cola `e2e`. El
-`e2e-tester` recorre el flujo real de cada criterio (app o BackOffice → backend local → base de datos
-**exclusiva de E2E**) en web y en emulador Android, con capturas de cada paso, y recién ahí va a `done`.
+`e2e-tester` recorre el flujo real de cada criterio (app o BackOffice → backend local → base de QA)
+en web y en emulador Android, con capturas de cada paso, y recién ahí va a `done`.
 `wi.sh` rechaza superar el máximo. En un workspace el límite es global, no por repo.
 
 **Cada coder trabaja en su propia copia** (`git worktree` en `~/.cache/autopilot-kit/coder/<repo>-<clave>`),
@@ -113,9 +113,10 @@ de vigilar. En OpenCode las sesiones de los puestos sí siguen; al volver, `--in
   el repo y verifica que todo apunte a local o QA (la BD debe decir "qa" en su nombre). Los comandos
   directos están bloqueados por hook/permisos.
 - Nadie crea, edita ni copia `.env*`. Nadie cambia a mano la URL de API de una app para probar.
-- **E2E:** los backends corren locales con `aenv.sh --e2e` (`.env.autopilot.e2e`: base de datos
-  **exclusiva** de E2E, distinta de la de QA); las apps, el emulador y el navegador solo con
-  `$K/e2e.sh`, que apunta la app al backend local (`E2E_API`) y corta la red a cualquier otro servidor.
+- **E2E:** los backends corren locales con `aenv.sh --e2e` (su `.env.autopilot.e2e` si el humano lo
+  creó; si no, su `.env.autopilot`: la base de QA); los fronts web se apuntan solos a ese backend
+  local; las apps, el emulador y el navegador solo con `$K/e2e.sh`, que apunta la app al backend
+  local (`E2E_API`) y corta la red a cualquier otro servidor.
 - En cada encargo, incluye el estado de ambiente de los repos de la tarea:
   `$W "$E" entorno <clave>` (`ok` / `falta` / `inseguro` / `incompleto`, sin valores).
 - Un agente que se detiene por **posible producción** (coder `STOPPED` o QA `NO CERTIFICABLE`) →
@@ -420,7 +421,7 @@ sus copias de trabajo; no commitea ni cambia de rama. Veredicto: `APROBADO`, `RE
 con su prueba, qué probó, cómo verificarlo manualmente de punta a punta y puntos a tener en cuenta.
 
 **`e2e-tester`** (E2E, solo con `E2E=true`) — termina de certificar lo que el QA aprobó: levanta
-los backends de la tarea **locales** contra la base **exclusiva de E2E** (`aenv.sh --e2e`), apunta
+los backends de la tarea **locales** contra la base de QA (`aenv.sh --e2e`), apunta
 las apps a ese backend (`e2e.sh api`), y recorre el flujo de cada criterio como una persona: BackOffice
 y apps Flutter en web (Playwright) y las apps en un **emulador Android** sin DNS. Saca **capturas
 en cada paso** (y video) que quedan incrustadas en el `## Reporte E2E`. Solo escribe en sus copias
