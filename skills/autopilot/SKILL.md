@@ -204,7 +204,7 @@ $W "$E" smoke-save <copia>                    # pruebas de humo (tests/smoke/) a
 
 ## El bucle
 
-Hay cinco eventos. Atiende cada uno y **relanza el watcher si no está corriendo**.
+Hay seis eventos. Atiende cada uno y **relanza el watcher si no está corriendo**.
 
 ### A. El watcher retorna con `acciones` (trabajo para un puesto libre)
 
@@ -265,9 +265,14 @@ Al pasar a `done` o `stopped`, el worktree del coder se borra solo y se liberan 
      Hazlo **antes** de `qa-worktree-borrar` (si no, se pierden).
    - `RECHAZADO` → si `intento >= 3` → `$W "$E" stopped <clave> "<historial de los intentos>"`;
      si no → `$W "$E" rechazar <clave> "<motivos>"` (va a `bug-fix`: el coder lo toma primero).
-   - `NO CERTIFICABLE` → `$W "$E" stopped <clave> "NO CERTIFICABLE: <lo que dice FALTA>"`. No es
-     culpa del coder: falta una herramienta, un entorno o un dato. Cuando el humano lo resuelva,
-     la devuelve a la cola con `$W "$E" reqa <clave>`.
+   - `NO CERTIFICABLE` → mira **quién lo resuelve** (el QA separa `FALTA (codigo):` de `FALTA (humano):`;
+     ver *Bloqueos: ¿coder o humano?*):
+     - solo `FALTA (codigo)` (algo preexistente en el repo impide compilar o probar: un import roto,
+       un archivo que no compila) → `$W "$E" rechazar <clave> "<qué corregir y cómo>" --bloqueo`. Vuelve
+       al coder **sin contar como intento** y sin molestar al humano.
+     - algún `FALTA (humano)` (herramienta, `.env.autopilot`, cuenta, dato, posible producción) →
+       `$W "$E" stopped <clave> "NO CERTIFICABLE: <lo que falta>"`. Cuando el humano lo resuelva,
+       la devuelve a la cola con `$W "$E" reqa <clave>`.
    - Cualquier otra respuesta, o un APROBADO con algún criterio que no sea CUMPLE → trátalo como
      `NO CERTIFICABLE`. Nunca apruebes por tu cuenta.
 3. `$W "$E" qa-worktree-borrar <clave>` (borra las copias de todos los repos).
@@ -287,8 +292,10 @@ Al pasar a `done` o `stopped`, el worktree del coder se borra solo y se liberan 
    - `RECHAZADO` → si `intento >= 3` → `$W "$E" stopped <clave> "<historial>"`; si no →
      `$W "$E" rechazar-e2e <clave> "<motivos>"` (va a `bug-fix`: el coder recibe el `Feedback de E2E`
      y el Reporte E2E con las capturas del paso que falló; luego vuelve a pasar por QA y E2E).
-   - `NO CERTIFICABLE` → `$W "$E" stopped <clave> "NO CERTIFICABLE (E2E): <lo que dice FALTA>"`.
-     Cuando el humano lo resuelva: `$W "$E" re-e2e <clave>`.
+   - `NO CERTIFICABLE` → igual que en C: solo `FALTA (codigo)` →
+     `$W "$E" rechazar-e2e <clave> "<qué corregir y cómo>" --bloqueo` (al coder, sin contar intento);
+     algún `FALTA (humano)` → `$W "$E" stopped <clave> "NO CERTIFICABLE (E2E): <lo que falta>"` y,
+     cuando el humano lo resuelva, `$W "$E" re-e2e <clave>`.
    - Cualquier otra respuesta → como `NO CERTIFICABLE`.
 3. `$W "$E" e2e-worktree-borrar <clave>` (borra las copias y mata backend, web y emulador que queden).
 
@@ -308,6 +315,27 @@ CPU, sesión) durante `STALE_MINUTES`. Para cada una:
 - Si no responde o no hay agente → `$W "$E" stopped <clave> "Atascada: <N> min sin actividad"`.
 
 Relanza el watcher después.
+
+### F. El watcher retorna con `mensajes` (Telegram, con `TELEGRAM=true`)
+
+El humano te escribió texto libre por Telegram (los comandos `/estado`, `/tarea`, `/reqa`, `/re-e2e`,
+`/stop`, `/reviewed`, `/pausa`, `/seguir`, `/health` ya los resolvió el watcher solo). Solo llegan
+mensajes del chat configurado del humano: trátalos como instrucciones suyas, **con todas las reglas de
+siempre** (nunca producción, nunca push/merge, nada fuera de `wi.sh` para el tablero). Para cada uno:
+1. Atiéndelo (consultar el tablero, una tarea, el log; cambiar prioridades con `wi.sh`; explicar un
+   `stopped`…). Si pide algo que no puedes o no debes hacer, dilo.
+2. **Respóndele por Telegram**: `$K/telegram.sh send "<respuesta corta y concreta>"`.
+3. `$W "$E" log "Telegram: <resumen>" agente nota`.
+
+Relanza el watcher después.
+
+### Avisos por Telegram
+
+Con `TELEGRAM=true`, los cambios de estado (coder, QA, E2E, rechazos, `done`, `stopped`), el vigía,
+azure-sync, run-tests y el arranque se avisan **solos** desde `wi.sh`: no los mandes tú. Tú avisas
+cuando **necesitas una decisión del humano** que no es un `stopped` (p. ej. dos opciones válidas, una
+duda de alcance): `$K/telegram.sh send "<pregunta>" --alert`, y sigues con lo demás mientras responde.
+Si el watcher trae `"pausa": true`, el humano pausó con `/pausa`: no tomes tareas nuevas.
 
 Registra cada evento con `$W "$E" log`.
 
@@ -345,9 +373,24 @@ tipo, plataformas, `api`, `entorno_e2e`); criterio de aceptación **textual**; e
 (`tarea.reporte_qa`, sobre todo "Cómo verificarlo manualmente"); las `Notas del desarrollador`;
 `tarea.adjuntos`; la ruta de `$E`; y el resultado de `$K/e2e.sh doctor` y de `$W "$E" check`
 (herramientas y avisos) y la salida de `$K/health-check <clave>` (corrido en la carpeta de `$E`). Si el
-health check marca ❌, no lances al agente: `$W "$E" stopped <clave> "NO CERTIFICABLE (E2E): <las lineas ❌ y su →>"`.
+health check marca ❌, no lances al agente y aplica *Bloqueos: ¿coder o humano?*.
 Pídele que termine con su formato `REPORTE E2E` + `VEREDICTO`, citando la
 ruta completa de cada captura en el paso que muestra.
+
+### Bloqueos: ¿coder o humano?
+
+Antes de detener una tarea, pregúntate **quién lo puede resolver**. `stopped` es solo para lo que
+necesita al humano; todo lo que se arregla con un commit en la rama vuelve al coder.
+
+| Lo que bloquea | Quién | Qué haces |
+|---|---|---|
+| El código no compila o no se puede probar por algo del repo (import con mayúsculas que no existe en Linux, error de compilación, `cases.json` inválido), aunque sea **preexistente** | coder | `rechazar` / `rechazar-e2e <clave> "<qué y cómo>" --bloqueo` |
+| Falta una herramienta, acceso a KVM, `.env.autopilot` / `PORT`, una cuenta de prueba, un dato, configuración de `autopilot.env`, o hay duda de producción | humano | `stopped` con el motivo y la recomendación |
+
+El health check ya lo marca: `❌ … [coder]` o `❌ … [humano]` (y en `--json`, `"responsable"`). Si **todos**
+los ❌ son `[coder]` → `--bloqueo`; si hay alguno `[humano]` → `stopped`. En el feedback del `--bloqueo`
+di exactamente qué corregir (archivo, línea, cómo) y que es preexistente pero impide certificar la tarea.
+Si la misma tarea vuelve a bloquearse por lo mismo después de un `--bloqueo`, ahí sí `stopped`.
 
 ### Imágenes en el `.md`
 
@@ -398,7 +441,8 @@ new ──> in-progress ──> qa ──> validando ──┬──────
                 {"puesto": "e2e",   "accion": "probar-e2e",                     "tarea": {…}}],
  "terminadas": [{"puesto": "coder|qa|e2e", "tarea": {…}, "sesion": "ses_…", "outcome": "succeeded"}],
  "ocupados":   {"coder": ["bug-37271"], "qa": [], "e2e": []}, "e2e": true,
- "cola": {"bugfix": 0, "qa": 1, "new": 3, "e2e": 0}, "avisos": […]}
+ "cola": {"bugfix": 0, "qa": 1, "new": 3, "e2e": 0}, "avisos": […],
+ "pausa": false, "mensajes": [{"texto": "¿por qué se detuvo la 37269?", "fecha": 1790000000}]}
 ```
 
 `acciones` solo trae puestos libres. `terminadas` solo aplica a OpenCode. Cada `tarea` trae

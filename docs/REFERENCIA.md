@@ -9,11 +9,12 @@ Todo el detalle técnico. Para empezar a usarlo, lee primero el [README](../READ
 3. [autopilot.env: todas las variables](#autopilotenv)
 4. [Azure DevOps, adjuntos y el watcher](#uso)
 5. [Trabajo en paralelo, vigilante, producción, QA y E2E](#puestos-en-paralelo)
-6. [Casos de prueba guardados y el comando `test`](#casos-de-prueba-guardados-tests)
-7. [Comandos de wi.sh](#comandos-de-wish)
-8. [MCP de Azure DevOps](#mcp-de-azure-devops-opcional)
-9. [Estructura del kit](#qué-incluye)
-10. [Seguridad](#seguridad)
+6. [Telegram](#telegram)
+7. [Casos de prueba guardados y el comando `test`](#casos-de-prueba-guardados-tests)
+8. [Comandos de wi.sh](#comandos-de-wish)
+9. [MCP de Azure DevOps](#mcp-de-azure-devops-opcional)
+10. [Estructura del kit](#qué-incluye)
+11. [Seguridad](#seguridad)
 
 ---
 
@@ -257,6 +258,8 @@ Lo crea `/autopilot-init`; se edita a mano. En un workspace va en la carpeta pad
 | `HUNG_MINUTES` | `10` | Minutos sin CPU para considerar un proceso colgado |
 | `STALE_MINUTES` | `45` | Minutos sin actividad para avisar de una tarea atascada |
 | `COMMAND_TIMEOUT` | `900` | Segundos máximos de un comando por `aenv.sh` |
+| `TELEGRAM` | `false` | Avisos por Telegram y comandos desde el chat |
+| `TELEGRAM_ALERTS_ONLY` | `false` | Solo los avisos que necesitan intervención (🚨) |
 | `E2E` | `false` | Etapa de pruebas E2E después del QA |
 | `E2E_COMMAND_TIMEOUT` | `2400` | Segundos máximos por comando en E2E |
 | `E2E_CLIENTS.<backend>` | — | Qué frontends consumen ese backend (`app1,app2`) |
@@ -599,6 +602,30 @@ $K/wi.sh <env> e2e-worktree <clave>               # copias E2E para probar tú m
 
 ---
 
+## Telegram
+
+`lib/telegram.py` (atajo `telegram.sh`). Bot propio del autopilot; credenciales en
+`~/.config/autopilot-kit/telegram.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, permiso 600), creadas
+con `wi.sh <env> telegram-setup`. `wi.sh <env> notify-test` manda una prueba; `wi.sh <env> notify
+"<texto>" [--alert]` o `telegram.sh send ...` manda un aviso.
+
+- **Salida:** `Board.modificar` avisa cada cambio de estado; también `esperar`, el vigía (atascadas,
+  colgados), azure-sync (tareas nuevas), run-tests (resultado o health check que bloquea) y el watcher
+  (arranque con `--inicio`, y si lo detienen). Se manda en segundo plano (nunca bloquea `wi.sh`), se
+  filtran los valores de todos los `.env*` y de `cuentas-e2e.env`, y los avisos repetibles (vigía,
+  arranque) no se repiten en 10 minutos. `TELEGRAM_ALERTS_ONLY=true`: solo 🚨 (done, stopped, atascada,
+  pruebas fallidas, watcher detenido).
+- **Entrada:** en cada vuelta el watcher llama `telegram.py poll` (`getUpdates` sin espera, offset
+  guardado, lock por bot para que un solo watcher lea). Solo acepta `TELEGRAM_CHAT_ID`. Los comandos
+  (`/estado`, `/cola`, `/tarea`, `/health`, `/reqa`, `/re-e2e`, `/stop`, `/reviewed`, `/pausa`,
+  `/seguir`, `/ayuda`) se resuelven sin IA, por `wi.sh`. El texto libre se devuelve como `mensajes` y
+  el orquestador responde con `telegram.sh send`.
+- **Pausa:** `/pausa` crea `.workitems/.pausa`; mientras exista, `plan()` no ofrece acciones nuevas
+  (`"pausa": true`).
+- **Health check:** credenciales, permisos del archivo, token válido (`getMe`) y que ningún otro
+  programa lea el bot (409). `--deep` manda un mensaje de prueba. Un problema de Telegram no bloquea
+  `run-tests`.
+
 ## Health check (health-check)
 
 `~/.local/share/autopilot-kit/health-check [<clave>|smoke|--all] [--web|--android] [--deep] [--json]`
@@ -618,9 +645,14 @@ servicios).
 | produccion | servidores que se bloquean (aviso si no detecta ninguno) | ⚠️ |
 | deep | arranca y apaga el emulador; abre Chromium | ❌ |
 
-`run-tests` lo corre antes de ejecutar (salvo `--qa` o `--skip-check`) y no corre nada si hay ❌. El
-agente E2E lo corre como primer paso; el orquestador no lanza al agente si hay ❌ (la tarea va a
-`stopped` con el detalle).
+Cada ❌ lleva `responsable`: **`coder`** (área `compila` y `cases.json` inválido: se arregla con un commit
+en la rama, aunque sea preexistente) o **`humano`** (todo lo demás). `run-tests` lo corre antes de
+ejecutar (salvo `--qa` o `--skip-check`) y no corre nada si hay ❌. El agente E2E lo corre como primer
+paso. El orquestador, si todos los ❌ son `coder`, devuelve la tarea con
+`wi.sh rechazar|rechazar-e2e <clave> "<qué corregir>" --bloqueo`: va a `bug-fix` **sin contar como
+intento** (el feedback dice "BLOQUEO PREEXISTENTE") y el aviso de Telegram es 🔧, no 🚨. Si hay algún
+`humano`, la tarea va a `stopped`. QA y E2E separan en su NO CERTIFICABLE `FALTA (codigo)` de
+`FALTA (humano)`, con la misma regla; el coder corrige lo preexistente que bloquea en un commit aparte.
 
 ## Pruebas de humo (tests/smoke/)
 
@@ -709,7 +741,8 @@ uso: wi.sh <env> <comando> [args]
   intentos   <clave> <n>
   certificar <clave> <intento_nuevo>     qa -> validando, fija Intento
   aprobar    <clave>                     validando -> done (con E2E=true: -> e2e, la cola de pruebas E2E)
-  rechazar   <clave> <feedback>          validando -> bug-fix
+  rechazar   <clave> <feedback> [--bloqueo]   validando -> bug-fix. --bloqueo: algo preexistente que se
+                                         arregla en codigo impide compilar/probar; no cuenta como intento
   reqa       <clave>                     -> qa, Intento a 0 (conserva el historial)
   probar-e2e <clave>                     e2e -> probando-e2e (ocupa el puesto e2e)
   e2e-worktree <clave>                   copias para el E2E: repos de la tarea (su rama) + los que
@@ -718,9 +751,16 @@ uso: wi.sh <env> <comando> [args]
   reporte-e2e <clave> <texto|-> [--imagenes <dir>]...  reporte del E2E con sus capturas
   validar-e2e <clave>                    revisa el ultimo Reporte E2E (JSON): criterios CUMPLE con capturas
   aprobar-e2e <clave>                    probando-e2e -> done, SOLO si validar-e2e da ok
-  rechazar-e2e <clave> <feedback>        probando-e2e -> bug-fix (Feedback de E2E)
+  rechazar-e2e <clave> <feedback> [--bloqueo]   probando-e2e/e2e -> bug-fix (Feedback de E2E); --bloqueo igual
   re-e2e     <clave>                     -> e2e otra vez (p. ej. tras resolver un NO CERTIFICABLE)
-  test       <clave>|--all [--qa|--e2e] [--ref <rama>]
+  telegram-setup                         conecta el bot del autopilot a tu chat (interactivo, en tu terminal)
+  notify-test                            manda un mensaje de prueba por Telegram
+  notify     <texto> [--alert]           manda un aviso por Telegram (respeta TELEGRAM=true)
+  smoke-save <copia>                     guarda tests/smoke/ de una copia de trabajo en la rama smoke-tests
+                                         del repo (pruebas de humo: no son de una tarea)
+  health     [<clave>|smoke|--all] [--web|--android] [--deep]
+                                         health check E2E: que falta ANTES de correr. Alias: health-check
+  test       <clave>|smoke|--all [--qa|--e2e] [--web|--android] [--ref <rama>]
                                          vuelve a correr los casos guardados en los repos
                                          (tests/<clave>/cases.json); --all = regresion en las ramas base.
                                          Reporte en <workspace>/test-results/. Alias: run-tests
@@ -796,6 +836,7 @@ dotenvs/
 │   ├── e2e.sh / e2e.py         # agente E2E: apps al backend local, internet abierto con produccion bloqueada
 │   ├── proxy_e2e.py            # proxy del emulador: deja pasar internet, rechaza produccion
 │   ├── salud.py, health-check  # health check E2E: que falta ANTES de correr
+│   ├── telegram.py, telegram.sh # avisos por Telegram y comandos desde el chat
 │   ├── e2e-setup.sh            # instala Java, Android SDK + emulador + AVD, Playwright (una vez, sin sudo)
 │   ├── pruebas.py, run-tests   # vuelve a correr los casos guardados en los repos (tests/<clave>/)
 │   ├── e2e-playwright.config.cjs, e2e-pasos.cjs, e2e_driver.dart   # capturas en cada paso (web/Android)

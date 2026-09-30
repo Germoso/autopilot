@@ -16,8 +16,10 @@
 #    coder (in-progress):  bug-fix primero, despues new (Critical>High>Medium>Low)
 #    qa    (validando):    la cola qa
 #    e2e   (probando-e2e): la cola e2e (solo con E2E=true: lo que el QA aprobo)
-#  Retorna cuando hay trabajo para un puesto LIBRE (`acciones`) o cuando termino una sesion de
-#  OpenCode de un puesto (`terminadas`). Solo debe haber UN watcher corriendo a la vez.
+#  Retorna cuando hay trabajo para un puesto LIBRE (`acciones`), cuando termino una sesion de
+#  OpenCode de un puesto (`terminadas`) o cuando llega texto libre por Telegram (`mensajes`, con
+#  TELEGRAM=true; los comandos /estado, /reqa... los responde solo, sin despertar al agente).
+#  Solo debe haber UN watcher corriendo a la vez.
 #
 #  uso: watcher.sh [ruta/autopilot.env] [--inicio]
 #    --inicio  solo al arrancar /autopilot: recupera tareas huerfanas (en un puesto sin agente).
@@ -50,6 +52,24 @@ while IFS= read -r aviso; do                          # ramas base vacias, repos
 done < <("$PY" "$WI" "$ENV_FILE" check)
 
 log " vigilando el board cada ${POLL_INTERVAL}s (bloqueante). Ctrl+C para salir."
+TG="$SCRIPT_DIR/telegram.py"
+TG_ON="$("$PY" -c '
+import sys; sys.path.insert(0, sys.argv[1]); import workitems as wi
+print("1" if wi.cargar_config(sys.argv[2])["telegram"]["activo"] else "0")' "$SCRIPT_DIR" "$ENV_FILE")"
+if [[ "$TG_ON" == 1 ]]; then
+  log " Telegram activo: avisos y comandos (/estado, /tarea, /reqa, /pausa...)"
+  trap '"$PY" "$TG" "$ENV_FILE" send "🛑 El watcher del autopilot se detuvo: ya no se vigila el tablero." --alert; exit 130' INT TERM
+  if [[ $INICIO == 1 ]]; then
+    "$PY" -c '
+import sys, subprocess; sys.path.insert(0, sys.argv[1]); import workitems as wi, telegram
+b = wi.Board(wi.cargar_config(sys.argv[2])); p = b.plan(); c = p["cola"]
+av = p["avisos"]
+txt = "▶️ Autopilot encendido. Cola: bug-fix %d · new %d · qa %d%s" % (c["bugfix"], c["new"], c["qa"], " · e2e %d" % c["e2e"] if p["e2e"] else "")
+if av: txt += "\n⚠️ %d aviso(s) de configuracion:\n- " % len(av) + "\n- ".join(a[:200] for a in av[:6])
+txt += "\n\n/ayuda para ver los comandos."
+telegram.enviar(b.cfg, txt, dedup=True)' "$SCRIPT_DIR" "$ENV_FILE" 2>/dev/null
+  fi
+fi
 VIGIA="$SCRIPT_DIR/vigia.py"
 read -r VIGIA_ON VIGIA_CADA < <("$PY" -c '
 import sys; sys.path.insert(0, sys.argv[1]); import workitems as wi
@@ -78,6 +98,13 @@ print("A " + json.dumps(v.get("atascadas", [])))' <<<"$v")"
     done <<<"$res"
   fi
 
+  # Telegram: los comandos (/pausa, /reqa...) se aplican antes de calcular el plan; el texto libre despierta al agente (`mensajes`).
+  mensajes="[]"
+  if [[ "$TG_ON" == 1 ]]; then
+    mensajes="$("$PY" "$TG" "$ENV_FILE" poll 2>/dev/null)" || mensajes="[]"
+    [[ -z "$mensajes" ]] && mensajes="[]"
+  fi
+
   # --recuperar solo en la primera vuelta de un --inicio
   rec=(); [[ $INICIO == 1 && $iter == 1 ]] && rec=(--recuperar)
   plan="$("$PY" "$WI" "$ENV_FILE" plan "${rec[@]}")" \
@@ -89,11 +116,12 @@ p = json.load(sys.stdin)
 ev = ["%s:%s %s" % (a["puesto"], a["accion"], a["tarea"]["id"]) for a in p["acciones"]]
 ev += ["%s:terminada %s" % (t["puesto"], t["tarea"]["id"]) for t in p["terminadas"]]
 ev += ["atascada %s" % a["tarea"] for a in json.loads(sys.argv[1])]
-print(", ".join(ev))' "$atascadas" <<<"$plan")"
+ev += ["telegram: %d mensaje(s)" % len(json.loads(sys.argv[2]))] if json.loads(sys.argv[2]) else []
+print(", ".join(ev))' "$atascadas" "$mensajes" <<<"$plan")"
 
   if [[ -n "$hay" ]]; then
     log " #$iter $hay. Retornando al agente."
-    "$PY" -c 'import json,sys; p = json.load(sys.stdin); p["atascadas"] = json.loads(sys.argv[1]); print(json.dumps(p, ensure_ascii=False))' "$atascadas" <<<"$plan"
+    "$PY" -c 'import json,sys; p = json.load(sys.stdin); p["atascadas"] = json.loads(sys.argv[1]); p["mensajes"] = json.loads(sys.argv[2]); print(json.dumps(p, ensure_ascii=False))' "$atascadas" "$mensajes" <<<"$plan"
     exit 0
   fi
 
@@ -106,7 +134,7 @@ f = lambda x: "%d/%d%s" % (len(o[x]), k[x], (" " + ",".join(o[x])) if o[x] else 
 e2e = (" | e2e %s" % f("e2e")) if p.get("e2e") else ""
 print("coder %s | qa %s%s | cola bugfix=%d qa=%d%s new=%d en_espera=%d stopped=%d" % (f("coder"), f("qa"), e2e,
       c["bugfix"], c["qa"], (" e2e=%d" % c["e2e"]) if p.get("e2e") else "", c["new"], len(p["en_espera"]),
-      len(p["stopped"])))' <<<"$plan")"
+      len(p["stopped"])) + (" | PAUSA (/seguir en Telegram)" if p.get("pausa") else ""))' <<<"$plan")"
   log " #$iter idle ($c). Espero ${POLL_INTERVAL}s."
   sleep "$POLL_INTERVAL"
 done

@@ -47,6 +47,12 @@ REGLAS INVIOLABLES:
    - Antes de modificar un archivo (con el editor O desde la terminal), reservalo: `<wi.sh> <autopilot.env> reservar <clave> <ruta del archivo>` (en Claude Code el editor lo reserva solo; desde la terminal o en OpenCode, reservalo tu).
    - Si un archivo que necesitas ya lo tiene otra tarea (el editor te bloquea o `reservar` responde con "choques"): NO lo toques por otro camino, no commitees lo parcial, deshaz tus cambios sin commitear (`git checkout -- <archivo>`) y termina con `RESULTADO: EN ESPERA` y `CHOCA CON: <clave de la otra tarea>`. Tu tarea vuelve a la cola y se retoma, en tu mismo worktree, cuando la otra termine.
 
+SI LA RAMA NO COMPILA O NO SE PUEDE PROBAR POR ALGO PREEXISTENTE (lo dice el feedback como "BLOQUEO PREEXISTENTE", o lo ves tu al compilar: un import con mayusculas que no existe en Linux, un error de compilacion que ya estaba en la base):
+- Corrigelo en esta misma rama con el cambio MINIMO, aunque no sea parte de la tarea: sin eso la tarea no se puede certificar.
+- En un commit APARTE: `<clave>: corrige <que> (impedia compilar/probar)`.
+- Anotalo en tus notas bajo "Correcciones preexistentes": que era, donde y por que lo tocaste.
+- No aproveches para "mejorar" otras cosas: solo lo que bloquea.
+
 SI LA TAREA VIENE DE 'bug-fix' (rechazo de QA o de las pruebas E2E):
 - El feedback del QA (`Feedback de QA`) o del agente E2E (`Feedback de E2E` y el `Reporte E2E`, con los pasos y las capturas del flujo real que fallo) te dice que no cumple. Arregla SOLO eso. Si el rechazo es de E2E, abre sus capturas: muestran en que paso y en que plataforma (web o android) fallo.
 - No rediseñes, no mejores, no toques cosas que el feedback no menciona.

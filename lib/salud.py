@@ -16,6 +16,9 @@ Revisa, para cualquier proyecto:
   produccion     servidores de produccion que se van a bloquear
   --deep         ademas arranca y apaga el emulador y abre Chromium
 Cada punto: ✅ ok, ⚠️ aviso (se puede correr), ❌ bloquea (con que hacer). Sale con 1 si hay ❌.
+Cada ❌ dice QUIEN lo resuelve: [coder] = se arregla con un commit en la rama (p. ej. un import roto; el
+orquestador devuelve la tarea al coder, sin molestar al humano) o [humano] = herramienta, ambiente,
+cuenta o configuracion (la tarea se detiene y se le avisa).
 """
 import json
 import os
@@ -41,8 +44,12 @@ class Salud:
         self.items = []
         self.alcance = None               # repos que usan los casos elegidos (None = todos)
 
-    def add(self, nivel, area, msg, solucion=""):
-        self.items.append({"nivel": nivel, "area": area, "mensaje": msg, "solucion": solucion})
+    def add(self, nivel, area, msg, solucion="", responsable=None):
+        # compila (codigo del repo) lo resuelve el coder; lo demas (herramientas, ambientes, cuentas,
+        # configuracion del kit) el humano.
+        responsable = responsable or ("coder" if area == "compila" else "humano")
+        self.items.append({"nivel": nivel, "area": area, "mensaje": msg, "solucion": solucion,
+                           "responsable": responsable if nivel == "error" else None})
 
     # -- utilidades git
     def git(self, repo, *a):
@@ -208,7 +215,8 @@ class Salud:
             try:
                 lista = json.loads(self.show(r["path"], ref, "tests/%s/cases.json" % clave) or "")
             except ValueError:
-                self.add("error", "casos", "%s: tests/%s/cases.json invalido (%s)" % (n, clave, ref))
+                self.add("error", "casos", "%s: tests/%s/cases.json invalido (%s)" % (n, clave, ref),
+                         "corregir el JSON en la rama", responsable="coder")
                 continue
             for c in lista:
                 needs = c.get("needs") or {}
@@ -267,6 +275,18 @@ class Salud:
             self.add("ok" if "ok" in r.stdout else "error", "deep",
                      "Chromium abre" if "ok" in r.stdout else "Chromium no abre: %s" % r.stderr.strip()[-200:])
 
+    def telegram(self):
+        tg = self.cfg.get("telegram", {})
+        if not tg.get("activo"):
+            self.add("ok", "telegram", "TELEGRAM=false (sin avisos por Telegram)")
+            return
+        import telegram as tgm
+        for nivel, msg, sol in tgm.check(self.cfg):
+            self.add(nivel, "telegram", msg, sol)
+        if self.deep and not any(i["area"] == "telegram" and i["nivel"] == "error" for i in self.items):
+            tgm.enviar(self.cfg, "🩺 health-check --deep: prueba de Telegram", forzar=True)
+            self.add("ok", "telegram", "mensaje de prueba enviado a tu chat")
+
     def correr(self):
         self.herramientas()
         self.casos()          # primero: define que repos usan los casos elegidos
@@ -274,6 +294,7 @@ class Salud:
         self.ambientes()
         self.apps()
         self.produccion()
+        self.telegram()
         if self.deep:
             self.profundo()
         return self.items
@@ -284,12 +305,17 @@ ICONO = {"ok": "✅", "aviso": "⚠️ ", "error": "❌"}
 
 def imprimir(items):
     for it in sorted(items, key=lambda x: {"error": 0, "aviso": 1, "ok": 2}[x["nivel"]]):
-        print("%s %-12s %s" % (ICONO[it["nivel"]], it["area"], it["mensaje"]))
+        quien = " [%s]" % it["responsable"] if it.get("responsable") else ""
+        print("%s %-12s %s%s" % (ICONO[it["nivel"]], it["area"], it["mensaje"], quien))
         if it["nivel"] != "ok" and it["solucion"]:
             print("   %-12s → %s" % ("", it["solucion"]))
     e = sum(1 for i in items if i["nivel"] == "error")
     a = sum(1 for i in items if i["nivel"] == "aviso")
-    print("\n%s" % ("❌ %d problema(s) bloquean las pruebas E2E." % e if e else
+    coder = sum(1 for i in items if i["nivel"] == "error" and i.get("responsable") == "coder")
+    if e and coder == e:
+        print("\n❌ %d problema(s) bloquean, todos de codigo: los corrige el coder en la rama (no necesitan al humano)." % e)
+        return 1
+    print("\n%s" % ("❌ %d problema(s) bloquean las pruebas E2E (%d los resuelve el humano)." % (e, e - coder) if e else
                     "✅ Listo para correr las pruebas E2E%s." % (" (%d aviso/s)" % a if a else "")))
     return 1 if e else 0
 

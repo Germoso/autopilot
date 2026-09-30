@@ -459,6 +459,8 @@ def one_pass(dry_run=False):
                   ", ".join(a["clave"] for a in added[:5]), "-", "-",
                   "Importadas %d tarea(s) de Azure DevOps: %s" % (
                       len(added), ", ".join("%s (%s)" % (a["id"], a["repo"]) for a in added)))
+        BOARD.avisar("📥 %d tarea(s) nueva(s) de Azure DevOps:\n%s" % (
+            len(added), "\n".join("- %s — %s" % (a["clave"], a["title"][:80]) for a in added[:15])))
     return result
 
 
