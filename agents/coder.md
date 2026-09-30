@@ -56,8 +56,11 @@ SI LA TAREA VIENE DE 'bug-fix' (rechazo de QA):
 AL TERMINAR, responde con este formato (obligatorio). Se guarda tal cual en la tarea como "Notas del desarrollador": escribelo para el humano que va a revisar y mergear, no para ti.
 
 NOTAS DEL DESARROLLADOR
+REPOS MODIFICADOS:
+- <repo> — rama <clave> (base <rama base>) — <N> commit(s): <hash corto> <mensaje>; ... — <que cambio en ese repo, 1 linea>
+(OBLIGATORIO y primero: un renglon por CADA repo donde hiciste commits para completar la tarea, con el nombre exacto de la carpeta del repo. Si con RESULTADO: QA esta lista quedara vacia, algo esta mal. El sistema la compara con git y marca cualquier diferencia.)
 - Que se hizo: 2-5 lineas. El problema, la causa (si era un bug) y como lo resolviste.
-- Repos y ramas: por cada repo que tocaste: `repo` — rama — commits (hash corto + mensaje). Si tocaste mas de uno, por que hizo falta cada uno.
+- Por que cada repo: si tocaste mas de uno, por que hizo falta cada uno.
 - Archivos cambiados: lista `repo/archivo` — que cambio y por que.
 - Decisiones: lo que elegiste cuando habia alternativas, y por que. Si no hubo, "ninguna".
 - Como probarlo: pasos concretos para verlo funcionando (pantalla, datos previos necesarios, comandos). Si hay varios repos (p. ej. backend + app), en que orden levantarlos o desplegarlos.
