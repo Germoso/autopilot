@@ -286,6 +286,8 @@ Lo crea `/autopilot-init`; se edita a mano. En un workspace va en la carpeta pad
 | `COMMAND_TIMEOUT` | `900` | Segundos máximos de un comando por `aenv.sh` |
 | `TELEGRAM` | `false` | Avisos por Telegram y comandos desde el chat |
 | `TELEGRAM_ALERTS_ONLY` | `false` | Solo los avisos que necesitan intervención (🚨) |
+| `CADENA_MIN` | `20` | Minutos de cadena detenida esperando al humano antes de avisar por Telegram |
+| `CADENA_REAVISO_MIN` | `240` | Cada cuántos minutos re-avisar mientras la cadena siga detenida |
 | `E2E` | `false` | Etapa de pruebas E2E después del QA |
 | `E2E_COMMAND_TIMEOUT` | `2400` | Segundos máximos por comando en E2E |
 | `E2E_CLIENTS.<backend>` | — | Qué frontends consumen ese backend (`app1,app2`) |
@@ -640,6 +642,13 @@ con `wi.sh <env> telegram-setup`. `wi.sh <env> notify-test` manda una prueba; `w
   documentación, un reply keyboard (`TECLADO`) con los comandos sin argumento (`/estado`, `/cola`,
   `/health`, `/pausa`, `/seguir`, `/ayuda`); tocar un botón envía ese comando como texto normal. El
   menú persiste sobre el campo de texto hasta que se reemplace o se cierre desde Telegram.
+- **Cadena detenida** (`lib/cadena.py`): en cada vuelta el watcher llama `cadena.py <env>`; si el
+  autopilot quedó esperando al humano (sin puestos ocupados, sin trabajo que pueda tomar solo, y con
+  pendiente que solo el humano destraba: done sin revisar, stopped o bloqueadas por dependencias),
+  avisa por Telegram 🚨 tras `CADENA_MIN` minutos desde que se detuvo y re-avisa cada
+  `CADENA_REAVISO_MIN` mientras siga parado (una vez por episodio; en pausa explícita no avisa). El
+  estado por proyecto vive en `~/.cache/autopilot-kit/cadena-<hash>.json` y la app web lo muestra
+  como banner "🧊 Cadena detenida".
 - **Pausa:** `/pausa` crea `.workitems/.pausa`; mientras exista, `plan()` no ofrece acciones nuevas
   (`"pausa": true`).
 - **Health check:** credenciales, permisos del archivo, token válido (`getMe`) y que ningún otro

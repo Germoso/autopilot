@@ -30,7 +30,8 @@ Claude Code automáticamente al editar); el otro se pone **en espera** hasta que
 **Dependencias entre tareas** (`depende:`, las pone quien crea la tarea, p. ej. `/autopilot-plan`): la
 tarea no se ofrece al coder hasta que todas sus dependencias estén en `reviewed`, porque su rama nace de
 la base y ahí solo está lo que el humano ya mergeó. El watcher las lista en `en_espera` con `depende_de`:
-en tu resumen dile al humano qué tiene que revisar y mergear para destrabarlas.
+en tu resumen dile al humano qué tiene que revisar y mergear para destrabarlas **y avísale por Telegram**
+(`$K/telegram.sh send "…" --alert`): el humano verifica Telegram, no la terminal.
 
 ## Cuándo usar esta skill
 
@@ -340,10 +341,13 @@ Relanza el watcher después.
 
 ### Avisos por Telegram
 
-Con `TELEGRAM=true`, los cambios de estado (coder, QA, E2E, rechazos, `done`, `stopped`), el vigía,
-run-tests y el arranque se avisan **solos** desde `wi.sh`: no los mandes tú. Tú avisas
-cuando **necesitas una decisión del humano** que no es un `stopped` (p. ej. dos opciones válidas, una
-duda de alcance): `$K/telegram.sh send "<pregunta>" --alert`, y sigues con lo demás mientras responde.
+**El humano verifica Telegram, casi nunca la terminal: todo lo que tenga que saber sale SIEMPRE
+primero por Telegram y después se resume en la sesión.** Con `TELEGRAM=true`, los cambios de estado
+(coder, QA, E2E, rechazos, `done`, `stopped`), el vigía, la **cadena detenida**, run-tests y el
+arranque se avisan **solos** desde `wi.sh` y `cadena.py`: no los mandes tú. Tú avisas por Telegram
+(`$K/telegram.sh send "<texto>" --alert` si requiere su intervención) todo lo que solo aparece en tu
+resumen de la terminal y él debería conocer: una duda de alcance, dos opciones válidas, una tarea que
+quedó esperándolo, el resultado de procesar un workitem. Después sí, resume en la sesión.
 Si el watcher trae `"pausa": true`, el humano pausó con `/pausa`: no tomes tareas nuevas.
 
 Registra cada evento con `$W "$E" log`.

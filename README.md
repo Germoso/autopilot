@@ -362,6 +362,11 @@ Los comandos sin argumento (`/estado`, `/cola`, `/health`, `/pausa`, `/seguir`) 
 como un **menú de botones** fijo sobre el campo de texto (junto a `/ayuda`, que vuelve a mandar esta
 tabla); los que llevan clave o motivo se siguen escribiendo a mano.
 
+**Si el autopilot se queda parado esperándote** (todo en `done` sin revisar, en `stopped` o bloqueado
+por dependencias, sin ningún puesto ocupado), te avisa por Telegram una vez tras `CADENA_MIN`
+minutos (default 20) y de nuevo cada `CADENA_REAVISO_MIN` (default 240) hasta que lo destrabes. En
+pausa explícita no avisa. El mismo estado se ve en la app web como un banner "🧊 Cadena detenida".
+
 ---
 
 ## Problemas comunes
