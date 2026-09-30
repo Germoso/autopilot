@@ -50,6 +50,7 @@ mi-proyecto/
     ├── done/
     ├── reviewed/                 # done que ya revisaste (la mueves tú)
     ├── adjuntos/<clave>/         # capturas y videos de la tarea (archivos)
+    ├── planes/<slug>.md          # planes de /autopilot-plan (brainstorming y desglose)
     ├── autopilot.db              # la base: fuente de verdad de las tareas
     └── log.md                    # log de actividad (solo se agregan filas)
 ```
@@ -300,6 +301,7 @@ Valores booleanos: solo `true` o `false`.
 
 ```sh
 /autopilot-init   # una vez por proyecto/workspace
+/autopilot-plan   # idea o documento -> brainstorming -> tareas en new/ (con dependencias)
 /autopilot        # arranca el bucle: espera tareas y las trabaja
 ```
 
@@ -318,6 +320,20 @@ puertas de entrada, las mismas para una persona o para una integración con un t
    El `<id>` lo das tú: número o texto (`add-task task login_social Medium ...` → rama `task-login_social`).
 2. Un `.md` en `.workitems/new/` con el nombre `<tipo>-<id>-*.md` (se importa en el próximo comando).
 3. La app web (*Nueva tarea*), con adjuntos.
+
+`add-task` acepta además `--depende <clave>[,<clave>...]`, `--origen <texto>` y `@<archivo>` en lugar del
+texto de la descripción o el criterio (Markdown largo sin pelear con las comillas).
+
+**Dependencias** (`depende:`): la tarea queda en `new` y el coder no la toma hasta que **todas** sus
+dependencias estén en `reviewed`. Es a propósito: la rama de la tarea nace de la rama base, que solo tiene
+lo que el humano ya mergeó. El watcher las lista en `en_espera` con `depende_de`; la app web muestra
+"depende de ...". Se cambian con `wi.sh <env> depende <clave> <claves>` (`-` las quita). No se aceptan
+dependencias inexistentes ni ciclos.
+
+**`/autopilot-plan`** hace todo esto por ti desde una idea o un documento: lee el código, hace un
+brainstorming con preguntas hasta que no queda nada abierto (el plan se va guardando en
+`.workitems/planes/<slug>.md`), propone el desglose en tareas pequeñas y verificables con sus
+dependencias y una matriz de cobertura, y las crea recién cuando lo apruebas.
 
 Una integración puede además dejar archivos en `.workitems/adjuntos/<clave>/` (aparecen como *Tarea
 original*) y usar `origen:` para marcar de dónde vino la tarea (`manual` por defecto). Ejemplo completo:
@@ -783,7 +799,12 @@ uso: wi.sh <env> <comando> [args]
                                          (tests/<clave>/cases.json); --all = regresion en las ramas base.
                                          Reporte en <workspace>/test-results/. Alias: run-tests
   add-task   <task|bug> <id> <prioridad> <titulo> <descripcion> <criterio> [repo]
+             [--depende <clave>[,<clave>...]] [--origen <texto>]
                                          (en un workspace, repo es obligatorio: la carpeta del repo)
+                                         descripcion/criterio: @<archivo> lee el texto de ese archivo
+  depende    <clave> <clave>[,<clave>...]|-
+                                         la tarea no se toma hasta que esas esten en reviewed
+                                         (mergeadas en la base); '-' quita las dependencias
   check                                  avisos de configuracion (ramas base vacias, repos faltantes,
                                          herramientas, .env.autopilot)
   entorno    <repo|clave>                valida el .env.autopilot (local/QA) sin mostrar valores
@@ -862,7 +883,8 @@ dotenvs/
 │   └── e2e-playwright.config.cjs, e2e-pasos.cjs, e2e_driver.dart   # capturas en cada paso (web/Android)
 ├── skills/                     # -> carpeta de skills de cada cliente
 │   ├── autopilot/SKILL.md      # reglas, maquina de estados, arranque por cliente
-│   └── autopilot-init/SKILL.md # /autopilot-init
+│   ├── autopilot-init/SKILL.md # /autopilot-init
+│   └── autopilot-plan/SKILL.md # /autopilot-plan: idea o documento -> brainstorming -> tareas
 ├── agents/                     # fuente unica de los subagentes
 │   ├── coder.md
 │   ├── qa-reviewer.md
@@ -879,7 +901,7 @@ dotenvs/
 |---|---|---|
 | Skills | `~/.config/opencode/skills/` | `~/.claude/skills/` |
 | Subagentes | `~/.config/opencode/agents/*.md` | `~/.claude/agents/*.md` |
-| `/autopilot-init`, `/autopilot` | comandos en `~/.config/opencode/commands/` | las propias skills |
+| `/autopilot-init`, `/autopilot-plan`, `/autopilot` | comandos en `~/.config/opencode/commands/` | las propias skills |
 | Bloqueo de push/merge en subagentes | `permission.bash` con `deny` | hook `PreToolUse` → `git-guard.sh` |
 | Bloqueo en el agente principal (por proyecto) | `opencode.json` del proyecto | `.claude/settings.local.json` (deny + hook) |
 | Cómo espera el watcher | primer plano | segundo plano (`run_in_background`): Claude Code te re-invoca al terminar |

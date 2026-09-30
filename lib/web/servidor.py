@@ -193,6 +193,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 ts.append({"clave": c, "titulo": titulo, "estado": estado, "prioridad": meta.get("prioridad", "Medium"),
                            "intento": meta.get("intento", "0"), "repo": meta.get("repo", ""),
                            "repos_extra": meta.get("repos_extra", ""), "espera": meta.get("espera"),
+                           "depende": meta.get("depende", ""),
                            "actualizado": meta.get("actualizado", ""), "origen": meta.get("origen", "")})
             pausa = os.path.exists(os.path.join(b.dir, ".pausa"))
             watcher = subprocess.run(["pgrep", "-f", "watcher.sh %s" % p["env"]], capture_output=True).returncode == 0 or \

@@ -27,6 +27,11 @@ con su rama. La copia principal del repo (la del humano) nunca cambia de rama. D
 paralelo **no tocan el mismo archivo**: el primero que lo edita lo reserva (`wi.sh reservar`, y en
 Claude Code automáticamente al editar); el otro se pone **en espera** hasta que el primero termine.
 
+**Dependencias entre tareas** (`depende:`, las pone quien crea la tarea, p. ej. `/autopilot-plan`): la
+tarea no se ofrece al coder hasta que todas sus dependencias estén en `reviewed`, porque su rama nace de
+la base y ahí solo está lo que el humano ya mergeó. El watcher las lista en `en_espera` con `depende_de`:
+en tu resumen dile al humano qué tiene que revisar y mergear para destrabarlas.
+
 ## Cuándo usar esta skill
 
 Solo si el proyecto tiene un archivo `autopilot.env` en la raíz.
@@ -40,6 +45,7 @@ Si no existe, este proyecto **no participa** del sistema. No preguntes, no asuma
 ├── new/          bug-140123-login-falla.md     # vistas .md de lectura, una por tarea, en la carpeta de su estado
 ├── in-progress/ qa/ validando/ e2e/ probando-e2e/ bug-fix/ stopped/ done/ reviewed/
 ├── adjuntos/<clave>/           # imagenes, videos y capturas (archivos; la base guarda su ruta)
+├── planes/<slug>.md            # planes de /autopilot-plan (brainstorming y desglose)
 └── log.md                      # vista del log
 ```
 
@@ -165,6 +171,7 @@ $W "$E" repos       <clave>                   # repos de la tarea (principal + e
 $W "$E" reservar    <clave> <archivo>...      # reserva archivos para la tarea (coder)
 $W "$E" solapes     <clave>                   # archivos que comparte con otras tareas activas
 $W "$E" esperar     <clave> <otra>            # choco con <otra>: vuelve a la cola hasta que termine
+$W "$E" depende     <clave> <clave>[,...]|-   # no se toma hasta que esas esten en reviewed ('-' las quita)
 $W "$E" coder-worktree-borrar <clave>          # (también mata los procesos que queden en esa copia)
 python3 $K/vigia.py "$E" [--simular]           # vigilante a mano: qué mataría / qué está atascado
 $W "$E" entorno     <clave|repo>              # .env.autopilot de sus repos: ok/falta/inseguro/incompleto
@@ -177,7 +184,7 @@ $W "$E" new         <clave>
 $W "$E" reviewed    <clave>                   # SOLO el humano: done -> reviewed
 $W "$E" stopped     <clave> "<motivo>"
 $W "$E" resultado   <clave> "<rama | commit | resumen>"
-$W "$E" add-task    <task|bug> <id> <prioridad> "<titulo>" "<descripcion>" "<criterio>" [repo]   # repo obligatorio en workspace
+$W "$E" add-task    <task|bug> <id> <prioridad> "<titulo>" "<descripcion>" "<criterio>" [repo] [--depende <claves>] [--origen <texto>]   # repo obligatorio en workspace; @archivo en descripcion/criterio
 $W "$E" log <evento> <origen> <tipo> <tarea> <rama> <commit> <detalle>
 $W "$E" query [estado]
 $W "$E" sesion      <clave> <ses_id>          # OpenCode: sesión que trabaja la tarea

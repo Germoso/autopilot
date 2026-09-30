@@ -5,9 +5,9 @@ render.py — Genera la configuracion de cada cliente desde una sola fuente.
 Fuente unica:  agents/*.md  (frontmatter neutro: name, description, role)
 Salida:
   opencode  <cfg>/agents/<name>.md    permisos de bash por patron (permission.bash)
-            <cfg>/commands/<cmd>.md   /autopilot y /autopilot-init
+            <cfg>/commands/<cmd>.md   /autopilot-init, /autopilot-plan y /autopilot
   claude    <cfg>/agents/<name>.md    hook PreToolUse -> git-guard.sh <role>
-            (sin commands: en Claude Code las skills ya son /autopilot y /autopilot-init)
+            (sin commands: en Claude Code las skills ya son esos comandos)
 
 Todo archivo generado lleva la marca MARCA en el frontmatter; uninstall solo
 borra archivos con esa marca.
@@ -56,6 +56,7 @@ AMBIENTE_ALLOW = ["npm run build*", "npm run lint*", "npm run format*", "npm run
 
 COMANDOS = {
     "autopilot-init": "Prepara esta carpeta (repo o workspace de varios repos) para el autopilot: rama base y board",
+    "autopilot-plan": "Convierte una idea o un documento en tareas del board: brainstorming hasta tenerlo claro, desglose y alta",
     "autopilot": "Enciende el watcher del sistema autonomo sobre el board de workitems de este proyecto",
 }
 
