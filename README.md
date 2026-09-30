@@ -26,6 +26,11 @@ dotenvs/
 │   ├── azure-sync.py           # importador aditivo de Azure DevOps (uno o varios proyectos)
 │   ├── init.py                 # prepara un repo o workspace (lo usa /autopilot-init)
 │   ├── git-guard.sh            # bloquea push/merge (hooks de Claude Code)
+│   ├── aenv.sh / entorno.py    # nunca contra produccion: corre con .env.autopilot(.e2e) validado
+│   ├── vigia.py                # vigilante: procesos colgados/huerfanos, tareas atascadas
+│   ├── e2e.sh / e2e.py         # agente E2E: apps al backend local, emulador sin DNS, navegador con red cortada
+│   ├── e2e-setup.sh            # instala Java, Android SDK + emulador + AVD, Playwright (una vez, sin sudo)
+│   ├── e2e-playwright.config.cjs, e2e-pasos.cjs, e2e_driver.dart   # capturas en cada paso (web/Android)
 │   └── ado-mcp.sh              # lanza el MCP de Azure DevOps con tu PAT
 ├── skills/                     # -> carpeta de skills de cada cliente
 │   ├── autopilot/SKILL.md      # reglas, maquina de estados, arranque por cliente
@@ -33,7 +38,8 @@ dotenvs/
 │   └── azure-sync/SKILL.md
 ├── agents/                     # fuente unica de los subagentes
 │   ├── coder.md
-│   └── qa-reviewer.md
+│   ├── qa-reviewer.md
+│   └── e2e-tester.md           # pruebas E2E en web y Android (con E2E=true)
 ├── clients/render.py           # genera agentes/comandos/guardas para cada cliente
 └── examples/proyecto/          # autopilot.env, azure-sync.env
 ```
@@ -157,6 +163,9 @@ cd dotenvs
 
 No pisa nada que no haya generado el kit: si ya existe una skill, agente o MCP con el mismo
 nombre y no es del kit, lo deja y avisa. Reinstalar actualiza lo que sí es del kit.
+
+Para las pruebas E2E (opcional), además, una vez: `~/.local/share/autopilot-kit/e2e-setup.sh`
+(ver *Pruebas E2E: terminar de certificar*).
 
 ### Desinstalar
 
