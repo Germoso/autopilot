@@ -57,8 +57,8 @@ La base de datos **tiene que decir "qa" en su nombre**. Si no, el autopilot no e
 /autopilot      arranca: toma las tareas y las trabaja
 ```
 
-Mientras `/autopilot` corre, mira la carpeta **`.workitems/`** de tu proyecto. Cada tarea es un
-archivo `.md` y **la carpeta donde está te dice cómo va**:
+Mientras `/autopilot` corre, abre la **[app web](#app-web)** o mira la carpeta **`.workitems/`** de tu
+proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te dice cómo va**:
 
 | Carpeta | Qué significa | ¿Tienes que hacer algo? |
 |---|---|---|
@@ -73,21 +73,46 @@ archivo `.md` y **la carpeta donde está te dice cómo va**:
 
 ### Qué haces tú
 
-- **Tareas en `done`:** abre su `.md` y mira:
+- **Tareas en `done`:** ábrela (en la app web o su `.md`) y mira:
   - *Repos modificados*: qué ramas mergear y en qué repos;
   - *Notas del desarrollador*: qué hizo y por qué;
   - *Reporte de QA*: qué probó y **cómo probarlo tú a mano**.
 
-  Si te convence, mergea la rama. Después mueve el archivo a `reviewed/`.
+  Si te convence, mergea la rama. Después márcala como revisada (botón en la app web, o mueve el
+  archivo a `reviewed/`).
 - **Tareas en `stopped`:** el motivo está al final del `.md` (*Motivo de stopped*), con lo que
   recomienda hacer. Cuando lo resuelvas, devuélvela a la cola:
   ```sh
   ~/.local/share/autopilot-kit/wi.sh autopilot.env reqa bug-140123
   ```
-- **Crear una tarea a mano:** pon un `.md` en `.workitems/new/` llamado
+- **Crear una tarea a mano:** desde la app web (*Nueva tarea*), o pon un `.md` en `.workitems/new/` llamado
   `bug-<número>-<título>.md` o `task-<número>-<título>.md`.
 
 > Si cierras Claude Code / OpenCode, el autopilot se detiene. Al volver, escribe `/autopilot` otra vez.
+
+> Las tareas se guardan en una base (`.workitems/autopilot.db`); los `.md` se generan solos a partir
+> de ella para que puedas leerlas. Mover un `.md` de carpeta o crear uno nuevo sigue funcionando; para
+> editar una tarea usa la app web. La primera vez que actualizas el kit, el tablero se pasa solo a la
+> base y los `.md` originales quedan de respaldo en `.workitems/.respaldo-md-<fecha>/`.
+
+### App web
+
+```sh
+~/.local/share/autopilot-kit/autopilot-web          # solo en esta PC: http://localhost:8765
+~/.local/share/autopilot-kit/autopilot-web --lan    # también desde el celular u otra PC de tu red
+```
+
+Muestra todos tus proyectos del autopilot:
+
+- **Tablero** por estado, con búsqueda y filtros; **detalle** de cada tarea con descripción,
+  criterio, capturas y el historial de cada intento (notas del coder, reportes de QA y E2E).
+- **Gestionar:** devolver a QA o a E2E, detener, marcar revisada, cambiar prioridad, pausar el autopilot.
+- **Crear y editar** tareas y subirles capturas.
+- **Correr** el health check, las pruebas guardadas y el sync de Azure, viendo la salida.
+- El **log** de actividad y los reportes de `run-tests`.
+
+Con `--lan` pide una clave, que está en `~/.config/autopilot-kit/web.env` (se crea sola). Va sin
+HTTPS: úsalo solo en una red de confianza. Nunca muestra valores de los `.env`.
 
 ---
 

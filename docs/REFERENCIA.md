@@ -50,11 +50,17 @@ mi-proyecto/
     ├── stopped/
     ├── done/
     ├── reviewed/                 # done que ya revisaste (la mueves tú)
+    ├── adjuntos/<clave>/         # capturas y videos de la tarea (archivos)
+    ├── autopilot.db              # la base: fuente de verdad de las tareas
     └── log.md                    # log de actividad (solo se agregan filas)
 ```
 
-- **El estado de una tarea es la carpeta donde está.** Cambiar de estado es mover el archivo.
-  Podés mover tareas a mano (explorador, VS Code, Obsidian); el watcher lo ve en segundos.
+- **La fuente de verdad es `autopilot.db`** (SQLite, modo WAL: varios agentes escriben a la vez sin
+  pisarse). Cada `.md` de las carpetas es una **vista generada** que se reescribe con cada cambio.
+- **El estado de una tarea es la carpeta donde está su `.md`.** Podés mover tareas a mano
+  (explorador, VS Code, Obsidian) o crear un `.md` en `new/`: el próximo comando lo pasa a la base y
+  el watcher lo ve en segundos. Para editar textos usa la app web o `wi.sh` (`descripcion`,
+  `criterio`, `titulo`, `prioridad`).
 - **`reviewed`**: cuando revisas una tarea de `done`, muévela a `reviewed/` (arrastrando el archivo
   o con `wi.sh <env> reviewed <clave>`). Así `done` queda solo con lo pendiente de revisar. El
   autopilot nunca mueve tareas a `reviewed` ni las vuelve a tocar.
@@ -102,6 +108,27 @@ bug-140123 @ a1b2c3d — resumen
 ```
 
 El feedback de QA **se acumula por intento**: al llegar a `stopped`, el historial está entero.
+
+#### La base (`autopilot.db`)
+
+| Tabla | Qué guarda |
+|---|---|
+| `tareas` | una fila por tarea: estado, metadatos, título, descripción, criterio, resultado, motivo |
+| `entradas` | una fila por bloque de historial: tipo (`notas_dev`, `reporte_qa`, `feedback_qa`, `reporte_e2e`, `feedback_e2e`), intento, fecha, título, texto |
+| `adjuntos` | cada archivo de `adjuntos/<clave>/`: ruta relativa a `.workitems/`, origen (azure/coder/qa/e2e/humano), intento, tipo, tamaño, sha256 |
+| `log` | el log de actividad (también se sigue agregando a `log.md`) |
+| `meta` | versión del esquema y marca de migración |
+
+Los adjuntos siguen siendo archivos (la base guarda su ruta): así los textos los enlazan con
+`![..](../adjuntos/...)` y se ven igual en el `.md`, en la app web y en el visor de imágenes.
+
+**Migración:** la primera vez que un comando abre un tablero con `.md` y sin base, lo pasa solo (cada
+`### Intento …` queda como una fila de `entradas`, cada adjunto se registra) y deja los `.md`
+originales en `.workitems/.respaldo-md-<fecha>/`. También a mano: `wi.sh <env> migrate`.
+
+**Leer por partes:** `wi.sh <env> get <clave> [parte]` devuelve solo lo que hace falta. Los agentes
+leen `get <clave>` (descripción y criterio completos, adjuntos y lo último de cada historial) y piden
+el resto (`notas --ultimo`, `qa --ultimo`, `historial`...) en vez de leer el `.md` entero.
 
 ---
 
@@ -754,6 +781,15 @@ uso: wi.sh <env> <comando> [args]
   motivo     <clave> <texto>
   feedback   <clave> <texto>             agrega al historial de Feedback de QA
   criterio   <clave> <texto>
+  descripcion <clave> <texto>  ·  titulo <clave> <texto>  ·  prioridad <clave> <Critical|High|Medium|Low>
+  adjuntar   <clave> <archivo>...        copia archivos a adjuntos/<clave>/humano/ y los registra
+  get        <clave> [parte] [--intento N] [--ultimo] [--json]
+                                         lee solo lo que necesitas de una tarea (menos tokens que el .md).
+                                         parte: resumen (defecto: descripcion y criterio completos + adjuntos +
+                                         lo ultimo de cada historial), descripcion, criterio, adjuntos, notas,
+                                         qa, e2e, feedback, historial (indice), resultado, motivo, todo
+  migrate                                pasa el tablero de .md a la base (se hace solo la primera vez; deja
+                                         respaldo de los .md en .workitems/.respaldo-md-<fecha>/)
   intentos   <clave> <n>
   certificar <clave> <intento_nuevo>     qa -> validando, fija Intento
   aprobar    <clave>                     validando -> done (con E2E=true: -> e2e, la cola de pruebas E2E)
@@ -809,7 +845,29 @@ uso: wi.sh <env> <comando> [args]
 
 Otros scripts en `~/.local/share/autopilot-kit/`: `aenv.sh [--e2e] <repo> -- <cmd>` (corre con
 `.env.autopilot` validado), `e2e.sh --help` (herramientas del agente E2E), `e2e-setup.sh`,
-`vigia.py <env> --simular`, `azure-sync.py --help`.
+`vigia.py <env> --simular`, `azure-sync.py --help`, `autopilot-web [--lan] [--port N]`.
+
+---
+
+## App web (`autopilot-web`)
+
+Servidor Python sin dependencias (`lib/web/servidor.py`) con la interfaz incluida en el kit (sin CDN).
+Muestra todos los proyectos donde se usó el kit: cada `wi.sh` registra su `autopilot.env` en
+`~/.config/autopilot-kit/proyectos.json`.
+
+- **Ver:** tablero (columnas vacías ocultas por defecto), detalle con historial por intento y galería
+  de adjuntos, log, reportes de `test-results/`, estado del watcher y de la pausa.
+- **Gestionar / editar:** cada botón llama a `wi.sh` (mismas validaciones, log y avisos de Telegram).
+  Los adjuntos subidos van a `adjuntos/<clave>/humano/`; nunca se aceptan archivos `.env*`.
+- **Correr:** `health-check`, `run-tests` y `azure-sync` como trabajos en segundo plano (uno de cada
+  tipo por proyecto a la vez), con su salida.
+
+**Seguridad:** sin `--lan` escucha solo en `127.0.0.1`. Con `--lan` escucha en la red y pide la clave
+de `~/.config/autopilot-kit/web.env` (600, se genera sola); la sesión es una cookie
+`HttpOnly; SameSite=Strict`. Toda acción (POST) exige el encabezado `X-Autopilot: 1` (contra CSRF). Solo
+sirve archivos dentro de `.workitems/` y `test-results/` (nunca la base ni `.env*`); los SVG se
+descargan en vez de mostrarse; la salida pasa por el mismo filtro de secretos que Telegram. Va sin
+HTTPS: úsala solo en una red de confianza.
 
 ---
 
@@ -844,7 +902,9 @@ sirve para consultar Azure o escribir de vuelta desde el agente principal; los s
 dotenvs/
 ├── install.sh                  # instala para OpenCode y/o Claude Code; --init prepara proyectos
 ├── lib/                        # -> ~/.local/share/autopilot-kit/  (compartido por ambos clientes)
-│   ├── workitems.py            # formato del board (unica implementacion)
+│   ├── workitems.py            # el board (unica implementacion); vistas .md y migracion
+│   ├── almacen.py              # la base SQLite del board (autopilot.db)
+│   ├── web/, autopilot-web     # app web: ver, gestionar, crear y correr (stdlib + JS, sin CDN)
 │   ├── wi.sh                   # unica via de escritura del board + ramas
 │   ├── watcher.sh              # sensor: lee el board y retorna
 │   ├── azure-sync.py           # importador aditivo de Azure DevOps (uno o varios proyectos)

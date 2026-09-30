@@ -1637,6 +1637,23 @@ class Board:
         return info
 
 
+def registrar_proyecto(env):
+    """Anota el proyecto en ~/.config/autopilot-kit/proyectos.json (la app web los lista todos)."""
+    try:
+        conf = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "autopilot-kit")
+        path = os.path.join(conf, "proyectos.json")
+        env = os.path.abspath(env)
+        try:
+            lista = json.load(open(path))
+        except (OSError, ValueError):
+            lista = []
+        if env not in lista and os.path.isfile(env):
+            os.makedirs(conf, exist_ok=True)
+            escribir_atomico(path, json.dumps(sorted(lista + [env]), indent=1))
+    except OSError:
+        pass
+
+
 # ----------------------------------------------------------------- CLI
 USO = """uso: wi.sh <env> <comando> [args]
   init                                   crea las carpetas del board y log.md
@@ -1654,6 +1671,8 @@ USO = """uso: wi.sh <env> <comando> [args]
   motivo     <clave> <texto>
   feedback   <clave> <texto>             agrega al historial de Feedback de QA
   criterio   <clave> <texto>
+  descripcion <clave> <texto>  ·  titulo <clave> <texto>  ·  prioridad <clave> <Critical|High|Medium|Low>
+  adjuntar   <clave> <archivo>...        copia archivos a adjuntos/<clave>/humano/ y los registra
   intentos   <clave> <n>
   certificar <clave> <intento_nuevo>     qa -> validando, fija Intento
   aprobar    <clave>                     validando -> done (con E2E=true: -> e2e, la cola de pruebas E2E)
@@ -1723,6 +1742,8 @@ def main(argv):
         return 1
     env, cmd, a = argv[0], argv[1], argv[2:]
     b = Board(cargar_config(env or None))
+    if env:
+        registrar_proyecto(env)
 
     def need(n):
         if len(a) < n:
@@ -1798,6 +1819,34 @@ def main(argv):
         need(2); b.modificar(a[0], secs_append={"Feedback de QA": a[1]})
     elif cmd == "criterio":
         need(2); b.modificar(a[0], secs_set={"Criterio de aceptación": a[1]})
+    elif cmd == "descripcion":
+        need(2); b.modificar(a[0], secs_set={"Descripción": a[1]})
+    elif cmd == "prioridad":
+        need(2)
+        if a[1] not in PRIO:
+            raise Error("prioridad invalida '%s'. Usa %s" % (a[1], "|".join(PRIO)))
+        b.modificar(a[0], meta_set={"prioridad": a[1]})
+    elif cmd == "titulo":
+        need(2)
+        with b.lock():
+            estado, _, meta, _, secs = b.leer(a[0])
+            meta["actualizado"] = ahora()
+            b.db.guardar(a[0].lower(), estado, meta, a[1], secs)
+            b._escribir_vista(a[0].lower(), estado, meta, a[1], secs)
+    elif cmd == "adjuntar":
+        need(2)   # copia archivos a adjuntos/<clave>/humano/ y los registra
+        clave = a[0].lower()
+        b.buscar(clave)
+        dst_dir = os.path.join(b.dir, "adjuntos", clave, "humano")
+        os.makedirs(dst_dir, exist_ok=True)
+        hechos = []
+        for f in a[1:]:
+            nombre = re.sub(r"[^\w.\-]", "_", os.path.basename(f))
+            dst = os.path.join(dst_dir, nombre)
+            shutil.copy2(f, dst)
+            hechos.append(b.db.registrar_adjunto(clave, dst, "humano"))
+        b.log("Adjuntos agregados por el humano", "humano", "nota", clave, clave, "-", ", ".join(hechos))
+        print(json.dumps(hechos)); return 0
     elif cmd == "intentos":
         need(2); b.modificar(a[0], meta_set={"intento": str(int(a[1]))})
     elif cmd == "certificar":
