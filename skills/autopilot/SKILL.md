@@ -75,7 +75,7 @@ son `wi.sh` y el `autopilot.env` (ver *Una sola vía de escritura*).
 | | **Claude Code** | **OpenCode** |
 |---|---|---|
 | Watcher | Bash con `run_in_background: true`. Te re-invoca cuando retorna. Mientras, no sondees su salida. | Bash en primer plano, con el timeout más largo posible. |
-| Subagente de un puesto | Tool Agent con `subagent_type: coder`, `qa-reviewer` o `e2e-tester`. Corren **en segundo plano** (definido en el agente): no los esperes; Claude Code te avisa cuando terminan. | **Sesión propia** vía API: `python3 $K/oc_sesion.py lanzar <agente> <carpeta abierta> "<clave>: <puesto>" - --adjunto <img>...` con el encargo por stdin. Devuelve `{"sesion": "ses_..."}`: regístralo con `$W "$E" sesion <clave> <ses>`. No espera. |
+| Subagente de un puesto | Tool Agent con `subagent_type: coder`, `qa-reviewer` o `e2e-tester`. Corren **en segundo plano** (definido en el agente): no los esperes; Claude Code te avisa cuando terminan. | **Sesión propia** vía API: `python3 $K/oc_sesion.py lanzar <agente> <carpeta abierta> "<clave>: <puesto>" - --adjunto <img>...` con el encargo por stdin. Devuelve `{"sesion": "ses_..."}`: regístralo con `$W "$E" sesion <clave> <ses>`. No espera. La sesión nace con permiso solo para su copia de trabajo, el kit y `/tmp`; todo otro directorio se deniega (**nunca pregunta**). |
 | Fin de un subagente | Llega como aviso de tarea terminada, con su respuesta. | El watcher lo devuelve en `terminadas`; la respuesta se lee con `python3 $K/oc_sesion.py resultado <ses>`. |
 | Imágenes | Pásale las rutas en el encargo: las abre con Read. | Van como `--adjunto` (las ve directo) **y** también listadas en el encargo. |
 
@@ -452,7 +452,11 @@ new ──> in-progress ──> qa ──> validando ──┬──────
  "pausa": false, "mensajes": [{"texto": "¿por qué se detuvo la 37269?", "fecha": 1790000000}]}
 ```
 
-`acciones` solo trae puestos libres. `terminadas` solo aplica a OpenCode. Cada `tarea` trae
+`acciones` solo trae puestos libres. `terminadas` solo aplica a OpenCode. También solo en OpenCode:
+`permisos_rechazados` (`[{"tarea", "puesto", "accion", "recursos"}]`). Si una sesión de un puesto quedó
+esperando un permiso, el watcher lo rechaza solo, le explica al agente que siga sin eso, lo deja en el
+log y avisa por Telegram. Nadie tiene que aprobar nada. Menciónalo en tu resumen; si el agente termina
+diciendo que lo necesitaba, trátalo como cualquier bloqueo (`stopped` con el motivo). Cada `tarea` trae
 `repo_path` (`<REPO>`), `base` (`<BASE>`), `adjuntos`, `notas_dev`, `reporte_qa`, `feedback`,
 `reporte_e2e`, `feedback_e2e`, `repos_modificados`. `"e2e": true` = la etapa E2E está activa.
 Prioridad del coder: `bug-fix` > `new` (por prioridad, luego número).

@@ -134,7 +134,8 @@ f = lambda x: "%d/%d%s" % (len(o[x]), k[x], (" " + ",".join(o[x])) if o[x] else 
 e2e = (" | e2e %s" % f("e2e")) if p.get("e2e") else ""
 print("coder %s | qa %s%s | cola bugfix=%d qa=%d%s new=%d en_espera=%d stopped=%d" % (f("coder"), f("qa"), e2e,
       c["bugfix"], c["qa"], (" e2e=%d" % c["e2e"]) if p.get("e2e") else "", c["new"], len(p["en_espera"]),
-      len(p["stopped"])) + (" | PAUSA (/seguir en Telegram)" if p.get("pausa") else ""))' <<<"$plan")"
+      len(p["stopped"])) + (" | PAUSA (/seguir en Telegram)" if p.get("pausa") else "") +
+      "".join(" | permiso rechazado: %s pidio %s" % (r["tarea"], r["accion"]) for r in p.get("permisos_rechazados") or []))' <<<"$plan")"
   log " #$iter idle ($c). Espero ${POLL_INTERVAL}s."
   sleep "$POLL_INTERVAL"
 done
