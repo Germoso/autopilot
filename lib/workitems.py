@@ -132,6 +132,7 @@ def cargar_config(env_path=None):
             "e2e": {"activo": valor_e2e == "true",
                     "invalido": None if valor_e2e in ("true", "false") else vals.get("E2E"),
                     "timeout": entero("E2E_COMMAND_TIMEOUT", 2400),
+                    "block_hosts": lista(vals.get("E2E_BLOCK_HOSTS", "").lower()),
                     "clients": {k[12:]: lista(v) for k, v in vals.items() if k.startswith("E2E_CLIENTS.") and k[12:]},
                     "platforms": {k[14:]: lista(v.lower()) for k, v in vals.items()
                                   if k.startswith("E2E_PLATFORMS.") and k[14:]},
@@ -982,6 +983,54 @@ class Board:
             self.log("Tests guardados", "sistema", "nota", clave, clave, "-", linea.replace("\n", " "))
         return {"guardados": guardados, "avisos": avisos}
 
+    def guardar_smoke(self, copia):
+        """Guarda tests/smoke/ (y tests/services.json) de una copia de trabajo en la rama `smoke-tests` del
+        repo (sale de su rama base si no existe), con las mismas validaciones que los casos de una tarea."""
+        import e2e as e2e_mod
+        copia = os.path.realpath(os.path.expanduser(copia))
+        repo_path = os.path.dirname(self.git(copia, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip().rstrip("/"))
+        nombre = next((n for n, r in self.cfg["repos"].items() if os.path.realpath(r["path"]) == repo_path), None)
+        if nombre is None:
+            raise Error("%s no es una copia de ningun repo de autopilot.env" % copia)
+        r = dict(self.cfg["repos"][nombre], nombre=nombre)
+        secretos = [v for v in e2e_mod.cuentas(self.cfg).values() if len(v) >= 4]
+        probs = self.validar_casos(copia, "smoke", secretos)
+        hay_casos = os.path.isfile(os.path.join(copia, "tests", "smoke", "cases.json"))
+        hay_svc = os.path.isfile(os.path.join(copia, "tests", "services.json"))
+        if not hay_casos and not hay_svc:
+            probs.append("no hay tests/smoke/cases.json ni tests/services.json en %s" % copia)
+        if probs:
+            raise Error("no se guardan las pruebas de humo: " + "; ".join(probs))
+        existe = lambda ref: self.git(r["path"], "rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
+        dst = cache_kit("smoke", nombre)
+        if os.path.isdir(dst):
+            self.git(r["path"], "worktree", "remove", "--force", dst, check=False)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if existe("refs/heads/smoke-tests"):
+            self.git(r["path"], "worktree", "add", dst, "smoke-tests")
+        else:
+            base = r["base"] if existe("refs/heads/%s" % r["base"]) else "origin/%s" % r["base"]
+            self.git(r["path"], "worktree", "add", "--no-track", "-b", "smoke-tests", dst, base)
+        try:
+            destino = os.path.join(dst, "tests", "smoke")
+            rutas = []
+            if hay_casos:
+                if os.path.isdir(destino):
+                    shutil.rmtree(destino)
+                shutil.copytree(os.path.join(copia, "tests", "smoke"), destino)
+                rutas.append(os.path.join("tests", "smoke"))
+            if hay_svc:
+                os.makedirs(os.path.join(dst, "tests"), exist_ok=True)
+                shutil.copy2(os.path.join(copia, "tests", "services.json"), os.path.join(dst, "tests", "services.json"))
+                rutas.append(os.path.join("tests", "services.json"))
+            self.git(dst, "add", "--", *rutas)
+            if self.git(dst, "diff", "--cached", "--quiet", check=False).returncode == 0:
+                return {"repo": nombre, "rama": "smoke-tests", "commit": None, "nota": "sin cambios"}
+            self.git(dst, "commit", "-m", "test: pruebas de humo")
+            return {"repo": nombre, "rama": "smoke-tests", "commit": self.git(dst, "rev-parse", "--short", "HEAD").stdout.strip()}
+        finally:
+            self.git(r["path"], "worktree", "remove", "--force", dst, check=False)
+
     def avisos_e2e(self):
         cfg = self.cfg["e2e"]
         out = []
@@ -1299,7 +1348,11 @@ USO = """uso: wi.sh <env> <comando> [args]
   aprobar-e2e <clave>                    probando-e2e -> done, SOLO si validar-e2e da ok
   rechazar-e2e <clave> <feedback>        probando-e2e -> bug-fix (Feedback de E2E)
   re-e2e     <clave>                     -> e2e otra vez (p. ej. tras resolver un NO CERTIFICABLE)
-  test       <clave>|--all [--qa|--e2e] [--ref <rama>]
+  smoke-save <copia>                     guarda tests/smoke/ de una copia de trabajo en la rama smoke-tests
+                                         del repo (pruebas de humo: no son de una tarea)
+  health     [<clave>|smoke|--all] [--web|--android] [--deep]
+                                         health check E2E: que falta ANTES de correr. Alias: health-check
+  test       <clave>|smoke|--all [--qa|--e2e] [--web|--android] [--ref <rama>]
                                          vuelve a correr los casos guardados en los repos
                                          (tests/<clave>/cases.json); --all = regresion en las ramas base.
                                          Reporte en <workspace>/test-results/. Alias: run-tests
@@ -1364,6 +1417,9 @@ def main(argv):
         res = [entorno.validar(x) for x in objetivo]
         print(json.dumps(res if len(res) > 1 else res[0], ensure_ascii=False, indent=2))
         return 0 if all(x["estado"] == "ok" for x in res) else 3
+    if cmd == "health":
+        import salud
+        return salud.main([env] + a)
     if cmd == "test":
         import pruebas
         return pruebas.main([env] + a)
@@ -1510,6 +1566,8 @@ def main(argv):
         need(1); print(json.dumps(b.qa_worktree(a[0]), ensure_ascii=False)); return 0
     elif cmd == "qa-worktree-borrar":
         need(1); print(json.dumps(b.qa_worktree_borrar(a[0]), ensure_ascii=False)); return 0
+    elif cmd == "smoke-save":
+        need(1); print(json.dumps(b.guardar_smoke(a[0]), ensure_ascii=False)); return 0
     elif cmd == "e2e-worktree":
         need(1); print(json.dumps(b.e2e_worktree(a[0]), ensure_ascii=False, indent=2)); return 0
     elif cmd == "e2e-worktree-borrar":

@@ -17,13 +17,15 @@ a ese backend local:
         sigue aplicado y es local (si alguien edito ese archivo despues, no corre).
   servir <carpeta>              sirve un build web (p. ej. <worktree>/build/web) en 127.0.0.1:<puerto libre>
   web <worktree> <spec> [--project web-movil|web-escritorio] [args de playwright...]
-        Playwright (Chromium) con la config del kit: capturas y video siempre, y el navegador NO
-        resuelve ningun host salvo localhost y los CDN estaticos de fuentes de Google: una llamada a
-        cualquier otro servidor (p. ej. produccion) falla y queda en red-bloqueada.txt.
+        Playwright (Chromium) con la config del kit: capturas y video siempre. Internet abierto, salvo
+        los servidores de PRODUCCION del proyecto (hosts_produccion), que no resuelven: una llamada a
+        uno de ellos falla y queda en red-bloqueada.txt.
   emulador arrancar <worktree> | parar <serial> | estado
         Un emulador Android headless por tarea (AVD autopilot_e2e, -read-only: arranca limpio y no
-        guarda nada), SIN DNS: la app solo alcanza 10.0.2.2 (el backend local). Arranca dentro de la
-        copia E2E: el vigia lo termina si la tarea deja de estar en probando-e2e.
+        guarda nada). Internet abierto a traves de un proxy del kit que rechaza los servidores de
+        produccion y anota cada destino (red-emulador-<serial>.log). La app llega al backend local por
+        10.0.2.2. Arranca dentro de la copia: el vigia lo termina si queda huerfano.
+  produccion <worktree|autopilot.env>   servidores de produccion que se bloquean (JSON)
   adb <args...>                 adb del kit (capturas: adb -s <serial> exec-out screencap -p > x.png)
   cuentas <worktree>            cuentas de prueba (E2E_*) de cuentas-e2e.env, junto a autopilot.env
   doctor                        herramientas E2E (JSON)
@@ -54,7 +56,8 @@ AVD = "autopilot_e2e"
 NODE_MODULES = os.path.join(E2E_HOME, "node", "node_modules")
 ARCHIVO_CUENTAS = "cuentas-e2e.env"   # junto a autopilot.env; lo crea el humano (secretos, fuera de git)
 HOSTS_LOCALES = ("localhost", "127.0.0.1", "10.0.2.2")
-DNS_MUERTO = "127.0.0.2"   # loopback donde no escucha nadie: el emulador no resuelve ningun nombre
+RE_HOST_URL = re.compile(r"(?:https?|wss?)://(?:[^@/\s'\"]*@)?([A-Za-z0-9.-]+)")
+RE_HOST_SOLO = re.compile(r"^([A-Za-z0-9-]+\.)+[A-Za-z0-9-]+(:\d+)?$")
 
 
 class Error(Exception):
@@ -102,7 +105,7 @@ def herramientas_faltantes():
         faltan.append("emulador Android")
     if not os.path.isfile(os.path.join(AVD_HOME, AVD + ".ini")):
         faltan.append("AVD %s" % AVD)
-    if not os.access("/dev/kvm", os.R_OK | os.W_OK):
+    if kvm() == "no":
         faltan.append("acceso a /dev/kvm (sudo usermod -aG kvm $USER y cerrar sesion)")
     if not os.path.isdir(os.path.join(NODE_MODULES, "@playwright", "test")):
         faltan.append("Playwright")
@@ -110,6 +113,66 @@ def herramientas_faltantes():
     if not any(n.startswith("chromium") for n in (os.listdir(navegadores) if os.path.isdir(navegadores) else [])):
         faltan.append("Chromium de Playwright")
     return faltan
+
+
+def kvm():
+    """'ok' | 'sg' (el usuario esta en el grupo kvm pero esta sesion aun no lo ve) | 'no'."""
+    if os.access("/dev/kvm", os.R_OK | os.W_OK):
+        return "ok"
+    try:
+        import grp
+        import pwd
+        usuario = pwd.getpwuid(os.getuid()).pw_name
+        if usuario in grp.getgrnam("kvm").gr_mem and shutil.which("sg"):
+            return "sg"
+    except (KeyError, ImportError):
+        pass
+    return "no"
+
+
+def es_local_o_qa(host):
+    return host in HOSTS_LOCALES or bool(entorno.LOCAL.search(host)) or bool(re.search(r"qa", host, re.I))
+
+
+def hosts_produccion(cfg):
+    """Servidores de PRODUCCION del proyecto, para bloquearlos en el navegador y el emulador (el resto
+    de internet queda abierto). Genérico, sale de cada proyecto:
+      - destinos (URLs, hosts) de los .env reales de cada repo que no son local ni QA;
+      - URLs del archivo de E2E_API de cada app (p. ej. baseUrlMain) que no son local ni QA;
+      - E2E_BLOCK_HOSTS de autopilot.env.
+    Nunca los que el humano permitio en AUTOPILOT_PERMITIR (servicios externos: mapas, sandbox...)."""
+    bloq, permitidos = set(), set()
+    for nombre, r in cfg["repos"].items():
+        path = r["path"]
+        if not os.path.isdir(path):
+            continue
+        for propio in entorno.PROPIOS:
+            auto = entorno.leer(os.path.join(path, propio))
+            perm = {x.strip() for x in auto.get("AUTOPILOT_PERMITIR", "").split(",") if x.strip()}
+            v = entorno.validar(path, propio, copia=True) if os.path.isfile(os.path.join(path, propio)) else {}
+            perm |= set(v.get("permitidas_por_humano", []))
+            for k in perm:
+                permitidos |= hosts_de(auto.get(k, ""))
+        for n in sorted(os.listdir(path)):
+            if not n.startswith(".env") or n in entorno.PROPIOS or n.endswith((".example", ".sample", ".template")):
+                continue
+            for k, val in entorno.leer(os.path.join(path, n)).items():
+                if entorno.es_destino(k):
+                    bloq |= {h for h in hosts_de(val) if not es_local_o_qa(h)}
+        api = cfg["e2e"]["api"].get(nombre) or {}
+        if api.get("archivo") and os.path.isfile(os.path.join(path, api["archivo"])):
+            txt = open(os.path.join(path, api["archivo"]), encoding="utf-8", errors="replace").read()
+            bloq |= {h for h in RE_HOST_URL.findall(txt) if not es_local_o_qa(h)}
+    bloq |= set(cfg["e2e"].get("block_hosts", []))
+    return sorted(h.lower() for h in bloq - permitidos)
+
+
+def hosts_de(valor):
+    valor = (valor or "").strip()
+    hosts = set(RE_HOST_URL.findall(valor))
+    if not hosts and RE_HOST_SOLO.match(valor):
+        hosts.add(valor.split(":")[0])
+    return {h for h in hosts if "." in h}
 
 
 def config_de(path):
@@ -350,6 +413,7 @@ def web(path, spec, extra):
     env["E2E_SALIDA"] = os.environ.get("E2E_SALIDA") or os.path.join(wt, ".e2e-capturas", "web")
     # Los casos que se guardan en el repo no usan nada del kit: hacen sus capturas en SCREENSHOTS_DIR.
     env["SCREENSHOTS_DIR"] = os.environ.get("SCREENSHOTS_DIR") or os.path.join(env["E2E_SALIDA"], "capturas")
+    env["E2E_BLOQUEADOS"] = ",".join(hosts_produccion(config_de(wt)))   # produccion no resuelve
     os.makedirs(env["SCREENSHOTS_DIR"], exist_ok=True)
     os.chdir(wt)
     os.execvpe("timeout", ["timeout", "--kill-after=30", str(cfg_timeout(wt)), "node", cli, "test",
@@ -367,7 +431,7 @@ def emuladores():
     return [l.split()[0] for l in out if l.startswith("emulator-")]
 
 
-def emulador_arrancar(path):
+def emulador_arrancar(path, cfg=None):
     wt, repo, clave = worktree_e2e(path)
     falta = [f for f in herramientas_faltantes() if f not in ("Playwright", "Chromium de Playwright")]
     if falta:
@@ -380,11 +444,24 @@ def emulador_arrancar(path):
     logs = wi.cache_kit("e2e", ".logs")
     os.makedirs(logs, exist_ok=True)
     log = open(os.path.join(logs, "%s-%s.log" % (clave, serial)), "w")
+    # Internet abierto por un proxy del kit que rechaza produccion y anota cada destino.
+    bloqueados = hosts_produccion(cfg or config_de(wt))
+    lista = os.path.join(logs, "%s-bloqueados.json" % serial)
+    json.dump({"hosts": bloqueados}, open(lista, "w"))
+    red = os.path.join(wt, ".e2e-capturas", "red-emulador-%s.log" % serial)
+    os.makedirs(os.path.dirname(red), exist_ok=True)
+    p_proxy = puerto_libre()
+    proxy = subprocess.Popen([sys.executable, os.path.join(AQUI, "proxy_e2e.py"), str(p_proxy), lista, red],
+                             cwd=wt, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    open(os.path.join(logs, "%s.proxy.pid" % serial), "w").write(str(proxy.pid))
+    cmd = [os.path.join(SDK, "emulator", "emulator"), "-avd", AVD, "-read-only", "-no-window",
+           "-no-audio", "-no-boot-anim", "-no-snapshot", "-gpu", "swiftshader_indirect",
+           "-memory", "2048", "-port", str(puerto), "-http-proxy", "http://127.0.0.1:%d" % p_proxy]
+    if kvm() == "sg":  # en el grupo kvm pero la sesion aun no lo ve: se toma el grupo solo para el emulador
+        import shlex
+        cmd = ["sg", "kvm", "-c", " ".join(shlex.quote(c) for c in cmd)]
     # cwd = la copia E2E: asi el vigia sabe de que tarea es y lo termina si queda huerfano.
-    subprocess.Popen([os.path.join(SDK, "emulator", "emulator"), "-avd", AVD, "-read-only", "-no-window",
-                      "-no-audio", "-no-boot-anim", "-no-snapshot", "-gpu", "swiftshader_indirect",
-                      "-memory", "2048", "-port", str(puerto), "-dns-server", DNS_MUERTO],
-                     cwd=wt, env=env_herramientas(), stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    subprocess.Popen(cmd, cwd=wt, env=env_herramientas(), stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     fin = time.time() + 420
     while time.time() < fin:
         r = adb("-s", serial, "shell", "getprop", "sys.boot_completed", timeout=20)
@@ -396,13 +473,10 @@ def emulador_arrancar(path):
         raise Error("el emulador no termino de arrancar en 7 min (log: %s)" % log.name)
     for k in ("window_animation_scale", "transition_animation_scale", "animator_duration_scale"):
         adb("-s", serial, "shell", "settings", "put", "global", k, "0")
-    # Sin DNS: ningun nombre resuelve. La app solo llega a 10.0.2.2 (el backend local).
-    r = adb("-s", serial, "shell", "ping", "-c", "1", "-W", "3", "google.com", timeout=30)
-    if "unknown host" not in (r.stdout + r.stderr).lower() and r.returncode == 0:
-        emulador_parar(serial)
-        raise Error("el emulador resuelve nombres de internet: no es seguro (podria llegar a produccion)")
-    return {"serial": serial, "red": "sin DNS: solo alcanza 10.0.2.2 (localhost de esta maquina)",
-            "log": log.name, "capturas": "e2e.sh adb -s %s exec-out screencap -p > <archivo>.png" % serial}
+    return {"serial": serial,
+            "red": "internet abierto; produccion bloqueada (%s). Backend local: 10.0.2.2" % (", ".join(bloqueados) or "ninguno detectado"),
+            "red_log": red, "log": log.name,
+            "capturas": "e2e.sh adb -s %s exec-out screencap -p > <archivo>.png" % serial}
 
 
 def emulador_parar(serial):
@@ -413,6 +487,12 @@ def emulador_parar(serial):
         time.sleep(1)
     subprocess.run(["pkill", "-f", "emulator.*-port %s " % puerto], capture_output=True)
     subprocess.run(["pkill", "-f", "qemu-system.*-port %s " % puerto], capture_output=True)
+    pid = wi.cache_kit("e2e", ".logs", "%s.proxy.pid" % serial)
+    try:
+        os.kill(int(open(pid).read()), 15)
+        os.remove(pid)
+    except (OSError, ValueError):
+        pass
     return {"parado": serial}
 
 
@@ -427,6 +507,9 @@ def main(a):
         for k, v in web_env(r[0]).items():
             sys.stdout.write("%s\0%s\0" % (k, v))
         return 0
+    elif cmd == "produccion" and r:
+        c = wi.cargar_config(r[0]) if r[0].endswith(".env") else config_de(r[0])
+        out = {"bloqueados": hosts_produccion(c)}
     elif cmd == "doctor":
         out = {"home": E2E_HOME, "faltan": herramientas_faltantes()}
     elif cmd == "api" and len(r) >= 2:

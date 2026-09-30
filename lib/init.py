@@ -164,7 +164,15 @@ def bloque_e2e(det):
         if sueltos:
             L.append("# Sin backend deducido (agregalos al E2E_CLIENTS que corresponda): %s" % ", ".join(sueltos))
     for f in fronts:
-        L.append("E2E_PLATFORMS.%s=%s" % (f, "web,android" if tipos[f] == "flutter" else "web"))
+        plats = "web"
+        if tipos[f] == "flutter":
+            main = os.path.join(next(r["path"] for r in det["repos"] if r["nombre"] == f), "lib", "main.dart")
+            txt = open(main, encoding="utf-8", errors="replace").read() if os.path.isfile(main) else ""
+            # Firebase sin opciones de web: la app no arranca en navegador -> solo android
+            plats = "android" if re.search(r"Firebase\.initializeApp\(\s*\)", txt) else "web,android"
+        L.append("E2E_PLATFORMS.%s=%s" % (f, plats))
+    L.append("# Internet abierto en navegador y emulador; se bloquean los servidores de produccion detectados en")
+    L.append("# los .env y el config de la app. Otros a mano: E2E_BLOCK_HOSTS=host1,host2")
     for r in det["repos"]:
         if tipos[r["nombre"]] == "flutter":
             api = api_flutter(r["path"])

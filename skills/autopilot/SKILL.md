@@ -116,7 +116,8 @@ de vigilar. En OpenCode las sesiones de los puestos sí siguen; al volver, `--in
 - **E2E:** los backends corren locales con `aenv.sh --e2e` (su `.env.autopilot.e2e` si el humano lo
   creó; si no, su `.env.autopilot`: la base de QA); los fronts web se apuntan solos a ese backend
   local; las apps, el emulador y el navegador solo con `$K/e2e.sh`, que apunta la app al backend
-  local (`E2E_API`) y corta la red a cualquier otro servidor.
+  local (`E2E_API`); navegador y emulador con internet, pero con los servidores de producción del
+  proyecto bloqueados (los detecta el kit).
 - En cada encargo, incluye el estado de ambiente de los repos de la tarea:
   `$W "$E" entorno <clave>` (`ok` / `falta` / `inseguro` / `incompleto`, sin valores).
 - Un agente que se detiene por **posible producción** (coder `STOPPED` o QA `NO CERTIFICABLE`) →
@@ -196,7 +197,9 @@ $W "$E" rechazar-e2e <clave> "<motivos>"      # probando-e2e -> bug-fix
 $W "$E" re-e2e      <clave>                   # -> e2e otra vez (tras resolver un NO CERTIFICABLE)
 $W "$E" e2e-worktree-borrar <clave>           # mata backend, web y emulador que queden ahí
 # Casos guardados en los repos (tests/<clave>/cases.json): volver a correrlos
-$W "$E" test <clave>|--all [--qa|--e2e]        # o $K/run-tests ...; reporte en test-results/
+$W "$E" test <clave>|smoke|--all [--qa|--e2e] [--web|--android]   # o $K/run-tests ...; reporte en test-results/
+$W "$E" health [<clave>|smoke|--all] [--web|--android] [--deep]   # o $K/health-check: que falta ANTES de correr
+$W "$E" smoke-save <copia>                    # pruebas de humo (tests/smoke/) a la rama smoke-tests del repo
 ```
 
 ## El bucle
@@ -341,7 +344,9 @@ intento; **cada copia E2E** tal como la devuelve `e2e-worktree` (repo, ruta, ref
 tipo, plataformas, `api`, `entorno_e2e`); criterio de aceptación **textual**; el **Reporte de QA**
 (`tarea.reporte_qa`, sobre todo "Cómo verificarlo manualmente"); las `Notas del desarrollador`;
 `tarea.adjuntos`; la ruta de `$E`; y el resultado de `$K/e2e.sh doctor` y de `$W "$E" check`
-(herramientas y avisos). Pídele que termine con su formato `REPORTE E2E` + `VEREDICTO`, citando la
+(herramientas y avisos) y la salida de `$K/health-check <clave>` (corrido en la carpeta de `$E`). Si el
+health check marca ❌, no lances al agente: `$W "$E" stopped <clave> "NO CERTIFICABLE (E2E): <las lineas ❌ y su →>"`.
+Pídele que termine con su formato `REPORTE E2E` + `VEREDICTO`, citando la
 ruta completa de cada captura en el paso que muestra.
 
 ### Imágenes en el `.md`
@@ -430,7 +435,8 @@ con su prueba, qué probó, cómo verificarlo manualmente de punta a punta y pun
 **`e2e-tester`** (E2E, solo con `E2E=true`) — termina de certificar lo que el QA aprobó: levanta
 los backends de la tarea **locales** contra la base de QA (`aenv.sh --e2e`), apunta
 las apps a ese backend (`e2e.sh api`), y recorre el flujo de cada criterio como una persona: BackOffice
-y apps Flutter en web (Playwright) y las apps en un **emulador Android** sin DNS. Saca **capturas
+y apps Flutter en web (Playwright) y las apps en un **emulador Android** (internet abierto, producción
+bloqueada). Saca **capturas
 en cada paso** (y video) que quedan incrustadas en el `## Reporte E2E`. Solo escribe en sus copias
 E2E; no commitea. Veredicto `APROBADO` (cada criterio CUMPLE con capturas, en cada plataforma),
 `RECHAZADO` (→ `bug-fix`) o `NO CERTIFICABLE` (→ `stopped`).
