@@ -6,7 +6,7 @@
 #    - scripts (board, watcher, azure-sync, guardas de git, MCP) en
 #      ~/.local/share/autopilot-kit/   (compartidos por ambos clientes)
 #    - skills autopilot y azure-sync   en la carpeta de skills de cada cliente
-#    - agentes coder y qa-reviewer, generados desde agents/*.md
+#    - agentes coder, qa-reviewer y e2e-tester, generados desde agents/*.md
 #      con los bloqueos de git propios de cada cliente
 #    - (OpenCode) comandos /autopilot y /azure-sync
 #      (en Claude Code las skills ya son /autopilot y /azure-sync)
@@ -143,7 +143,8 @@ fi
 # ------------------------------------------------------------------
 echo "==> Scripts en $KIT"
 mkdir -p "$KIT"
-cp "$KIT_DIR"/lib/*.py "$KIT_DIR"/lib/*.sh "$KIT_DIR/clients/render.py" "$KIT/" && chmod +x "$KIT"/*.sh "$KIT"/*.py
+cp "$KIT_DIR"/lib/*.py "$KIT_DIR"/lib/*.sh "$KIT_DIR"/lib/*.cjs "$KIT_DIR"/lib/*.dart "$KIT_DIR/clients/render.py" "$KIT/" \
+  && chmod +x "$KIT"/*.sh "$KIT"/*.py
 say "$(ls "$KIT" | tr '\n' ' ')"
 
 # ------------------------------------------------------------------

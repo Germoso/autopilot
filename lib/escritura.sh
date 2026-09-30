@@ -4,6 +4,7 @@
 #
 #  Hook PreToolUse de Claude Code (matcher: Edit|Write|NotebookEdit).
 #    escritura.sh qa     solo dentro de sus copias de trabajo (~/.cache/autopilot-kit/qa/)
+#    escritura.sh e2e    solo dentro de sus copias E2E (~/.cache/autopilot-kit/e2e/): pruebas temporales
 #    escritura.sh coder  cualquier archivo del codigo, MENOS los .env* (salvo .env.example):
 #                        los ambientes los define el humano (.env.autopilot), nunca un agente.
 #                        Ademas, dentro de su worktree (~/.cache/autopilot-kit/coder/<repo>-<clave>/)
@@ -27,12 +28,12 @@ if re.match(r"^\.env", nombre) and not re.search(r"\.(example|sample|template)$"
           "humano (.env.autopilot). Si necesitas otro ambiente, deten la tarea y recomienda que hacer." % nombre,
           file=sys.stderr)
     sys.exit(2)
-if modo == "qa":
+if modo in ("qa", "e2e"):
     cache = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
-    permitida = os.path.realpath(os.path.join(cache, "autopilot-kit", "qa")) + os.sep
-    if not real.startswith(permitida):
-        print("BLOQUEADO por el autopilot: el QA solo puede escribir dentro de sus copias de trabajo (%s). "
-              "Ruta pedida: %s" % (permitida, ruta or "-"), file=sys.stderr)
+    permitida = os.path.realpath(os.path.join(cache, "autopilot-kit", modo)) + os.sep
+    if not real.startswith(permitida) or os.sep + ".api" + os.sep in real[len(permitida) - 1:]:
+        print("BLOQUEADO por el autopilot: el %s solo puede escribir dentro de sus copias de trabajo (%s). "
+              "Ruta pedida: %s" % (modo.upper(), permitida, ruta or "-"), file=sys.stderr)
         sys.exit(2)
 if modo == "coder" and real:
     sys.path.insert(0, os.environ.get("KIT", ""))

@@ -1,20 +1,25 @@
 ---
 name: autopilot
-description: Sistema autonomo de desarrollo sobre un board de workitems en carpetas y archivos Markdown. Arranca el watcher y trabaja las tareas con dos subagentes en paralelo (un coder y un QA, una tarea cada uno), una rama por workitem desde la rama base del proyecto (BASE_BRANCH), sin push ni merge. Usar cuando el usuario mencione el tablero de tareas, el board, workitems, autopilot, /autopilot, o pida trabajo autonomo sobre tareas. NO usar en proyectos que no tengan un archivo autopilot.env.
+description: Sistema autonomo de desarrollo sobre un board de workitems en carpetas y archivos Markdown. Arranca el watcher y trabaja las tareas con subagentes en paralelo (coder, QA y, con E2E=true, un agente de pruebas E2E en web y Android; una tarea cada uno), una rama por workitem desde la rama base del proyecto (BASE_BRANCH), sin push ni merge. Usar cuando el usuario mencione el tablero de tareas, el board, workitems, autopilot, /autopilot, o pida trabajo autonomo sobre tareas. NO usar en proyectos que no tengan un archivo autopilot.env.
 ---
 
 # Sistema Autónomo de Desarrollo (Autopilot)
 
 Sistema donde un **watcher** vigila un board de workitems (carpetas + `.md`) y tú, el agente
-principal (orquestador), delegas en **dos puestos que trabajan en paralelo**:
+principal (orquestador), delegas en **puestos que trabajan en paralelo**:
 
 | Puesto | Agente | Toma de | Estado mientras trabaja | Máximo |
 |---|---|---|---|---|
 | **coder** | `coder` | `bug-fix` > `new` | `in-progress` | `MAX_CODERS` |
 | **qa** | `qa-reviewer` | `qa` | `validando` | `MAX_QA` |
+| **e2e** (solo con `E2E=true`) | `e2e-tester` | `e2e` | `probando-e2e` | `MAX_E2E` |
 
-**Capacidad** (en `autopilot.env`): `PARALLEL=false` (defecto) → 1 coder y 1 QA. `PARALLEL=true` →
-hasta `MAX_CODERS` y `MAX_QA` (defecto 2 y 2) a la vez, **cada uno con un workitem distinto**.
+**Capacidad** (en `autopilot.env`): `PARALLEL=false` (defecto) → 1 coder, 1 QA y 1 E2E. `PARALLEL=true` →
+hasta `MAX_CODERS`, `MAX_QA` y `MAX_E2E` (defecto 2, 2 y 1) a la vez, **cada uno con un workitem distinto**.
+
+**Pruebas E2E** (`E2E=true`): lo que el QA aprueba no va a `done` sino a la cola `e2e`. El
+`e2e-tester` recorre el flujo real de cada criterio (app o BackOffice → backend local → base de datos
+**exclusiva de E2E**) en web y en emulador Android, con capturas de cada paso, y recién ahí va a `done`.
 `wi.sh` rechaza superar el máximo. En un workspace el límite es global, no por repo.
 
 **Cada coder trabaja en su propia copia** (`git worktree` en `~/.cache/autopilot-kit/coder/<repo>-<clave>`),
@@ -35,6 +40,8 @@ Si no existe, este proyecto **no participa** del sistema. No preguntes, no asuma
 ├── in-progress/
 ├── qa/
 ├── validando/
+├── e2e/                        # QA aprobó; cola de pruebas E2E (solo con E2E=true)
+├── probando-e2e/
 ├── bug-fix/
 ├── stopped/
 ├── done/
@@ -48,7 +55,8 @@ Si no existe, este proyecto **no participa** del sistema. No preguntes, no asuma
 - Cada archivo tiene frontmatter (`id`, `tipo`, `prioridad`, `intento`, `rama`, `repo`,
   `origen`, `sesion`, `actualizado`) y las secciones `## Descripción`, `## Criterio de aceptación`,
   `## Adjuntos`, `## Notas del desarrollador` y `## Reporte de QA` (por intento),
-  `## Feedback de QA`, `## Resultado`, `## Motivo de stopped`.
+  `## Feedback de QA`, `## Reporte E2E` (con sus capturas), `## Feedback de E2E`, `## Resultado`,
+  `## Motivo de stopped`.
 - El board **no va en git**: si estuviera versionado, al cambiar de rama cambiaría el tablero.
 
 ## Arranque
@@ -69,7 +77,7 @@ son `wi.sh` y el `autopilot.env` (ver *Una sola vía de escritura*).
 | | **Claude Code** | **OpenCode** |
 |---|---|---|
 | Watcher | Bash con `run_in_background: true`. Te re-invoca cuando retorna. Mientras, no sondees su salida. | Bash en primer plano, con el timeout más largo posible. |
-| Subagente de un puesto | Tool Agent con `subagent_type: coder` o `qa-reviewer`. Corren **en segundo plano** (definido en el agente): no los esperes; Claude Code te avisa cuando terminan. | **Sesión propia** vía API: `python3 $K/oc_sesion.py lanzar <agente> <carpeta abierta> "<clave>: <puesto>" - --adjunto <img>...` con el encargo por stdin. Devuelve `{"sesion": "ses_..."}`: regístralo con `$W "$E" sesion <clave> <ses>`. No espera. |
+| Subagente de un puesto | Tool Agent con `subagent_type: coder`, `qa-reviewer` o `e2e-tester`. Corren **en segundo plano** (definido en el agente): no los esperes; Claude Code te avisa cuando terminan. | **Sesión propia** vía API: `python3 $K/oc_sesion.py lanzar <agente> <carpeta abierta> "<clave>: <puesto>" - --adjunto <img>...` con el encargo por stdin. Devuelve `{"sesion": "ses_..."}`: regístralo con `$W "$E" sesion <clave> <ses>`. No espera. |
 | Fin de un subagente | Llega como aviso de tarea terminada, con su respuesta. | El watcher lo devuelve en `terminadas`; la respuesta se lee con `python3 $K/oc_sesion.py resultado <ses>`. |
 | Imágenes | Pásale las rutas en el encargo: las abre con Read. | Van como `--adjunto` (las ve directo) **y** también listadas en el encargo. |
 
@@ -104,7 +112,10 @@ de vigilar. En OpenCode las sesiones de los puestos sí siguen; al volver, `--in
   `$K/aenv.sh <repo o worktree> -- <comando>`, que usa el **`.env.autopilot` que el humano creó** en
   el repo y verifica que todo apunte a local o QA (la BD debe decir "qa" en su nombre). Los comandos
   directos están bloqueados por hook/permisos.
-- Nadie crea, edita ni copia `.env*`. Nadie cambia la URL de API de una app para probar.
+- Nadie crea, edita ni copia `.env*`. Nadie cambia a mano la URL de API de una app para probar.
+- **E2E:** los backends corren locales con `aenv.sh --e2e` (`.env.autopilot.e2e`: base de datos
+  **exclusiva** de E2E, distinta de la de QA); las apps, el emulador y el navegador solo con
+  `$K/e2e.sh`, que apunta la app al backend local (`E2E_API`) y corta la red a cualquier otro servidor.
 - En cada encargo, incluye el estado de ambiente de los repos de la tarea:
   `$W "$E" entorno <clave>` (`ok` / `falta` / `inseguro` / `incompleto`, sin valores).
 - Un agente que se detiene por **posible producción** (coder `STOPPED` o QA `NO CERTIFICABLE`) →
@@ -174,11 +185,20 @@ $W "$E" notas-dev   <clave> -   <<'FIN'       # notas del coder (stdin)
 $W "$E" reporte-qa  <clave> -   <<'FIN'       # reporte del QA (stdin)
 $W "$E" qa-worktree <clave>                   # copia de trabajo del QA
 $W "$E" qa-worktree-borrar <clave>
+# E2E (solo con E2E=true)
+$W "$E" probar-e2e  <clave>                   # e2e -> probando-e2e (ocupa el puesto e2e)
+$W "$E" e2e-worktree <clave>                  # copias E2E: repos de la tarea + los que pide el flujo real
+$W "$E" reporte-e2e <clave> - --imagenes <copia>/.e2e-capturas <<'FIN'   # reporte + capturas al .md
+$W "$E" validar-e2e <clave>                   # ¿cada criterio CUMPLE y con capturas? (JSON)
+$W "$E" aprobar-e2e <clave>                   # probando-e2e -> done (se niega si validar-e2e falla)
+$W "$E" rechazar-e2e <clave> "<motivos>"      # probando-e2e -> bug-fix
+$W "$E" re-e2e      <clave>                   # -> e2e otra vez (tras resolver un NO CERTIFICABLE)
+$W "$E" e2e-worktree-borrar <clave>           # mata backend, web y emulador que queden ahí
 ```
 
 ## El bucle
 
-Hay tres eventos. Atiende cada uno y **relanza el watcher si no está corriendo**.
+Hay cinco eventos. Atiende cada uno y **relanza el watcher si no está corriendo**.
 
 ### A. El watcher retorna con `acciones` (trabajo para un puesto libre)
 
@@ -192,6 +212,9 @@ watcher antes de ocupar el puesto, te devuelve la misma acción):
   → lanza `coder` con el encargo del coder, incluido el `Feedback de QA`.
 - `certificar` (qa) → `$W "$E" certificar <clave> <intento+1>` → `$W "$E" qa-worktree <clave>`
   (devuelve **una copia de trabajo por repo** de la tarea) → lanza `qa-reviewer` con el **encargo del QA**.
+- `probar-e2e` (e2e) → `$W "$E" probar-e2e <clave>` → `$W "$E" e2e-worktree <clave>` (una copia por
+  repo: los de la tarea en su rama y los que pide el flujo real en su base, con tipo, plataformas,
+  `api` y `entorno_e2e`) → lanza `e2e-tester` con el **encargo del E2E**. (No cambia el intento.)
 
 Si `wi.sh rama` falla, la tarea ya quedó en `stopped`: sigue con lo demás. Pueden venir **varias
 acciones** (varios coders y varios QA si `PARALLEL=true`): atiéndelas todas y lanza todos los
@@ -227,7 +250,8 @@ Al pasar a `done` o `stopped`, el worktree del coder se borra solo y se liberan 
    Así sus capturas se copian al board y quedan visibles en el `.md` (si no, se pierden con el worktree).
 2. Veredicto (el QA solo aprueba lo que **probó**: compilación, tests y cada criterio con una
    ejecución; "por lectura de código" no alcanza):
-   - `APROBADO` → `$W "$E" aprobar <clave>` (va a `done`).
+   - `APROBADO` → `$W "$E" aprobar <clave>` (va a `done`; con `E2E=true` va a la cola `e2e`: lo
+     dice su salida, `ok -> done` u `ok -> e2e`).
    - `RECHAZADO` → si `intento >= 3` → `$W "$E" stopped <clave> "<historial de los intentos>"`;
      si no → `$W "$E" rechazar <clave> "<motivos>"` (va a `bug-fix`: el coder lo toma primero).
    - `NO CERTIFICABLE` → `$W "$E" stopped <clave> "NO CERTIFICABLE: <lo que dice FALTA>"`. No es
@@ -237,7 +261,25 @@ Al pasar a `done` o `stopped`, el worktree del coder se borra solo y se liberan 
      `NO CERTIFICABLE`. Nunca apruebes por tu cuenta.
 3. `$W "$E" qa-worktree-borrar <clave>` (borra las copias de todos los repos).
 
-### D. El watcher retorna con `atascadas` (vigilante)
+### D. Terminó el E2E (aviso, o `terminadas` con puesto `e2e`)
+
+1. Guarda su bloque `REPORTE E2E` completo, **antes** de borrar sus copias:
+   `$W "$E" reporte-e2e <clave> - --imagenes <copia1>/.e2e-capturas [--imagenes <copia2>/.e2e-capturas] <<'FIN'` … `FIN`.
+   Las capturas que cita (y las de esas carpetas) se copian a `adjuntos/<clave>/e2e-intentoN/` y
+   quedan **incrustadas en el `.md`**, en el paso que muestran.
+2. Veredicto:
+   - `APROBADO` → `$W "$E" aprobar-e2e <clave>` (va a `done`). **Se niega** si algún criterio del
+     reporte no dice CUMPLE, no tiene capturas o falta una plataforma esperada: entonces trátalo como
+     `NO CERTIFICABLE` con lo que dijo `validar-e2e`. Nunca apruebes por tu cuenta.
+   - `RECHAZADO` → si `intento >= 3` → `$W "$E" stopped <clave> "<historial>"`; si no →
+     `$W "$E" rechazar-e2e <clave> "<motivos>"` (va a `bug-fix`: el coder recibe el `Feedback de E2E`
+     y el Reporte E2E con las capturas del paso que falló; luego vuelve a pasar por QA y E2E).
+   - `NO CERTIFICABLE` → `$W "$E" stopped <clave> "NO CERTIFICABLE (E2E): <lo que dice FALTA>"`.
+     Cuando el humano lo resuelva: `$W "$E" re-e2e <clave>`.
+   - Cualquier otra respuesta → como `NO CERTIFICABLE`.
+3. `$W "$E" e2e-worktree-borrar <clave>` (borra las copias y mata backend, web y emulador que queden).
+
+### E. El watcher retorna con `atascadas` (vigilante)
 
 El watcher corre un **vigilante** cada `WATCHDOG_INTERVAL` s (`$K/vigia.py`, sin tokens). Por su cuenta,
 sin despertarte, **mata** los procesos **huérfanos** (de tareas que ya no están en su puesto o de
@@ -248,7 +290,7 @@ Solo te despierta por una tarea **atascada**: en su puesto sin ninguna actividad
 CPU, sesión) durante `STALE_MINUTES`. Para cada una:
 - **Claude Code:** revisa el estado del subagente; si sigue vivo, mándale un mensaje preguntando qué
   está esperando y pidiéndole que corte lo que esté bloqueado. Si ya terminó sin avisar, procesa su
-  resultado (eventos B o C).
+  resultado (eventos B, C o D).
 - **OpenCode:** `python3 $K/oc_sesion.py estado <ses>`; si terminó, procesa su resultado.
 - Si no responde o no hay agente → `$W "$E" stopped <clave> "Atascada: <N> min sin actividad"`.
 
@@ -268,7 +310,8 @@ El `.md` de la tarea (`tarea.archivo`) es la **fuente de verdad**. En todo encar
 
 **La ruta del archivo de la tarea** (`tarea.archivo`: léelo completo); clave y título; **la ruta de su worktree** (lo que devolvió `wi.sh rama`: ahí trabaja, nunca en
 `<REPO>`), `<REPO>`, rama y `<BASE>`; descripción y criterio de aceptación;
-la lista **`tarea.adjuntos`** (rutas completas); si es bug-fix, el `Feedback de QA`, las notas
+la lista **`tarea.adjuntos`** (rutas completas); si es bug-fix, el `Feedback de QA` y, si el rechazo
+vino de E2E, el `Feedback de E2E` (`tarea.feedback_e2e`) y el Reporte E2E con sus capturas, las notas
 anteriores y **todos** los repos de la tarea (`tarea.repos`). En un workspace, además: la ruta de
 `$W`, la de `$E` y **la lista de repos del workspace con su rama base** (los `REPO.*` de
 `autopilot.env`), para que pueda seguir en otro repo con `$W "$E" rama <clave> nueva --repo <carpeta>`
@@ -280,6 +323,16 @@ sin detenerse. Pídele que termine con su formato `NOTAS DEL DESARROLLADOR` + `R
 intento; **cada worktree con su repo y su rama base** (lo que devuelve `qa-worktree`);
 descripción y criterio **textuales**; las **`Notas del desarrollador`** (`tarea.notas_dev`); `tarea.adjuntos`.
 Pídele que termine con su formato `REPORTE DE QA` + `VEREDICTO`.
+
+### Encargo del E2E
+
+**La ruta del archivo de la tarea** (`tarea.archivo`: léelo completo); clave, título, rama e
+intento; **cada copia E2E** tal como la devuelve `e2e-worktree` (repo, ruta, ref, si es de la tarea,
+tipo, plataformas, `api`, `entorno_e2e`); criterio de aceptación **textual**; el **Reporte de QA**
+(`tarea.reporte_qa`, sobre todo "Cómo verificarlo manualmente"); las `Notas del desarrollador`;
+`tarea.adjuntos`; la ruta de `$E`; y el resultado de `$K/e2e.sh doctor` y de `$W "$E" check`
+(herramientas y avisos). Pídele que termine con su formato `REPORTE E2E` + `VEREDICTO`, citando la
+ruta completa de cada captura en el paso que muestra.
 
 ### Imágenes en el `.md`
 
@@ -299,12 +352,13 @@ fotogramas, falta ffmpeg: dilo en el resumen (`azure-sync.py --fotogramas` los g
 ## La máquina de estados
 
 ```
-new ──> in-progress ──> qa ──> validando ──┬──> done ──(humano)──> reviewed
-                          ↑       │         │
-                          │       ↓         │
-                          └── bug-fix ──────┘
+new ──> in-progress ──> qa ──> validando ──┬──────────────────────────────> done ──(humano)──> reviewed
+                          ↑       │         │  (E2E=true)                     ↑
+                          │       │         └──> e2e ──> probando-e2e ───────┘
+                          │       ↓                          │
+                          └── bug-fix <──────────────────────┘ (RECHAZADO en E2E)
                                   │
-                                  └── intento >= 3 ──> stopped
+                                  └── intento >= 3 ──> stopped   (NO CERTIFICABLE en QA o E2E ──> stopped)
 ```
 
 | Carpeta | Significado | Quién actúa |
@@ -313,17 +367,20 @@ new ──> in-progress ──> qa ──> validando ──┬──> done ─�
 | `in-progress` | El coder está trabajando. Máximo 1 (puesto coder). | `coder` |
 | `qa` | El coder terminó y commiteó. Cola de certificación. | — |
 | `validando` | El QA está certificando. Máximo 1 (puesto qa), en paralelo con el coder. | `qa-reviewer` |
-| `bug-fix` | QA falló. Hay que corregir. **Se toma antes que cualquier otra cosa.** | `coder` |
+| `e2e` | QA aprobó y `E2E=true`. Cola de pruebas E2E. | — |
+| `probando-e2e` | El agente E2E está recorriendo los flujos (web y Android). | `e2e-tester` |
+| `bug-fix` | QA o E2E falló. Hay que corregir. **Se toma antes que cualquier otra cosa.** | `coder` |
 | `stopped` | No se pudo. Requiere humano, con motivo escrito. | — |
-| `done` | **Certificado por QA.** No significa mergeado: el merge lo hace el humano. | — |
+| `done` | **Certificado por QA** (y por E2E si `E2E=true`). No significa mergeado: el merge lo hace el humano. | — |
 | `reviewed` | El humano ya revisó la tarea en `done`. Solo la mueve el humano (`wi.sh reviewed <clave>` o moviendo el archivo). El autopilot no la vuelve a tocar. | humano |
 
 ## Qué devuelve el watcher
 
 ```json
 {"acciones":   [{"puesto": "coder", "accion": "desarrollar|desarrollar-bugfix", "tarea": {…}},
-                {"puesto": "qa",    "accion": "certificar",                     "tarea": {…}}],
- "terminadas": [{"puesto": "coder|qa", "tarea": {…}, "sesion": "ses_…", "outcome": "succeeded"}],
+                {"puesto": "qa",    "accion": "certificar",                     "tarea": {…}},
+                {"puesto": "e2e",   "accion": "probar-e2e",                     "tarea": {…}}],
+ "terminadas": [{"puesto": "coder|qa|e2e", "tarea": {…}, "sesion": "ses_…", "outcome": "succeeded"}],
  "ocupados":   {"coder": "bug-37271", "qa": null}, "cola": {…}, "avisos": […]}
 ```
 
@@ -337,7 +394,7 @@ Prioridad del coder: `bug-fix` > `new` (por prioridad, luego número).
 el coder corrige **solo** el feedback en la misma rama → `qa` otra vez. Hasta 3 intentos; al
 tercer rechazo, `stopped` con el historial.
 
-## Los dos agentes
+## Los agentes
 
 **`coder`** (el programador) — desarrolla en `<REPO>`, en la rama de la tarea, y deja sus
 **notas del desarrollador**. Le bloquean `git push`, `git merge`, `git pull`, `git rebase`,
@@ -353,11 +410,19 @@ sus copias de trabajo; no commitea ni cambia de rama. Veredicto: `APROBADO`, `RE
 `NO CERTIFICABLE` (falta herramienta/entorno → `stopped`). Entrega un **reporte de QA**: criterios
 con su prueba, qué probó, cómo verificarlo manualmente de punta a punta y puntos a tener en cuenta.
 
+**`e2e-tester`** (E2E, solo con `E2E=true`) — termina de certificar lo que el QA aprobó: levanta
+los backends de la tarea **locales** contra la base **exclusiva de E2E** (`aenv.sh --e2e`), apunta
+las apps a ese backend (`e2e.sh api`), y recorre el flujo de cada criterio como una persona: BackOffice
+y apps Flutter en web (Playwright) y las apps en un **emulador Android** sin DNS. Saca **capturas
+en cada paso** (y video) que quedan incrustadas en el `## Reporte E2E`. Solo escribe en sus copias
+E2E; no commitea. Veredicto `APROBADO` (cada criterio CUMPLE con capturas, en cada plataforma),
+`RECHAZADO` (→ `bug-fix`) o `NO CERTIFICABLE` (→ `stopped`).
+
 Los bloqueos son reales, no instrucciones: en OpenCode son permisos `deny` del agente; en
 Claude Code, un hook `PreToolUse` (`$K/git-guard.sh`) que cancela el comando. `/autopilot-init`
 además prohíbe push/merge al agente principal.
 
-Ninguno de los dos subagentes usa el MCP de Azure DevOps: si hay que escribir en Azure, lo hace
+Ningún subagente usa el MCP de Azure DevOps: si hay que escribir en Azure, lo hace
 el orquestador.
 
 ## Log de actividad
@@ -374,7 +439,9 @@ el orquestador.
 - `git push` o `git merge`. **El merge lo hace el humano, siempre.**
 - Crear una rama desde otra que no sea `<BASE>`, o con otro nombre que `task-<n>`/`bug-<n>`.
 - Trabajar en `<BASE>` directamente.
-- Superar la capacidad de un puesto (`MAX_CODERS` en `in-progress`, `MAX_QA` en `validando`; 1 y 1 con `PARALLEL=false`).
+- Superar la capacidad de un puesto (`MAX_CODERS` en `in-progress`, `MAX_QA` en `validando`, `MAX_E2E`
+  en `probando-e2e`; 1 cada uno con `PARALLEL=false`).
+- Aprobar en E2E sin `aprobar-e2e` (que exige capturas por criterio) o mover a `done` una tarea de `e2e`.
 - Dejar que un coder trabaje en la copia principal de un repo: siempre en su worktree.
 - Lanzar un segundo watcher si ya hay uno corriendo.
 - Relanzar el watcher con `--inicio` fuera del arranque: marcaría huérfana la tarea del otro puesto.
