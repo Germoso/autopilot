@@ -46,8 +46,12 @@ Si no existe, este proyecto **no participa** del sistema. No preguntes, no asuma
 - **La tarea vive en la base.** Los `.md` se regeneran solos en la carpeta de su estado para que el
   humano los lea; si el humano mueve o edita uno a mano, el cambio se importa. Tú **no los leas** (crecen
   con cada intento): usa `$W "$E" get <clave> [parte]`, y escribe siempre con `wi.sh`.
-- **Clave de la tarea = `<tipo>-<numero>`** (`task-123`, `bug-140123`). Es también el
-  **nombre de su rama**. Es lo que se le pasa a `wi.sh`.
+- **Clave de la tarea = `<tipo>-<id>`** (`task-123`, `bug-login_social`). El `<id>` lo da quien crea la
+  tarea: número o texto (minúsculas, dígitos y `_`). Es también el **nombre de su rama**. Es lo que se le
+  pasa a `wi.sh`.
+- **Cómo llegan las tareas es externo al autopilot**: `wi.sh add-task`, un `.md` en `.workitems/new/` o la
+  app web. Cualquier integración (un tracker, un script) usa esos mismos puntos de entrada; el autopilot
+  solo trabaja lo que hay en el board.
 - Cada tarea tiene estado, prioridad, intento, rama, repo(s), origen, descripción, criterio, adjuntos,
   repos modificados, resultado, motivo de stopped y un **historial por intento** (notas del desarrollador,
   reporte y feedback de QA, reporte y feedback de E2E).
@@ -121,7 +125,7 @@ de vigilar. En OpenCode las sesiones de los puestos sí siguen; al volver, `--in
 
 ## REGLAS DE GIT (sin excepciones)
 
-- **Una rama independiente por workitem.** Nombre: `task-<numero>` o `bug-<numero>`.
+- **Una rama independiente por workitem.** Nombre: `task-<id>` o `bug-<id>`.
   Ejemplo: `bug-140123`.
 - **Toda rama nueva sale de la rama base de SU repo**, definida en `autopilot.env`:
   `BASE_BRANCH=<rama>` si es un repo, o `REPO.<carpeta>=<rama>` por repo si es un workspace.
@@ -173,7 +177,7 @@ $W "$E" new         <clave>
 $W "$E" reviewed    <clave>                   # SOLO el humano: done -> reviewed
 $W "$E" stopped     <clave> "<motivo>"
 $W "$E" resultado   <clave> "<rama | commit | resumen>"
-$W "$E" add-task    <task|bug> <numero> <prioridad> "<titulo>" "<descripcion>" "<criterio>" [repo]   # repo obligatorio en workspace
+$W "$E" add-task    <task|bug> <id> <prioridad> "<titulo>" "<descripcion>" "<criterio>" [repo]   # repo obligatorio en workspace
 $W "$E" log <evento> <origen> <tipo> <tarea> <rama> <commit> <detalle>
 $W "$E" query [estado]
 $W "$E" sesion      <clave> <ses_id>          # OpenCode: sesión que trabaja la tarea
@@ -227,7 +231,8 @@ Antes de verificar, recarga los repos de la tarea: el coder pudo haber sumado ot
 
 1. Toma su respuesta. Guarda su bloque `NOTAS DEL DESARROLLADOR` completo, con sus capturas:
    `$W "$E" notas-dev <clave> - --imagenes ~/.cache/autopilot-kit/capturas/<clave> <<'FIN'` … `FIN`.
-   Las imágenes que mencione (y las de esa carpeta) quedan copiadas y **visibles en el `.md`**.
+   Las imágenes que mencione (y las de esa carpeta) se copian a `adjuntos/<clave>/coder-intentoN/` y quedan
+   **referenciadas** en su intento (`📷 nombre` + carpeta), no incrustadas en el texto.
 2. `RESULTADO: QA` **y** hay commits nuevos en **al menos uno** de sus repos
    (`$W "$E" repos-modificados <clave>`: commits y archivos por repo, desde git) →
    `$W "$E" qa <clave>` (escribe solo la sección **`## Repos modificados`** en la tarea y avisa si
@@ -278,7 +283,7 @@ Al pasar a `done` o `stopped`, el worktree del coder se borra solo y se liberan 
 1. Guarda su bloque `REPORTE E2E` completo, **antes** de borrar sus copias:
    `$W "$E" reporte-e2e <clave> - --imagenes <copia1>/.e2e-capturas [--imagenes <copia2>/.e2e-capturas] <<'FIN'` … `FIN`.
    Las capturas que cita (y las de esas carpetas) se copian a `adjuntos/<clave>/e2e-intentoN/` y
-   quedan **incrustadas en el `.md`**, en el paso que muestran.
+   quedan **referenciadas** (`📷 nombre`) en el paso que muestran; la app web las muestra en la galería del intento.
 2. Veredicto:
    - `APROBADO` → `$W "$E" aprobar-e2e <clave>` (va a `done`). También guarda los casos E2E y los
      `tests/services.json` de sus copias en la rama (commit `test: ...`); si un repo del flujo no era
@@ -329,7 +334,7 @@ Relanza el watcher después.
 ### Avisos por Telegram
 
 Con `TELEGRAM=true`, los cambios de estado (coder, QA, E2E, rechazos, `done`, `stopped`), el vigía,
-azure-sync, run-tests y el arranque se avisan **solos** desde `wi.sh`: no los mandes tú. Tú avisas
+run-tests y el arranque se avisan **solos** desde `wi.sh`: no los mandes tú. Tú avisas
 cuando **necesitas una decisión del humano** que no es un `stopped` (p. ej. dos opciones válidas, una
 duda de alcance): `$K/telegram.sh send "<pregunta>" --alert`, y sigues con lo demás mientras responde.
 Si el watcher trae `"pausa": true`, el humano pausó con `/pausa`: no tomes tareas nuevas.
@@ -391,21 +396,24 @@ los ❌ son `[coder]` → `--bloqueo`; si hay alguno `[humano]` → `stopped`. E
 di exactamente qué corregir (archivo, línea, cómo) y que es preexistente pero impide certificar la tarea.
 Si la misma tarea vuelve a bloquearse por lo mismo después de un `--bloqueo`, ahí sí `stopped`.
 
-### Imágenes en el `.md`
+### Imágenes: referenciadas por intento, no incrustadas
 
-`notas-dev`, `reporte-qa` y `reporte-e2e` convierten toda ruta de imagen que aparezca en el texto (y
-las de `--imagenes <carpeta>`) en `![nombre](../adjuntos/<clave>/...)`: las que están fuera del board
-se copian a `adjuntos/<clave>/coder-intentoN/`, `qa-intentoN/` o `e2e-intentoN/`. Los videos que
-mencionen (`.mp4`, `.webm`...) también se copian y quedan enlazados. Así el humano ve en la tarea las
-capturas del bug, las del coder, las del QA y las de cada paso del E2E. Pásales siempre el texto tal cual, con las rutas completas.
+`notas-dev`, `reporte-qa` y `reporte-e2e` copian toda imagen que aparezca en el texto (y las de
+`--imagenes <carpeta>`) a `adjuntos/<clave>/coder-intentoN/`, `qa-intentoN/` o `e2e-intentoN/`. En el
+texto, cada ruta queda como `📷 <nombre>` (sin incrustar) y al final del intento va una sola línea
+`📎 N capturas → [<paso>-intentoN/](...)`. La app web (`autopilot-web`) muestra esas imágenes en una galería
+plegable bajo el intento al que pertenecen, y cada `📷` abre la suya. Los videos que mencionen (`.mp4`,
+`.webm`...) también se copian y quedan enlazados. `validar-e2e` cuenta los `📷` de cada criterio.
+Pásales siempre el texto tal cual, con las rutas completas. Las tareas viejas se convierten solas la primera
+vez que corre el kit nuevo (o con `$W "$E" limpiar-imagenes [--simular]`).
 
 ### Adjuntos (capturas y videos)
 
-`tarea.adjuntos` trae las rutas absolutas de las imágenes de la tarea: capturas incrustadas en
-Azure, imágenes adjuntas y **fotogramas de los videos** (`<video>.frames/fNN.png`, en orden
+`tarea.adjuntos` trae las rutas absolutas de las imágenes de la tarea: capturas de la tarea
+original, imágenes adjuntas y **fotogramas de los videos** (`<video>.frames/fNN.png`, en orden
 temporal). Viven en `.workitems/adjuntos/<clave>/`. `tarea.videos` lista los videos originales:
 ningún modelo los ve directamente, por eso se extraen fotogramas. Si hay videos pero no
-fotogramas, falta ffmpeg: dilo en el resumen (`azure-sync.py --fotogramas` los genera después).
+fotogramas, dilo en el resumen: el agente no puede ver ese video.
 
 ## La máquina de estados
 
@@ -480,16 +488,13 @@ los backends de la tarea **locales** contra la base de QA (`aenv.sh --e2e`), apu
 las apps a ese backend (`e2e.sh api`), y recorre el flujo de cada criterio como una persona: BackOffice
 y apps Flutter en web (Playwright) y las apps en un **emulador Android** (internet abierto, producción
 bloqueada). Saca **capturas
-en cada paso** (y video) que quedan incrustadas en el `## Reporte E2E`. Solo escribe en sus copias
+en cada paso** (y video) que quedan referenciadas en su paso del `## Reporte E2E`. Solo escribe en sus copias
 E2E; no commitea. Veredicto `APROBADO` (cada criterio CUMPLE con capturas, en cada plataforma),
 `RECHAZADO` (→ `bug-fix`) o `NO CERTIFICABLE` (→ `stopped`).
 
 Los bloqueos son reales, no instrucciones: en OpenCode son permisos `deny` del agente; en
 Claude Code, un hook `PreToolUse` (`$K/git-guard.sh`) que cancela el comando. `/autopilot-init`
 además prohíbe push/merge al agente principal.
-
-Ningún subagente usa el MCP de Azure DevOps: si hay que escribir en Azure, lo hace
-el orquestador.
 
 ## Log de actividad
 

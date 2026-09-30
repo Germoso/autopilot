@@ -193,7 +193,7 @@ def cuentas(cfg):
     return {k: v for k, v in entorno.leer(path).items() if k.startswith("E2E_") and v}
 
 
-RE_RUN = re.compile(r"^(?P<repo>.+)-(?P<clave>(task|bug)-\d+|all-\d+)$")
+RE_RUN = re.compile(r"^(?P<repo>.+)-(?P<clave>(task|bug)-%s|all-\d+)$" % wi.ID)
 
 
 def worktree_e2e(path):

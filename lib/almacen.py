@@ -105,6 +105,8 @@ class Almacen:
         self.con.execute("PRAGMA journal_mode=WAL")
         self.con.executescript(SQL)
         self.con.execute("INSERT OR IGNORE INTO meta(k, v) VALUES('esquema', ?)", (str(ESQUEMA),))
+        # Bases viejas: los adjuntos de la tarea original se marcaban "azure".
+        self.con.execute("UPDATE adjuntos SET origen='original' WHERE origen='azure'")
 
     def q(self, sql, args=()):
         return self.con.execute(sql, args).fetchall()
@@ -196,9 +198,9 @@ class Almacen:
             sha = hashlib.sha256(open(ruta_abs, "rb").read()).hexdigest() if tam < 64 * 1024 * 1024 else None
         except OSError:
             return None
-        if origen is None:  # por la carpeta: coder-intento2, qa-intento1, e2e-intento3, humano, el resto de Azure
+        if origen is None:  # por la carpeta: coder-intento2, qa-intento1, e2e-intento3, humano; el resto es la tarea original
             m = re.search(r"/(coder|qa|e2e)-intento(\d+)/", "/" + rel)
-            origen, intento = (m.group(1), int(m.group(2))) if m else ("humano" if "/humano/" in rel else "azure", intento)
+            origen, intento = (m.group(1), int(m.group(2))) if m else ("humano" if "/humano/" in rel else "original", intento)
         self.con.execute("INSERT INTO adjuntos(clave, ruta, origen, intento, tipo, tamano, sha256, creado) "
                          "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(ruta) DO UPDATE SET tamano=excluded.tamano, "
                          "sha256=excluded.sha256", (clave, rel, origen, intento, tipo, tam, sha, fecha))

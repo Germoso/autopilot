@@ -1,7 +1,7 @@
 # ============================================================
 #  NUNCA versionar secretos.
 #
-#  Los .env reales pueden contener el PAT de Azure DevOps.
+#  Los .env reales pueden contener tokens (bases de datos, integraciones).
 #  Este patron los bloquea por si quedan sueltos en el arbol.
 # ============================================================
 

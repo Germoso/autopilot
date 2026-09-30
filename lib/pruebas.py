@@ -328,10 +328,10 @@ def main(a):
     posicionales = [x for i, x in enumerate(resto) if not x.startswith("--") and (i == 0 or resto[i - 1] != "--ref")]
     if "--all" in resto:
         clave = None
-    elif posicionales and re.match(r"^((task|bug)-\d+|smoke)$", posicionales[0].lower()):
+    elif posicionales and (posicionales[0].lower() == "smoke" or wi.es_clave(posicionales[0])):
         clave = posicionales[0].lower()
     else:
-        print("indica una tarea (bug-123 / task-123), smoke o --all", file=sys.stderr)
+        print("indica una tarea (bug-123 / task-login_social), smoke o --all", file=sys.stderr)
         return 2
     plataforma = "web" if "--web" in resto else "android" if "--android" in resto else None
     c = Corrida(env_path, clave, solo, ref, plataforma)

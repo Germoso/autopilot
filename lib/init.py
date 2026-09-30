@@ -7,14 +7,12 @@ Lo usan /autopilot-init (desde el agente) e install.sh --init. Detecta el modo s
   - la carpeta contiene repos git adentro  -> modo workspace (board unico en la carpeta)
 
 uso:
-  init.py <carpeta> --detect                    JSON: modo, repos, ramas, base sugerida, Azure
+  init.py <carpeta> --detect                    JSON: modo, repos, ramas, base sugerida
   init.py <carpeta> [--base <rama>]             modo un repo
   init.py <carpeta> [--base <repo>=<rama>]...   modo workspace (una por repo)
-          [--sin-azure]                         no crea azure-sync.env
 
 Que hace:
-  - crea autopilot.env y azure-sync.env si no existen (Azure deducido del remoto de cada repo,
-    sprint = @current). --base actualiza la rama base aunque el archivo ya exista.
+  - crea autopilot.env si no existe. --base actualiza la rama base aunque el archivo ya exista.
   - crea el board .workitems/
   - nada entra al repo: en modo un repo ignora lo del kit en .git/info/exclude
   - prohibe push/merge al agente principal (OpenCode / Claude Code, los que esten instalados)
@@ -25,7 +23,6 @@ Que hace:
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 
@@ -34,9 +31,8 @@ sys.path.insert(0, KIT)
 import workitems as wi  # noqa: E402
 
 PREFERIDAS = ["develop", "dev", "main", "master"]
-IGNORAR = [".workitems/", "autopilot.env", "azure-sync.env", "*.secrets.env", ".claude/settings.local.json",
+IGNORAR = [".workitems/", "autopilot.env", "*.secrets.env", ".claude/settings.local.json",
            ".env.autopilot", ".env.autopilot.e2e", "cuentas-e2e.env", "test-results/"]
-RE_AZURE = re.compile(r"dev\.azure\.com/([^/]+)/([^/]+)/_git/|([^/.]+)\.visualstudio\.com/([^/]+)/_git/")
 
 
 def git(path, *args):
@@ -49,20 +45,14 @@ def es_repo(path):
 
 
 def info_repo(path):
-    remoto = git(path, "remote", "get-url", "origin") or ""
     ramas = sorted({l.strip()[len("origin/"):] for l in (git(path, "branch", "-r", "--format=%(refname:short)") or "").splitlines()
                     if l.strip().startswith("origin/") and l.strip() != "origin/HEAD" and l.strip() != "origin"})
     locales = (git(path, "branch", "--format=%(refname:short)") or "").split()
     head_remoto = (git(path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD") or "").replace("origin/", "")
     sugerida = next((b for b in PREFERIDAS if b in ramas or b in locales), head_remoto or None)
-    m = RE_AZURE.search(remoto)
-    azure = None
-    if m:
-        org, proyecto = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
-        azure = {"org": org, "project": re.sub(r"%20", " ", proyecto)}
     return {"nombre": os.path.basename(os.path.abspath(path)), "path": os.path.abspath(path),
             "rama_actual": git(path, "branch", "--show-current"), "ramas_remotas": ramas,
-            "sugerida": sugerida, "azure": azure,
+            "sugerida": sugerida,
             "sucio": bool(git(path, "status", "--porcelain", "--untracked-files=no"))}
 
 
@@ -188,27 +178,6 @@ def bloque_e2e(det):
     return "\n".join(L) + "\n"
 
 
-def env_azure(det):
-    fuentes = [r for r in det["repos"] if r["azure"]]
-    if not fuentes:
-        return None
-    org = fuentes[0]["azure"]["org"]
-    L = ["# azure-sync.env — generado por /autopilot-init desde los remotos de git. Editable a mano.",
-         "# El PAT NO va aqui: azure-sync.secrets.env, AZURE_DEVOPS_PAT, o el del MCP",
-         "# (~/.config/autopilot-kit/ado-mcp.secrets.env).", "",
-         "AZURE_ORG=%s" % org, ""]
-    if det["modo"] == "repo":
-        L += ["# Sprint: ruta (Proyecto\\Sprint X) o @current = sprint actual del equipo '<Proyecto> Team'",
-              "# (@current:<Equipo> para otro equipo).",
-              "AZURE_PROJECT=%s" % fuentes[0]["azure"]["project"], "AZURE_ITERATION=@current"]
-    else:
-        L += ["# Una fuente por repo: SYNC.<carpeta>=<proyecto de Azure>|<sprint>",
-              "# Sprint: ruta (Proyecto\\Sprint X) o @current = sprint actual del equipo '<Proyecto> Team'",
-              "# (@current:<Equipo> para otro). Para no importar de un repo, borra su linea."]
-        L += ["SYNC.%s=%s|@current" % (r["nombre"], r["azure"]["project"]) for r in fuentes]
-    return "\n".join(L) + "\n"
-
-
 # ----------------------------------------------------------------- clientes
 def clientes_instalados():
     home = os.path.expanduser("~")
@@ -220,7 +189,7 @@ def clientes_instalados():
     return out
 
 
-def init(carpeta, bases, sin_azure=False):
+def init(carpeta, bases):
     det = detectar(carpeta)
     raiz, hecho, avisos = det["carpeta"], [], []
     nombres = {r["nombre"] for r in det["repos"]}
@@ -248,15 +217,6 @@ def init(carpeta, bases, sin_azure=False):
             hecho.append("autopilot.env: agregada la config E2E sugerida (E2E=false; revisala antes de activar)")
     for k, v in bases.items():
         hecho.append("rama base %s= %s" % ("REPO.%s" % k if k else "BASE_BRANCH", v))
-
-    az = os.path.join(raiz, "azure-sync.env")
-    if not sin_azure and not os.path.exists(az):
-        contenido = env_azure(det)
-        if contenido:
-            open(az, "w", encoding="utf-8").write(contenido)
-            hecho.append("azure-sync.env creado (sprint @current)")
-        else:
-            avisos.append("ningun repo tiene remoto de Azure DevOps: no se creo azure-sync.env")
 
     b = wi.Board(wi.cargar_config(ap))
     b.init()
@@ -293,9 +253,6 @@ def init(carpeta, bases, sin_azure=False):
                 git(r["path"], "rev-parse", "--verify", "--quiet", "refs/heads/" + r["base"]) or
                 git(r["path"], "rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + r["base"])):
             avisos.append("%s: la rama '%s' no existe (ni local ni en origin)" % (nombre or "repo", r["base"]))
-    if os.path.exists(os.path.join(raiz, "azure-sync.env")) and not shutil.which("ffmpeg"):
-        avisos.append("falta ffmpeg: los videos de los work items se descargan pero sin fotogramas, "
-                      "y el agente no los puede ver (sudo apt install ffmpeg)")
     for r in det["repos"]:
         if r["sucio"]:
             avisos.append("%s tiene cambios sin commitear en tu copia (no afecta al autopilot, que trabaja en su "
@@ -319,7 +276,7 @@ def main(argv):
                 k, sep, v = resto[i + 1].partition("=")
                 bases.update({k.strip(): v.strip()} if sep else {"": k.strip()})
                 i += 2
-            elif resto[i] == "--sin-azure":
+            elif resto[i] == "--sin-azure":  # compatibilidad: el init ya no crea nada de integraciones
                 i += 1
             else:
                 raise wi.Error("argumento desconocido: %s" % resto[i])
@@ -328,7 +285,7 @@ def main(argv):
             raise wi.Error("es un repo unico: usa --base <rama> (sin repo=)")
         if det_modo == "workspace" and "" in bases:
             raise wi.Error("es un workspace: usa --base <repo>=<rama> para cada repo")
-        print(json.dumps(init(carpeta, bases, "--sin-azure" in resto), ensure_ascii=False, indent=2))
+        print(json.dumps(init(carpeta, bases), ensure_ascii=False, indent=2))
         return 0
     except wi.Error as e:
         print(json.dumps({"error": str(e)}, ensure_ascii=False))

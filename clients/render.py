@@ -5,9 +5,9 @@ render.py — Genera la configuracion de cada cliente desde una sola fuente.
 Fuente unica:  agents/*.md  (frontmatter neutro: name, description, role)
 Salida:
   opencode  <cfg>/agents/<name>.md    permisos de bash por patron (permission.bash)
-            <cfg>/commands/<cmd>.md   /autopilot y /azure-sync
+            <cfg>/commands/<cmd>.md   /autopilot y /autopilot-init
   claude    <cfg>/agents/<name>.md    hook PreToolUse -> git-guard.sh <role>
-            (sin commands: en Claude Code las skills ya son /autopilot y /azure-sync)
+            (sin commands: en Claude Code las skills ya son /autopilot y /autopilot-init)
 
 Todo archivo generado lleva la marca MARCA en el frontmatter; uninstall solo
 borra archivos con esa marca.
@@ -55,9 +55,8 @@ AMBIENTE_ALLOW = ["npm run build*", "npm run lint*", "npm run format*", "npm run
                   "curl http://localhost*", "curl http://127.0.0.1*", "*aenv.sh *"]
 
 COMANDOS = {
-    "autopilot-init": "Prepara esta carpeta (repo o workspace de varios repos) para el autopilot: rama base, board y Azure",
+    "autopilot-init": "Prepara esta carpeta (repo o workspace de varios repos) para el autopilot: rama base y board",
     "autopilot": "Enciende el watcher del sistema autonomo sobre el board de workitems de este proyecto",
-    "azure-sync": "Importa Work Items de Azure DevOps al board de workitems como new (aditivo, con dedup)",
 }
 
 
@@ -121,7 +120,6 @@ def front_claude(meta, kit):
     role = meta["role"]
     guard = "%s %s" % (shlex.quote(os.path.join(kit, "git-guard.sh")), role)
     out = [MARCA, "name: " + meta["name"], "description: " + q(meta["description"]),
-           "disallowedTools: mcp__azure-devops",
            # El coder y el QA trabajan en paralelo: el principal no los espera, Claude Code le avisa al terminar.
            "background: true",
            "hooks:", "  PreToolUse:", '    - matcher: "Bash"', "      hooks:",
@@ -166,6 +164,10 @@ def install(cliente, cfg, kit):
                       "paso por paso. Es la unica fuente de instrucciones.\n\n$ARGUMENTS\n" % nombre)
             escribir(os.path.join(cfg, "commands", nombre + ".md"),
                      [MARCA, "description: " + q(desc)], cuerpo)
+        for p in glob.glob(os.path.join(cfg, "commands", "*.md")):  # comandos del kit que ya no existen
+            if os.path.basename(p)[:-3] not in COMANDOS and MARCA in open(p, encoding="utf-8").read():
+                os.remove(p)
+                print("  - %s (ya no existe en el kit)" % p)
 
 
 def uninstall(cliente, cfg):

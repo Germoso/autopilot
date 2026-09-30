@@ -201,7 +201,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "tareas": ts, "estados": wi.ESTADOS, "pausa": pausa, "watcher": watcher, "e2e": cfg["e2e"]["activo"],
                 "repos": sorted(n or os.path.basename(r["path"]) for n, r in cfg["repos"].items()),
                 "capacidad": cfg["capacidad"], "telegram": cfg.get("telegram", {}).get("activo", False)}))
-        m = re.match(r"^tarea/((?:task|bug)-\d+)$", sub)
+        m = re.match(r"^tarea/((?:task|bug)-%s)$" % wi.ID, sub)
         if m:
             clave = m.group(1)
             estado, path, meta, titulo, secs = b.leer(clave)
@@ -282,7 +282,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def post_accion(self, p, d):
         accion, clave = d.get("accion"), str(d.get("clave", "")).lower()
-        if accion not in ACCIONES or not re.match(r"^(task|bug)-\d+$", clave):
+        if accion not in ACCIONES or not wi.es_clave(clave):
             return self.error(400, "accion o tarea invalida")
         args = [ACCIONES[accion], clave]
         if accion in ("stop", "prioridad", "criterio", "descripcion", "titulo"):
@@ -302,7 +302,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def post_subir(self, p, d):
         clave = str(d.get("clave", "")).lower()
-        if not re.match(r"^(task|bug)-\d+$", clave):
+        if not wi.es_clave(clave):
             return self.error(400, "tarea invalida")
         tmp = os.path.join(wi.cache_kit("web-subidas"), secrets.token_hex(6))
         os.makedirs(tmp, exist_ok=True)
@@ -340,13 +340,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if que == "health":
             cmd = [os.path.join(kit, "salud.py"), p["env"]] + ([clave] if clave else [])
         elif que == "run-tests":
-            objetivo = clave if re.match(r"^((task|bug)-\d+|smoke)$", clave) else "--all"
+            objetivo = clave if clave == "smoke" or wi.es_clave(clave) else "--all"
             cmd = [os.path.join(kit, "pruebas.py"), p["env"], objetivo] + ([filtro] if filtro else [])
-        elif que == "azure-sync":
-            env_az = os.path.join(os.path.dirname(p["env"]), "azure-sync.env")
-            if not os.path.isfile(env_az):
-                return self.error(400, "este proyecto no tiene azure-sync.env")
-            cmd = [os.path.join(kit, "azure-sync.py"), "--config", env_az]
         else:
             return self.error(400, "no se puede correr eso")
         if any(t["proyecto"] == p["id"] and t["que"] == que and t["proceso"].poll() is None for t in TRABAJOS.values()):

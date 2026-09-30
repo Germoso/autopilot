@@ -3,7 +3,7 @@
 workitems.py — El tablero de workitems en carpetas + Markdown.
 
 Unica implementacion del formato. La usan wi.sh (escritura), watcher.sh
-(lectura) y azure-sync.py (alta de tareas). Solo stdlib.
+(lectura) y cualquier integracion externa (alta de tareas). Solo stdlib.
 
 ESTRUCTURA
   $WORKITEMS_DIR/
@@ -15,8 +15,9 @@ ESTRUCTURA
   - Adjuntos en adjuntos/<clave>/ (fuera de las carpetas de estado: mover la tarea no los mueve).
     Desde el .md se referencian como ../adjuntos/<clave>/... (todas las carpetas de estado estan
     a la misma profundidad). Los fotogramas de un video van en <video>.frames/fNN.png.
-  - Archivo: <tipo>-<numero>-<slug>.md. La clave de la tarea es <tipo>-<numero>,
-    que es tambien el nombre de su rama de git. Ej: bug-140123.
+  - Archivo: <tipo>-<id>-<slug>.md. La clave de la tarea es <tipo>-<id>,
+    que es tambien el nombre de su rama de git. El <id> lo da quien crea la tarea:
+    numero o texto (minusculas, digitos y _; sin -). Ej: bug-140123, task-login_social.
 
 DOS MODOS (autopilot.env):
   - Un repo:    BASE_BRANCH=<rama>. El repo es la carpeta del .env (o REPO_PATH).
@@ -53,7 +54,20 @@ VIDEO = {".mp4", ".mov", ".webm", ".avi", ".mkv", ".m4v", ".3gp"}
 CAMPOS = ["id", "tipo", "prioridad", "intento", "rama", "repo", "repos_extra", "origen", "sesion", "espera",
           "actualizado"]
 
-RE_ARCHIVO = re.compile(r"^(task|bug)-(\d+)(?:-.*)?\.md$")
+# Identificador de la tarea: lo da quien la crea (numero o texto). Sin "-": separa la clave del slug.
+ID = r"[a-z0-9_]+"
+RE_ID = re.compile(r"^%s$" % ID)
+RE_CLAVE = re.compile(r"^(task|bug)-%s$" % ID)
+RE_ARCHIVO = re.compile(r"^(task|bug)-(%s)(?:-.*)?\.md$" % ID)
+
+
+def es_clave(s):
+    return bool(RE_CLAVE.match((s or "").strip().lower()))
+
+
+def orden_id(id_):
+    """Orden natural de ids: primero los numericos por valor, despues los de texto alfabeticamente."""
+    return (0, int(id_), "") if id_.isdigit() else (1, 0, id_)
 
 
 class Error(Exception):
@@ -181,7 +195,7 @@ def cache_kit(*partes):
     return os.path.join(base, "autopilot-kit", *partes)
 
 
-RE_WT = re.compile(r"^(?P<repo>.+)-(?P<clave>(task|bug)-\d+)$")
+RE_WT = re.compile(r"^(?P<repo>.+)-(?P<clave>(task|bug)-%s)$" % ID)
 
 
 def coder_wt_activo(repo, clave):
@@ -309,6 +323,77 @@ def parsear(texto):
 
 AVISO_VISTA = ("<!-- Vista generada por el autopilot desde .workitems/autopilot.db. Para cambiar la tarea usa la "
                "app web o wi.sh; si editas o mueves este archivo, el cambio se importa. -->")
+
+
+# -- imagenes referenciadas (no incrustadas) en los textos de la tarea
+EXT_IMG = r"(?:png|jpe?g|gif|webp|bmp|svg)"
+RE_REF_IMG = re.compile(r"📷 (\S+?\.%s)(?![\w.])" % EXT_IMG, re.I)   # `📷 captura.png` en el texto
+RE_LINEA_CARPETA = re.compile(r"(?m)^📎 .*$\n?")
+
+
+def ref_imagen(nombre, alt=""):
+    """`📷 nombre` (y ` — alt` si el alt dice algo mas que el nombre del archivo)."""
+    alt = (alt or "").strip()
+    if not alt or alt == nombre or re.fullmatch(r"[\w.-]+\.%s" % EXT_IMG, alt, re.I):
+        return "📷 %s" % nombre
+    return "📷 %s — %s" % (nombre, alt)
+
+
+def linea_carpeta(texto, board_dir, clave, sub):
+    """Deja una sola linea final `📎 N capturas → [sub/](../adjuntos/<clave>/sub/)` si esa carpeta tiene
+    archivos (imagenes o videos del intento). Quita la linea anterior si ya estaba."""
+    texto = RE_LINEA_CARPETA.sub("", texto)
+    carpeta = os.path.join(board_dir, "adjuntos", clave, sub)
+    n = sum(len([f for f in fs if os.path.splitext(f)[1].lower() in IMAGEN | VIDEO])
+            for _, _, fs in os.walk(carpeta)) if os.path.isdir(carpeta) else 0
+    texto = re.sub(r"\n{3,}", "\n\n", texto).strip()
+    if n:
+        texto += "\n\n📎 %d captura%s → [%s/](../adjuntos/%s/%s/)" % (n, "" if n == 1 else "s", sub, clave, sub)
+    return texto
+
+
+def limpiar_imagenes_texto(texto, board_dir, clave, historial=True):
+    """Convierte un texto viejo (imagenes incrustadas) al formato nuevo: `![alt](../adjuntos/...)` -> `📷
+    nombre`, quita los fotogramas de video listados uno por uno y el bloque "**Imágenes:**" (esas imagenes
+    ya estan en la carpeta del intento). Si `historial`, agrega la linea 📎 de la carpeta del intento.
+    Devuelve (texto_nuevo, cuantas_convertidas)."""
+    if not texto or "![" not in texto:
+        return texto, 0
+    subs, n = {}, [0]
+    img = re.compile(r"!\[(?P<alt>[^\]]*)\]\(\s*(?P<u>[^)\s]*adjuntos/[^)\s]+?\.%s)\s*\)" % EXT_IMG, re.I)
+    lineas = []
+    en_bloque = False
+    for l in texto.split("\n"):
+        solo = l.strip()
+        if solo == "**Imágenes:**":
+            en_bloque = True
+            continue
+        es_img = bool(re.fullmatch(r"(?:[-*]\s+)?(?:%s\s*)+" % img.pattern, solo, re.I))
+        if en_bloque and (es_img or not solo):
+            for m in img.finditer(solo):
+                n[0] += 1
+                sub = re.search(r"adjuntos/[^/]+/((?:coder|qa|e2e)-intento\d+)/", m.group("u"))
+                if sub:
+                    subs[sub.group(1)] = subs.get(sub.group(1), 0) + 1
+            continue
+        en_bloque = False
+        if es_img and ".frames/" in solo:   # fotograma de video: la linea del video ya dice cuantos hay
+            n[0] += 1
+            continue
+        lineas.append(l)
+
+    def conv(m):
+        n[0] += 1
+        sub = re.search(r"adjuntos/[^/]+/((?:coder|qa|e2e)-intento\d+)/", m.group("u"))
+        if sub:
+            subs[sub.group(1)] = subs.get(sub.group(1), 0) + 1
+        return ref_imagen(m.group("u").rsplit("/", 1)[-1], m.group("alt"))
+
+    nuevo = img.sub(conv, "\n".join(lineas))
+    nuevo = re.sub(r"(?m)^(\s*[-*]\s+)?Video \[`([^`]+)`\]", r"\1🎞️ Video [`\2`]", nuevo)
+    if historial and subs:
+        nuevo = linea_carpeta(nuevo, board_dir, clave, max(subs, key=subs.get))
+    return re.sub(r"\n{3,}", "\n\n", nuevo).strip(), n[0]
 
 
 def serializar(meta, titulo, secciones, vista=False):
@@ -477,14 +562,16 @@ class Board:
     # -- imagenes en los reportes
     RE_IMG = re.compile(r"(?:~|/)[^\s`'\"()<>\[\]]+?\.(?:png|jpe?g|gif|webp|bmp)", re.I)
 
-    def incrustar_imagenes(self, clave, texto, carpetas=(), subcarpeta="imagenes"):
-        """Convierte las imagenes que un agente menciona en su texto en imagenes Markdown.
+    def referenciar_imagenes(self, clave, texto, carpetas=(), subcarpeta="imagenes"):
+        """Las imagenes que un agente menciona en su texto quedan REFERENCIADAS, no incrustadas.
 
-        - Una ruta a una imagen que existe se reemplaza por ![nombre](../adjuntos/...).
+        - Una ruta a una imagen que existe se reemplaza por `📷 <nombre>` (texto plano): el paso sigue
+          diciendo que captura lo muestra, sin meter la imagen en el texto.
         - Si esta fuera del board (p. ej. una captura del QA en su worktree, que se borra al dar
           el veredicto) se COPIA antes a adjuntos/<clave>/<subcarpeta>/.
-        - Las imagenes de `carpetas` que el texto no menciona se agregan al final.
-        Asi el humano ve las imagenes en el .md (VS Code, Obsidian, GitHub...).
+        - Las imagenes de `carpetas` que el texto no menciona tambien se copian ahi.
+        - Al final va una sola linea `📎 N capturas → [<subcarpeta>/](../adjuntos/<clave>/<subcarpeta>/)`.
+        La app web muestra esas imagenes en una galeria bajo el intento al que pertenecen.
         """
         base = os.path.join(self.dir, "adjuntos", clave)
         destino_dir = os.path.join(base, subcarpeta)
@@ -511,28 +598,23 @@ class Board:
             copiadas[real] = dst
             return dst
 
-        def reemplazo(ruta):
-            dst = al_board(ruta)
+        def reemplazo(m):
+            dst = al_board(m.group("a") or m.group("b") or m.group("c"))
             if not dst:
-                return ruta
-            return "![%s](%s)" % (os.path.basename(dst), rel(dst))  # en linea: no rompe listas
+                return m.group(0)
+            return ref_imagen(os.path.basename(dst), m.group("alt"))
 
         # Una sola pasada: ![alt](ruta), `ruta` o una ruta suelta (absoluta o con ~, no parte de otra).
         ruta = r"(?<![\w./~-])(?:~|/)[^\s`'\"()<>\[\]]+?\.(?:png|jpe?g|gif|webp|bmp)(?!\w)"
-        patron = re.compile(r"!\[[^\]]*\]\(\s*(?P<a>%s)\s*\)|`(?P<b>%s)`|(?P<c>%s)" % (ruta, ruta, ruta), re.I)
-        texto = patron.sub(lambda m: reemplazo(m.group("a") or m.group("b") or m.group("c")), texto)
-        extra = []
+        patron = re.compile(r"!\[(?P<alt>[^\]]*)\]\(\s*(?P<a>%s)\s*\)|`(?P<b>%s)`|(?P<c>%s)" % (ruta, ruta, ruta), re.I)
+        texto = patron.sub(reemplazo, texto)
         for c in carpetas:
             for raiz, _, files in os.walk(os.path.expanduser(c)):
                 for f in sorted(files):
                     p = os.path.join(raiz, f)
                     if self.RE_IMG.fullmatch(p) and os.path.realpath(p) not in copiadas:
-                        dst = al_board(p)
-                        if dst:
-                            extra.append("![%s](%s)" % (os.path.basename(dst), rel(dst)))
-        if extra:
-            texto = texto.rstrip() + "\n\n**Imágenes:**\n\n" + "\n\n".join(extra)
-        return re.sub(r"\n{3,}", "\n\n", texto).strip()
+                        al_board(p)
+        return linea_carpeta(texto, self.dir, clave, subcarpeta)
 
     RE_VIDEO = re.compile(r"(?<![\w./~-])(?:~|/)[^\s`'\"()<>\[\]]+?\.(?:mp4|webm|mov|mkv)(?!\w)", re.I)
 
@@ -589,13 +671,13 @@ class Board:
         return out
 
     def numeros(self):
-        """Numeros de workitem presentes en cualquier estado (para dedup)."""
+        """Ids de workitem presentes en cualquier estado (para dedup)."""
         return {c.split("-", 1)[1] for _, c, _ in self.archivos()}
 
     def buscar(self, clave):
         clave = clave.strip().lower()
-        if not re.match(r"^(task|bug)-\d+$", clave):
-            raise Error("clave invalida '%s'. Formato: task-<numero> o bug-<numero>" % clave)
+        if not es_clave(clave):
+            raise Error("clave invalida '%s'. Formato: task-<id> o bug-<id>" % clave)
         hits = [(e, p) for e, c, p in self.archivos() if c == clave]
         if not hits:
             raise Error("no existe la tarea %s en %s" % (clave, self.dir))
@@ -726,19 +808,19 @@ class Board:
     NOMBRE_TIPO = {"notas_dev": "Notas del desarrollador", "reporte_qa": "Reporte de QA", "feedback_qa": "Feedback de QA",
                    "reporte_e2e": "Reporte E2E", "feedback_e2e": "Feedback de E2E"}
 
-    PASO_ADJUNTO = {"azure": "Tarea original (Azure)", "humano": "Subidos por el humano", "coder": "Coder",
+    PASO_ADJUNTO = {"original": "Tarea original", "humano": "Subidos por el humano", "coder": "Coder",
                     "qa": "QA", "e2e": "E2E"}
 
     @classmethod
     def grupo_adjunto(cls, a):
         """(orden, nombre) del paso que produjo el adjunto: tarea original, humano, y despues cada paso
         en el orden en que ocurrio (coder intento 0 -> QA 1 -> E2E 1 -> coder 1 -> QA 2 ...)."""
-        origen = a.get("origen") or "azure"
+        origen = a.get("origen") or "original"
         if origen in ("coder", "qa", "e2e"):
             n = a.get("intento") or 0
             ronda = n + 1 if origen == "coder" else n   # el coder trabaja con el intento anterior al del QA que lo revisa
             return (2, ronda, ["coder", "qa", "e2e"].index(origen)), "%s · intento %s" % (cls.PASO_ADJUNTO[origen], n)
-        return ((0 if origen == "azure" else 1), 0, 0), cls.PASO_ADJUNTO.get(origen, origen)
+        return ((0 if origen == "original" else 1), 0, 0), cls.PASO_ADJUNTO.get(origen, origen)
 
     @classmethod
     def lista_adjuntos(cls, adj):
@@ -862,16 +944,16 @@ class Board:
         tipo = tipo.lower()
         if tipo not in TIPOS:
             raise Error("tipo invalido '%s'. Usa task o bug" % tipo)
-        numero = str(numero).strip()
-        if not numero.isdigit():
-            raise Error("numero de workitem invalido: '%s'" % numero)
+        numero = str(numero).strip().lower()
+        if not RE_ID.match(numero):
+            raise Error("id de workitem invalido: '%s'. Numero o texto: letras, digitos y _ (sin espacios ni -)" % numero)
         if prioridad not in PRIO:
             raise Error("prioridad invalida '%s'. Usa %s" % (prioridad, "|".join(PRIO)))
         if self.cfg["workspace"]:
             self.repo_de(repo)  # valida: en un workspace cada tarea debe decir a que repo va
         with self.lock():
             if numero in self.numeros():
-                raise Error("ya existe un workitem con numero %s en el board" % numero)
+                raise Error("ya existe un workitem con id %s en el board" % numero)
             clave = "%s-%s" % (tipo, numero)
             meta = {"id": numero, "tipo": tipo, "prioridad": prioridad, "intento": "0",
                     "rama": clave, "repo": repo or "-", "origen": origen, "actualizado": ahora()}
@@ -932,7 +1014,7 @@ class Board:
         estado_de = {t["id"]: t["estado"] for t in ts}
         # Una tarea "en espera" (choco con archivos de otra) no se ofrece hasta que la otra termine.
         libre = lambda t: not t.get("espera") or estado_de.get(t["espera"]) in (None,) + CERRADAS
-        orden = lambda t: (PRIO.get(t["prioridad"], 9), int(t["numero"]))
+        orden = lambda t: (PRIO.get(t["prioridad"], 9), orden_id(t["numero"]))
         by = lambda s: sorted([t for t in ts if t["estado"] == s], key=orden)
         bugfix, qa, nuevas, e2e = by("bug-fix"), by("qa"), by("new"), by("e2e")
         cap = self.cfg["capacidad"]
@@ -1170,6 +1252,57 @@ class Board:
 
     RE_ESTADO_CRITERIO = re.compile(r"\b(NO CUMPLE|NO VERIFICABLE|CUMPLE)\b")
 
+    def capturas_citadas(self, clave, texto, sub):
+        """Capturas que un texto cita y que existen en el board: `📷 nombre` (se busca primero en
+        adjuntos/<clave>/<sub>/ y despues en el resto de adjuntos/<clave>/) o, en textos viejos,
+        `![..](../adjuntos/...)`."""
+        base = os.path.join(self.dir, "adjuntos", clave)
+        out = []
+        for nombre in RE_REF_IMG.findall(texto):
+            p = os.path.join(base, sub, nombre)
+            if not os.path.isfile(p):
+                p = next((os.path.join(r, nombre) for r, _, fs in os.walk(base) if nombre in fs), None)
+            if p:
+                out.append(p)
+        for u in re.findall(r"!\[[^\]]*\]\(([^)\s]+)\)", texto):
+            p = os.path.normpath(os.path.join(self.dir, "x", u))
+            if os.path.isfile(p):
+                out.append(p)
+        return out
+
+    def limpiar_imagenes(self, simular=False):
+        """Pasa las tareas viejas al formato nuevo (imagenes referenciadas, no incrustadas) y regenera
+        sus .md. No cambia `actualizado` ni el estado. Devuelve {clave: imagenes convertidas}."""
+        import almacen
+        cambios = {}
+        if not simular:
+            db_path = os.path.join(self.dir, "autopilot.db")
+            if os.path.exists(db_path):
+                shutil.copy2(db_path, db_path + ".bak-%s" % datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+        with self.lock():
+            for estado, clave in self.db.claves():
+                _, meta, titulo, secs = self.db.obtener(clave)
+                total, nuevas = 0, dict(secs)
+                for h, texto in secs.items():
+                    if h in almacen.HISTORIAL:
+                        partes = []
+                        for t, x in almacen.bloques(texto):
+                            x2, n = limpiar_imagenes_texto(x, self.dir, clave)
+                            total += n
+                            partes.append("### %s\n\n%s" % (t, x2) if t else x2)
+                        nuevas[h] = "\n\n".join(partes)
+                    else:
+                        nuevas[h], n = limpiar_imagenes_texto(texto, self.dir, clave, historial=False)
+                        total += n
+                if total:
+                    cambios[clave] = total
+                    if not simular:
+                        self.db.guardar(clave, estado, meta, titulo, nuevas)
+                        self._escribir_vista(clave, estado, meta, titulo, nuevas)
+            if not simular:
+                self.db.meta_set("imagenes_ref", ahora())
+        return cambios
+
     def validar_e2e(self, clave):
         """Revisa el ultimo Reporte E2E antes de aprobar: cada criterio (#### ...) CUMPLE y con al
         menos una captura que existe en el board, y cada plataforma esperada mencionada."""
@@ -1189,8 +1322,7 @@ class Board:
             titulo = p.splitlines()[0].strip()
             m = self.RE_ESTADO_CRITERIO.search(titulo)
             estado = m.group(1) if m else None
-            imgs = re.findall(r"!\[[^\]]*\]\(([^)\s]+)\)", p)
-            existentes = [i for i in imgs if os.path.isfile(os.path.normpath(os.path.join(self.dir, "x", i)))]
+            existentes = self.capturas_citadas(clave, p, "e2e-intento%d" % intento)
             criterios.append({"criterio": titulo, "estado": estado, "capturas": len(existentes)})
             if estado != "CUMPLE":
                 problemas.append("criterio '%s': %s" % (titulo, estado or "sin estado (CUMPLE / NO CUMPLE / NO VERIFICABLE)"))
@@ -1731,7 +1863,7 @@ USO = """uso: wi.sh <env> <comando> [args]
                                          vuelve a correr los casos guardados en los repos
                                          (tests/<clave>/cases.json); --all = regresion en las ramas base.
                                          Reporte en <workspace>/test-results/. Alias: run-tests
-  add-task   <task|bug> <numero> <prioridad> <titulo> <descripcion> <criterio> [repo]
+  add-task   <task|bug> <id> <prioridad> <titulo> <descripcion> <criterio> [repo]
                                          (en un workspace, repo es obligatorio: la carpeta del repo)
   check                                  avisos de configuracion (ramas base vacias, repos faltantes,
                                          herramientas, .env.autopilot)
@@ -1743,7 +1875,9 @@ USO = """uso: wi.sh <env> <comando> [args]
   notas-dev  <clave> <texto|-> [--imagenes <dir>]...   notas del coder (- = stdin)
   reporte-qa <clave> <texto|-> [--imagenes <dir>]...   reporte del QA (- = stdin)
                                          Las imagenes mencionadas en el texto (y las de --imagenes)
-                                         se copian a adjuntos/<clave>/ y quedan como ![..](..) en el .md
+                                         se copian a adjuntos/<clave>/<paso>-intentoN/ y quedan como
+                                         `📷 nombre` + una linea `📎 N capturas → carpeta` (no incrustadas)
+  limpiar-imagenes [--simular]           pasa las tareas viejas (imagenes incrustadas) al formato nuevo
   qa-worktree        <clave>             copia de trabajo aislada para el QA (en la punta de la rama). Si
                                          hay borrador de pruebas de una corrida anterior, lo pone en la copia
   get        <clave> [parte] [--intento N] [--ultimo] [--json]
@@ -1762,7 +1896,7 @@ USO = """uso: wi.sh <env> <comando> [args]
   esperar    <clave> <otra>              choco con <otra>: vuelve a la cola hasta que <otra> termine
   qa-worktree-borrar <clave>
 
-<clave> = task-<numero> | bug-<numero>   (es tambien el nombre de la rama)"""
+<clave> = task-<id> | bug-<id>   (es tambien el nombre de la rama; <id>: numero o texto, [a-z0-9_])"""
 
 MOVER = {"in-progress": "in-progress", "qa": "qa", "validando": "validando",
          "bugfix": "bug-fix", "done": "done", "probar-e2e": "probando-e2e"}
@@ -1776,6 +1910,11 @@ def main(argv):
     b = Board(cargar_config(env or None))
     if env:
         registrar_proyecto(env)
+    if cmd != "limpiar-imagenes" and os.path.isdir(b.dir) and b.db.meta_get("imagenes_ref") is None:
+        try:   # una sola vez por board: las imagenes de las tareas viejas pasan a referenciadas
+            b.limpiar_imagenes()
+        except Exception as err:
+            print("AVISO: no se pudieron pasar las imagenes al formato nuevo: %s" % err, file=sys.stderr)
 
     def need(n):
         if len(a) < n:
@@ -1795,10 +1934,10 @@ def main(argv):
         need(1)
         import entorno
         objetivo = a[0]
-        if re.match(r"^(task|bug)-\d+$", objetivo.lower()):
-            objetivo = [r["path"] for r in b.repos_de_tarea(b.leer(objetivo)[2])]
-        elif objetivo in b.cfg["repos"]:
+        if objetivo in b.cfg["repos"]:  # primero el repo: un repo puede llamarse como una clave (bug-tracker)
             objetivo = [b.cfg["repos"][objetivo]["path"]]
+        elif es_clave(objetivo):
+            objetivo = [r["path"] for r in b.repos_de_tarea(b.leer(objetivo)[2])]
         else:
             objetivo = [objetivo]
         res = [entorno.validar(x) for x in objetivo]
@@ -1922,6 +2061,13 @@ def main(argv):
         need(1)
         b.modificar(a[0], "e2e", secs_set={"Motivo de stopped": ""}, secs_append={
             "Feedback de E2E": "### Re-E2E manual (%s)\n\nDe vuelta a la cola de pruebas E2E." % ahora()})
+    elif cmd == "limpiar-imagenes":
+        simular = "--simular" in a
+        c = b.limpiar_imagenes(simular=simular)
+        for k, n in sorted(c.items()):
+            print("%s: %d imagen%s %s" % (k, n, "" if n == 1 else "es", "a convertir" if simular else "convertidas"))
+        print("%d tarea(s)%s" % (len(c), " (simulado: no se cambio nada)" if simular else ""))
+        return 0
     elif cmd == "validar-e2e":
         need(1)
         v = b.validar_e2e(a[0])
@@ -1969,7 +2115,7 @@ def main(argv):
                    "reporte-e2e": "Reporte E2E"}[cmd]
         n = intento_actual(a[0])
         sub = "%s-intento%d" % ({"notas-dev": "coder", "reporte-qa": "qa", "reporte-e2e": "e2e"}[cmd], n)
-        texto = b.incrustar_imagenes(a[0].lower(), b.enlazar_videos(a[0].lower(), texto, sub), carpetas, sub)
+        texto = b.referenciar_imagenes(a[0].lower(), b.enlazar_videos(a[0].lower(), texto, sub), carpetas, sub)
         b.modificar(a[0], secs_append={seccion: "### Intento %d (%s)\n\n%s" % (n, ahora(), texto)})
         b.adjuntos(a[0].lower())   # las capturas que se copiaron quedan registradas
     elif cmd == "coder-worktree-borrar":

@@ -3,7 +3,8 @@
 azure-sync.py — Importador ADITIVO de Azure DevOps al board de workitems.
 
 COPIA aditiva de /home/user/sync_workitems.py, adaptada para alimentar
-el board de carpetas + Markdown del autopilot (workitems.py, misma carpeta).
+el board del autopilot. Es una integracion EXTERNA: el autopilot no la conoce;
+solo usa la API publica del board (workitems.py del kit instalado).
 
 Cada Work Item se escribe como new/<tipo>-<numero>-<slug>.md, donde tipo es
 task o bug segun System.WorkItemType. <tipo>-<numero> es tambien el nombre de
@@ -48,15 +49,19 @@ import time
 import urllib.parse
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# El formato del board vive en un solo lugar: workitems.py, en esta misma carpeta.
-sys.path.insert(0, SCRIPT_DIR)
+# El formato del board vive en el kit del autopilot (workitems.py); se busca en
+# $AUTOPILOT_KIT, en el kit instalado o en el lib/ del repo (si se corre desde el repo).
+KIT = os.environ.get("AUTOPILOT_KIT") or os.path.join(
+    os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "autopilot-kit")
+for d in (KIT, os.path.join(SCRIPT_DIR, "..", "..", "lib")):  # el ultimo insertado gana
+    if os.path.exists(os.path.join(d, "workitems.py")):
+        sys.path.insert(0, os.path.abspath(d))
 try:
     import workitems as wi
 except ImportError:
     print(json.dumps({"action": "error",
-                      "message": "no encuentro workitems.py junto a azure-sync.py",
-                      "hint": "reinstala el kit con install.sh"}, ensure_ascii=False, indent=2))
+                      "message": "no encuentro workitems.py del autopilot (busque en %s)" % KIT,
+                      "hint": "instala el kit con install.sh o exporta AUTOPILOT_KIT"}, ensure_ascii=False, indent=2))
     sys.exit(2)
 
 # Prioridad de Azure (1=alta) -> board
@@ -84,7 +89,7 @@ def leer_env(path):
 def load_config(path):
     """Carga azure-sync.env, las fuentes y el PAT (entorno > secrets.env > PAT del MCP)."""
     if not os.path.exists(path):
-        die("No existe el archivo de config: %s" % path, "Crealo con /autopilot-init o install.sh --init")
+        die("No existe el archivo de config: %s" % path, "Copia azure-sync.env.example de la integracion a la raiz del proyecto")
     vals = leer_env(path)
     CFG["org"] = vals.get("AZURE_ORG", "")
     CFG["user"] = vals.get("AZURE_USER", "") or "pat"
@@ -335,20 +340,19 @@ def descargar_adjuntos(item, clave, imagenes):
         if origen.startswith("img"):
             por_img[int(origen[3:])] = rel(destino)
         if ext in VIDEO:
-            frames, nota = fotogramas(destino, os.path.splitext(destino)[0] + ".frames")
-            lineas.append("- Video [`%s`](%s) — %s" % (os.path.basename(destino), rel(destino), nota))
-            lineas += ["  - ![%s](%s)" % (os.path.basename(f), rel(f)) for f in frames]
+            _, nota = fotogramas(destino, os.path.splitext(destino)[0] + ".frames")
+            lineas.append("- 🎞️ Video [`%s`](%s) — %s" % (os.path.basename(destino), rel(destino), nota))
         elif ext in IMAGEN:
-            lineas.append("- ![%s](%s)" % (os.path.basename(destino), rel(destino)))
+            lineas.append("- 📷 %s" % os.path.basename(destino))   # referenciada: la app web la muestra aparte
         else:
             lineas.append("- [`%s`](%s)" % (os.path.basename(destino), rel(destino)))
     return por_img, "\n".join(lineas), fallidos
 
 
 def poner_imagenes(txt, por_img):
-    """Marcadores de imagen -> ![imagen N](ruta) en su lugar, cada una en su parrafo."""
+    """Marcadores de imagen -> `📷 <archivo> — imagen N` en su lugar (referenciada, no incrustada)."""
     txt = re.sub(r"[ \t]*\x00IMG(\d+)\x00[ \t]*",
-                 lambda m: ("\n\n![imagen %d](%s)\n\n" % (int(m.group(1)) + 1, por_img[int(m.group(1))])
+                 lambda m: ("\n\n📷 %s — imagen %d\n\n" % (por_img[int(m.group(1))].rsplit("/", 1)[-1], int(m.group(1)) + 1)
                             if int(m.group(1)) in por_img else " [imagen %d no descargada] " % (int(m.group(1)) + 1)),
                  txt)
     return re.sub(r"\n{3,}", "\n\n", txt).strip()
