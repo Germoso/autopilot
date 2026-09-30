@@ -107,7 +107,8 @@ def archivo_e2e(path):
     return ARCHIVO_E2E if os.path.isfile(os.path.join(repo_principal(path), ARCHIVO_E2E)) else ARCHIVO
 
 
-def validar(path, archivo=ARCHIVO):
+def validar(path, archivo=ARCHIVO, copia=False):
+    """copia=True: evalua como si el comando corriera en una copia de trabajo (asi corren los agentes)."""
     repo = repo_principal(path)
     auto = leer(os.path.join(repo, archivo))
     reales = {}
@@ -122,13 +123,23 @@ def validar(path, archivo=ARCHIVO):
         out["recomendacion"] = ("Crea %s en %s (copia de .env) apuntando a local o QA: base de datos cuyo "
                                 "NOMBRE diga qa, URLs de QA, NODE_ENV distinto de production." % (archivo, repo))
         return out
-    permitidas = {x.strip() for x in auto.get("AUTOPILOT_PERMITIR", "").split(",") if x.strip()}
+    # AUTOPILOT_PERMITIR puede repetirse en varias lineas: se suman todas.
+    permitidas = set()
+    for raw in (open(out["archivo"], encoding="utf-8", errors="replace") if os.path.isfile(out["archivo"]) else []):
+        m = re.match(r"^\s*(?:export\s+)?AUTOPILOT_PERMITIR\s*=\s*['\"]?([^'\"#]*)", raw)
+        if m:
+            permitidas |= {x.strip() for x in m.group(1).split(",") if x.strip()}
     for k, v in sorted(auto.items()):
         if k == "AUTOPILOT_PERMITIR" or not v or not es_destino(k):
             continue
         if clasificar(k, v) == "no-permitido":
             (out["permitidas_por_humano"] if k in permitidas else out["inseguras"]).append(k)
     out["faltan"] = [k for k in destinos_reales if k not in auto]
+    # En una copia de trabajo (worktree del coder/QA/E2E) no existe el .env real: una clave que falta en
+    # .env.autopilot queda vacia, no toma el valor real. Solo es un riesgo si se corre en el repo mismo.
+    en_copia = os.path.realpath(path) != os.path.realpath(repo) or copia
+    if en_copia and out["faltan"]:
+        out["faltan_sin_riesgo"], out["faltan"] = out["faltan"], []
     if out["inseguras"]:
         out["estado"] = "inseguro"
         out["recomendacion"] = ("En %s estas claves no apuntan a local ni a QA: %s. Cambialas a QA/local "

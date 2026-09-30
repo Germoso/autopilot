@@ -344,7 +344,7 @@ class Board:
                 out.append("%s: no existe la carpeta %s" % (etiqueta, r["path"]))
             else:
                 import entorno
-                e = entorno.validar(r["path"])
+                e = entorno.validar(r["path"], copia=True)
                 if e["destinos_en_env_real"] and e["estado"] != "ok":
                     out.append("%s: %s .env.autopilot (%s). Nada que se conecte a BD/API se va a ejecutar ahi: "
                                "%s" % (n or os.path.basename(r["path"]),
@@ -1015,7 +1015,7 @@ class Board:
             if tipo in ("backend", "web"):
                 import entorno
                 archivo_env = entorno.archivo_e2e(r["path"])
-                v = entorno.validar(r["path"], archivo_env)
+                v = entorno.validar(r["path"], archivo_env, copia=True)
                 if v["estado"] != "ok":
                     out.append("%s: %s para E2E (%s). %s" % (nombre, archivo_env, v["estado"], v.get("recomendacion", "")))
         if not e2e_mod.cuentas(self.cfg):
