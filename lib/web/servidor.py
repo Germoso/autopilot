@@ -35,6 +35,7 @@ WEB = os.path.dirname(os.path.abspath(__file__))
 KIT = os.path.dirname(WEB)
 sys.path.insert(0, KIT)
 import workitems as wi  # noqa: E402
+import cadena  # noqa: E402
 
 CONF = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "autopilot-kit")
 ESTATICOS = os.path.join(WEB, "estatico")
@@ -200,6 +201,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 subprocess.run(["pgrep", "-f", "watcher.sh ./autopilot.env"], capture_output=True).returncode == 0
             return self.enviar(200, limpiar(cfg, {
                 "tareas": ts, "estados": wi.ESTADOS, "pausa": pausa, "watcher": watcher, "e2e": cfg["e2e"]["activo"],
+                "cadena": cadena.info(p["env"]),
                 "repos": sorted(n or os.path.basename(r["path"]) for n, r in cfg["repos"].items()),
                 "capacidad": cfg["capacidad"], "telegram": cfg.get("telegram", {}).get("activo", False)}))
         m = re.match(r"^tarea/((?:task|bug)-%s)$" % wi.ID, sub)

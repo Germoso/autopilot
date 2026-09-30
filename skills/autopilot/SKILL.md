@@ -30,7 +30,8 @@ Claude Code automáticamente al editar); el otro se pone **en espera** hasta que
 **Dependencias entre tareas** (`depende:`, las pone quien crea la tarea, p. ej. `/autopilot-plan`): la
 tarea no se ofrece al coder hasta que todas sus dependencias estén en `reviewed`, porque su rama nace de
 la base y ahí solo está lo que el humano ya mergeó. El watcher las lista en `en_espera` con `depende_de`:
-en tu resumen dile al humano qué tiene que revisar y mergear para destrabarlas.
+en tu resumen dile al humano qué tiene que revisar y mergear para destrabarlas **y avísale por Telegram**
+(`$K/telegram.sh send "…" --alert`): el humano verifica Telegram, no la terminal.
 
 ## Cuándo usar esta skill
 
@@ -81,11 +82,11 @@ son `wi.sh` y el `autopilot.env` (ver *Una sola vía de escritura*).
 | | **Claude Code** | **OpenCode** |
 |---|---|---|
 | Watcher | Bash con `run_in_background: true`. Te re-invoca cuando retorna. Mientras, no sondees su salida. | Bash en primer plano, con el timeout más largo posible. |
-| Subagente de un puesto | Tool Agent con `subagent_type: coder`, `qa-reviewer` o `e2e-tester`. Corren **en segundo plano** (definido en el agente): no los esperes; Claude Code te avisa cuando terminan. | **Sesión propia** vía API: `python3 $K/oc_sesion.py lanzar <agente> <carpeta abierta> "<clave>: <puesto>" - --adjunto <img>...` con el encargo por stdin. Devuelve `{"sesion": "ses_..."}`: regístralo con `$W "$E" sesion <clave> <ses>`. No espera. La sesión nace con permiso solo para su copia de trabajo, el kit y `/tmp`; todo otro directorio se deniega (**nunca pregunta**). |
-| Fin de un subagente | Llega como aviso de tarea terminada, con su respuesta. | El watcher lo devuelve en `terminadas`; la respuesta se lee con `python3 $K/oc_sesion.py resultado <ses>`. |
-| Imágenes | Pásale las rutas en el encargo: las abre con Read. | Van como `--adjunto` (las ve directo) **y** también listadas en el encargo. |
+| Subagente de un puesto | Tool Agent con `subagent_type: coder`, `qa-reviewer` o `e2e-tester`. Corren **en segundo plano** (definido en el agente): no los esperes; Claude Code te avisa cuando terminan. | Herramienta de subagentes (`task`) con `agent: coder`, `qa-reviewer` o `e2e-tester`, `description: "<clave>: <puesto>"` y **`background: true`**: corre como **sesión hija** de la tuya, en paralelo, y la herramienta vuelve enseguida con su `sessionID`. **Regístralo siempre**: `$W "$E" sesion <clave> <sessionID>` (con él el watcher sabe cuándo termina, el vigía mide su actividad y los pedidos de permiso se rechazan solos). No la esperes ni la sondees. Sus permisos vienen de la definición del agente: solo su copia de trabajo, el kit y `/tmp`; lo demás se deniega (**nunca pregunta**). *Solo si tu OpenCode no acepta `background` en `task`* (versiones viejas): `python3 $K/oc_sesion.py lanzar <agente> <carpeta abierta> "<clave>: <puesto>" - --adjunto <img>...` con el encargo por stdin, y registra el `sesion` que devuelve. |
+| Fin de un subagente | Llega como aviso de tarea terminada, con su respuesta. | Llega el aviso de OpenCode ("subagent … completed") **y** el watcher lo devuelve en `terminadas`. Procésalo una sola vez: con el primero que llegue. La respuesta completa: `python3 $K/oc_sesion.py resultado <ses>`. Si la tarea ya no está en ese puesto, ya la procesaste: ignora el otro aviso. |
+| Imágenes | Pásale las rutas en el encargo: las abre con Read. | Igual: rutas completas en el encargo (las abre con su herramienta de lectura). Con `oc_sesion.py`, además como `--adjunto`. |
 
-Las sesiones de OpenCode se ven en su lista de sesiones: el usuario puede abrirlas y mirarlas en vivo.
+En OpenCode cada puesto se ve como sesión hija de la tuya: el usuario puede abrirla y mirarla en vivo.
 
 ### Por qué el watcher y no polling del agente
 
@@ -95,8 +96,8 @@ Las sesiones de OpenCode se ven en su lista de sesiones: el usuario puede abrirl
 - **Un solo watcher a la vez.** Llévalo en la cuenta: si lo lanzaste y no retornó, sigue corriendo.
 
 **LIMITACIÓN CONOCIDA:** el watcher vive dentro de la sesión. Si el usuario cierra el cliente, deja
-de vigilar. En OpenCode las sesiones de los puestos sí siguen; al volver, `--inicio` las respeta
-(no las marca huérfanas) y el watcher avisa cuando terminan.
+de vigilar. En OpenCode las sesiones de los puestos (registradas con `wi.sh sesion`) sí siguen en su
+servicio; al volver, `--inicio` las respeta (no las marca huérfanas) y el watcher avisa cuando terminan.
 
 ## REGLA DE ORO: NUNCA DEJAR EL WATCHER PARADO
 
@@ -229,7 +230,7 @@ watcher antes de ocupar el puesto, te devuelve la misma acción):
 
 Si `wi.sh rama` falla, la tarea ya quedó en `stopped`: sigue con lo demás. Pueden venir **varias
 acciones** (varios coders y varios QA si `PARALLEL=true`): atiéndelas todas y lanza todos los
-subagentes (en Claude Code, en el mismo mensaje; en OpenCode, una sesión por tarea).
+subagentes en segundo plano, uno por tarea (en Claude Code y en OpenCode, en el mismo mensaje).
 
 ### B. Terminó el coder (aviso de Claude Code, o `terminadas` con puesto `coder` en OpenCode)
 
@@ -340,10 +341,13 @@ Relanza el watcher después.
 
 ### Avisos por Telegram
 
-Con `TELEGRAM=true`, los cambios de estado (coder, QA, E2E, rechazos, `done`, `stopped`), el vigía,
-run-tests y el arranque se avisan **solos** desde `wi.sh`: no los mandes tú. Tú avisas
-cuando **necesitas una decisión del humano** que no es un `stopped` (p. ej. dos opciones válidas, una
-duda de alcance): `$K/telegram.sh send "<pregunta>" --alert`, y sigues con lo demás mientras responde.
+**El humano verifica Telegram, casi nunca la terminal: todo lo que tenga que saber sale SIEMPRE
+primero por Telegram y después se resume en la sesión.** Con `TELEGRAM=true`, los cambios de estado
+(coder, QA, E2E, rechazos, `done`, `stopped`), el vigía, la **cadena detenida**, run-tests y el
+arranque se avisan **solos** desde `wi.sh` y `cadena.py`: no los mandes tú. Tú avisas por Telegram
+(`$K/telegram.sh send "<texto>" --alert` si requiere su intervención) todo lo que solo aparece en tu
+resumen de la terminal y él debería conocer: una duda de alcance, dos opciones válidas, una tarea que
+quedó esperándolo, el resultado de procesar un workitem. Después sí, resume en la sesión.
 Si el watcher trae `"pausa": true`, el humano pausó con `/pausa`: no tomes tareas nuevas.
 
 Registra cada evento con `$W "$E" log`.

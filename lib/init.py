@@ -102,7 +102,11 @@ def env_autopilot(det, bases):
           "WATCHDOG=true", "WATCHDOG_INTERVAL=60", "HUNG_MINUTES=10", "STALE_MINUTES=45", "COMMAND_TIMEOUT=900",
           "", "# Telegram: avisos (y comandos /estado, /reqa, /pausa... desde el chat). Bot propio del autopilot:",
           "# wi.sh autopilot.env telegram-setup. ALERTS_ONLY=true: solo lo que necesita tu intervencion.",
-          "TELEGRAM=false", "TELEGRAM_ALERTS_ONLY=false"]
+          "TELEGRAM=false", "TELEGRAM_ALERTS_ONLY=false",
+          "", "# Cadena detenida: avisa por Telegram si el autopilot queda parado esperandote",
+          "# (sin puestos ocupados y pendiente que solo el humano destraba). CADENA_MIN: minutos de",
+          "# espera antes de avisar; CADENA_REAVISO_MIN: cada cuanto re-avisar mientras siga parado.",
+          "CADENA_MIN=20", "CADENA_REAVISO_MIN=240"]
     return "\n".join(L) + "\n" + bloque_e2e(det)
 
 

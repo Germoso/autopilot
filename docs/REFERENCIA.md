@@ -286,6 +286,8 @@ Lo crea `/autopilot-init`; se edita a mano. En un workspace va en la carpeta pad
 | `COMMAND_TIMEOUT` | `900` | Segundos máximos de un comando por `aenv.sh` |
 | `TELEGRAM` | `false` | Avisos por Telegram y comandos desde el chat |
 | `TELEGRAM_ALERTS_ONLY` | `false` | Solo los avisos que necesitan intervención (🚨) |
+| `CADENA_MIN` | `20` | Minutos de cadena detenida esperando al humano antes de avisar por Telegram |
+| `CADENA_REAVISO_MIN` | `240` | Cada cuántos minutos re-avisar mientras la cadena siga detenida |
 | `E2E` | `false` | Etapa de pruebas E2E después del QA |
 | `E2E_COMMAND_TIMEOUT` | `2400` | Segundos máximos por comando en E2E |
 | `E2E_CLIENTS.<backend>` | — | Qué frontends consumen ese backend (`app1,app2`) |
@@ -374,10 +376,13 @@ probando una tercera.
 
 - **Claude Code:** los subagentes corren en segundo plano; Claude Code avisa al agente principal
   cuando terminan.
-- **OpenCode:** cada tarea corre como **su propia sesión** de OpenCode, lanzada por la API del
-  servicio local (`oc_sesion.py`). Las ves en tu lista de sesiones y podés mirarlas en vivo. El
-  watcher avisa cuando una termina. Si cerrás OpenCode, esas sesiones siguen; al volver,
-  `/autopilot` las retoma. **Nunca te piden permiso:** cada sesión (y cada agente de OpenCode) puede
+- **OpenCode (v2):** igual que en Claude Code. Cada tarea corre como **subagente en segundo plano**
+  (herramienta `task` con `background: true`), que es una **sesión hija** de la del autopilot: la ves
+  anidada debajo y podés abrirla y mirarla en vivo. El principal no la espera; OpenCode le avisa cuando
+  termina, y el watcher también (el orquestador registra el id de la sesión con `wi.sh sesion`). Si
+  cerrás OpenCode, esas sesiones siguen en su servicio; al volver, `/autopilot` las retoma. En OpenCode
+  viejo, donde un subagente bloquea al principal, se usa `oc_sesion.py lanzar` (una sesión suelta por
+  la API). **Nunca te piden permiso:** cada sesión (y cada agente de OpenCode) puede
   usar sin preguntar su copia de trabajo (`~/.cache/autopilot-kit/<puesto>/`), el kit y `/tmp`; cualquier
   otro directorio externo se **deniega** al instante. Si igual queda un pedido pendiente, el watcher lo
   rechaza solo en su siguiente vuelta, le dice al agente que siga sin eso, lo anota en el log de la
@@ -633,6 +638,17 @@ con `wi.sh <env> telegram-setup`. `wi.sh <env> notify-test` manda una prueba; `w
   (`/estado`, `/cola`, `/tarea`, `/health`, `/reqa`, `/re-e2e`, `/stop`, `/reviewed`, `/pausa`,
   `/seguir`, `/ayuda`) se resuelven sin IA, por `wi.sh`. El texto libre se devuelve como `mensajes` y
   el orquestador responde con `telegram.sh send`.
+- **Menú de botones:** `/start`, `/ayuda` y los comandos desconocidos mandan, además de la
+  documentación, un reply keyboard (`TECLADO`) con los comandos sin argumento (`/estado`, `/cola`,
+  `/health`, `/pausa`, `/seguir`, `/ayuda`); tocar un botón envía ese comando como texto normal. El
+  menú persiste sobre el campo de texto hasta que se reemplace o se cierre desde Telegram.
+- **Cadena detenida** (`lib/cadena.py`): en cada vuelta el watcher llama `cadena.py <env>`; si el
+  autopilot quedó esperando al humano (sin puestos ocupados, sin trabajo que pueda tomar solo, y con
+  pendiente que solo el humano destraba: done sin revisar, stopped o bloqueadas por dependencias),
+  avisa por Telegram 🚨 tras `CADENA_MIN` minutos desde que se detuvo y re-avisa cada
+  `CADENA_REAVISO_MIN` mientras siga parado (una vez por episodio; en pausa explícita no avisa). El
+  estado por proyecto vive en `~/.cache/autopilot-kit/cadena-<hash>.json` y la app web lo muestra
+  como banner "🧊 Cadena detenida".
 - **Pausa:** `/pausa` crea `.workitems/.pausa`; mientras exista, `plan()` no ofrece acciones nuevas
   (`"pausa": true`).
 - **Health check:** credenciales, permisos del archivo, token válido (`getMe`) y que ningún otro

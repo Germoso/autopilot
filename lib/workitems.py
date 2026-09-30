@@ -96,6 +96,7 @@ def cargar_config(env_path=None):
       E2E_API.<front-flutter>=<archivo>|<regex de la linea>|<reemplazo con {API}>
                                               como apuntar la app al backend LOCAL en la copia E2E
       TELEGRAM=true|false (avisos y comandos por Telegram), TELEGRAM_ALERTS_ONLY=true|false
+      CADENA_MIN=20, CADENA_REAVISO_MIN=240 (min de cadena detenida antes de avisar y de re-aviso)
       E2E_API.<front-web>=env:VAR1,VAR2       variables de URL del front web que aenv.sh --e2e apunta al
                                               backend LOCAL (conserva ruta; https->http, wss->ws)
     """
@@ -157,6 +158,7 @@ def cargar_config(env_path=None):
             "telegram": {"activo": valor_tg == "true",
                          "invalido": None if valor_tg in ("true", "false") else vals.get("TELEGRAM"),
                          "solo_alertas": vals.get("TELEGRAM_ALERTS_ONLY", "false").strip().lower() == "true"},
+            "cadena": {"min": entero("CADENA_MIN", 20), "reaviso": entero("CADENA_REAVISO_MIN", 240)},
             "env_path": os.path.abspath(env_path) if env_path else None}
 
 
@@ -1097,6 +1099,23 @@ class Board:
                 "e2e": self.cfg["e2e"]["activo"], "pausa": pausa,
                 "permisos_rechazados": rechazados,
                 "cola": {"bugfix": len(bugfix), "qa": len(qa), "new": len(nuevas), "e2e": len(e2e)}}
+
+    def cadena(self):
+        """Estado de la cadena: si el sistema quedo DETENIDO esperando al humano.
+
+        parada = sin puestos ocupados, sin trabajo que el autopilot pueda tomar solo, y pendiente que
+        solo el humano destraba (done sin revisar, stopped, o en espera por dependencias). En pausa
+        explicita no es un atasco (es una decision tomada).
+        """
+        p = self.plan()
+        pausa = p["pausa"]
+        en_curso = any(p["ocupados"].values())
+        pendientes = {"done": 0, "stopped": len(p.get("stopped") or []), "en_espera": len(p.get("en_espera") or [])}
+        for t in self.todas():
+            if t["estado"] == "done":
+                pendientes["done"] += 1
+        parada = (not pausa) and not en_curso and not p["acciones"] and sum(pendientes.values()) > 0
+        return {"parada": parada, "pendiente": pendientes, "asignables": len(p["acciones"]), "pausa": pausa}
 
     def _rechazar_permisos(self, oc_sesion, t, puesto, ses):
         """Una sesion del autopilot nunca espera a un humano: si quedo un pedido de permiso pendiente

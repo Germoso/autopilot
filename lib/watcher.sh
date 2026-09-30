@@ -9,7 +9,8 @@
 #    nativas (subagent) o con wi.sh para los estados.
 #
 #  NO lanza agentes: solo lee el board. Los subagentes los lanza el agente principal
-#  (Claude Code: en segundo plano; OpenCode: como sesiones propias via oc_sesion.py).
+#  en segundo plano (Claude Code y OpenCode: subagentes background; en OpenCode su sesion se
+#  registra con `wi.sh sesion` y aca se detecta cuando termina).
 #  Leer el board es leer archivos locales: no hay red ni tokens.
 #
 #  Puestos en paralelo, con capacidad (PARALLEL=false -> 1 cada uno; true -> MAX_CODERS, MAX_QA, MAX_E2E):
@@ -76,6 +77,7 @@ import sys; sys.path.insert(0, sys.argv[1]); import workitems as wi
 v = wi.cargar_config(sys.argv[2])["vigia"]; print("1" if v["activo"] else "0", v["intervalo"])' "$SCRIPT_DIR" "$ENV_FILE")
 ULTIMA_VIGIA=0
 [[ "$VIGIA_ON" == 1 ]] && log " vigia activo cada ${VIGIA_CADA}s (procesos colgados, huerfanos y tareas atascadas)"
+[[ -f "$SCRIPT_DIR/cadena.py" ]] && log " cadena: avisa por Telegram si el autopilot queda detenido esperandote (CADENA_MIN, CADENA_REAVISO_MIN)"
 
 iter=0
 while true; do
@@ -109,6 +111,10 @@ print("A " + json.dumps(v.get("atascadas", [])))' <<<"$v")"
   rec=(); [[ $INICIO == 1 && $iter == 1 ]] && rec=(--recuperar)
   plan="$("$PY" "$WI" "$ENV_FILE" plan "${rec[@]}")" \
     || { log " #$iter no pude leer el board, reintento"; sleep "$POLL_INTERVAL"; continue; }
+
+  # Cadena: avisa por Telegram (una vez por episodio) si el autopilot quedo detenido
+  # esperando al humano: sin puestos ocupados y pendiente que solo el humano destraba.
+  "$PY" "$SCRIPT_DIR/cadena.py" "$ENV_FILE" >/dev/null 2>&1 || true
 
   hay="$("$PY" -c '
 import json,sys
