@@ -7,7 +7,7 @@ Unica implementacion del formato. La usan wi.sh (escritura), watcher.sh
 
 ESTRUCTURA
   $WORKITEMS_DIR/
-    new/ in-progress/ qa/ validando/ bug-fix/ stopped/ done/
+    new/ in-progress/ qa/ validando/ e2e/ probando-e2e/ bug-fix/ stopped/ done/ reviewed/
     log.md
 
   - El ESTADO de una tarea es la carpeta donde esta. Nunca se guarda en el archivo.
@@ -37,15 +37,16 @@ import subprocess
 import sys
 import unicodedata
 
-ESTADOS = ["new", "in-progress", "qa", "validando", "bug-fix", "stopped", "done", "reviewed"]
+ESTADOS = ["new", "in-progress", "qa", "validando", "e2e", "probando-e2e", "bug-fix", "stopped", "done", "reviewed"]
 # Tareas que ya no estan activas. `reviewed` = done que el humano ya reviso (lo mueve el humano).
 CERRADAS = ("done", "stopped", "reviewed")
 PRIO = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 TIPOS = ("task", "bug")
 SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Repos modificados", "Notas del desarrollador",
-             "Reporte de QA", "Feedback de QA", "Resultado", "Motivo de stopped"]
-# Dos puestos que trabajan en paralelo, cada uno con UNA tarea como maximo.
-PUESTOS = {"coder": "in-progress", "qa": "validando"}
+             "Reporte de QA", "Feedback de QA", "Reporte E2E", "Feedback de E2E", "Resultado", "Motivo de stopped"]
+# Puestos que trabajan en paralelo: estado en el que esta la tarea mientras el puesto la trabaja.
+# e2e solo recibe tareas con E2E=true (QA APROBADO -> e2e en vez de done).
+PUESTOS = {"coder": "in-progress", "qa": "validando", "e2e": "probando-e2e"}
 IMAGEN = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 VIDEO = {".mp4", ".mov", ".webm", ".avi", ".mkv", ".m4v", ".3gp"}
 CAMPOS = ["id", "tipo", "prioridad", "intento", "rama", "repo", "repos_extra", "origen", "sesion", "espera",
@@ -72,6 +73,13 @@ def cargar_config(env_path=None):
       PARALLEL=true|false  (default false: 1 coder + 1 QA). Con true: MAX_CODERS y MAX_QA (default 2 y 2).
       WATCHDOG=true|false (default true), WATCHDOG_INTERVAL=60 s, HUNG_MINUTES=10, STALE_MINUTES=45,
       COMMAND_TIMEOUT=900 s (lo aplica aenv.sh).
+    E2E (etapa despues del QA, agente e2e-tester):
+      E2E=true|false (default false), MAX_E2E (default 1; con PARALLEL=false siempre 1),
+      E2E_COMMAND_TIMEOUT=2400 s (aenv.sh --e2e y e2e.sh),
+      E2E_CLIENTS.<backend>=<front>,<front>   que frontends del workspace consumen cada backend
+      E2E_PLATFORMS.<front>=web,android       en que plataformas se prueba cada frontend
+      E2E_API.<front-flutter>=<archivo>|<regex de la linea>|<reemplazo con {API}>
+                                              como apuntar la app al backend LOCAL en la copia E2E
     """
     vals = {}
     base = os.getcwd()
@@ -101,14 +109,30 @@ def cargar_config(env_path=None):
     valor_parallel = vals.get("PARALLEL", "false").strip().lower()
     paralelo = valor_parallel == "true"   # solo true/false; cualquier otro valor = false (y aviso)
     entero = lambda k, d: max(1, int(vals.get(k, d))) if str(vals.get(k, d)).strip().isdigit() else d
-    capacidad = ({"coder": entero("MAX_CODERS", 2), "qa": entero("MAX_QA", 2)} if paralelo
-                 else {"coder": 1, "qa": 1})
+    capacidad = ({"coder": entero("MAX_CODERS", 2), "qa": entero("MAX_QA", 2), "e2e": entero("MAX_E2E", 1)}
+                 if paralelo else {"coder": 1, "qa": 1, "e2e": 1})
+    lista = lambda v: [x.strip() for x in v.split(",") if x.strip()]
+    e2e_api = {}
+    for k, v in vals.items():
+        if k.startswith("E2E_API.") and k[8:]:
+            partes = v.split("|")
+            e2e_api[k[8:]] = ({"archivo": partes[0].strip(), "regex": partes[1], "reemplazo": "|".join(partes[2:])}
+                              if len(partes) >= 3 and partes[0].strip() else {"invalido": v})
+    valor_e2e = vals.get("E2E", "false").strip().lower()
     return {"workspace": bool(ws), "raiz": raiz, "dir": wdir, "repos": repos,
             "paralelo": paralelo, "capacidad": capacidad,
             "parallel_invalido": None if valor_parallel in ("true", "false") else vals.get("PARALLEL"),
             "vigia": {"activo": vals.get("WATCHDOG", "true").strip().lower() != "false",
                       "intervalo": entero("WATCHDOG_INTERVAL", 60), "hung_min": entero("HUNG_MINUTES", 10),
-                      "stale_min": entero("STALE_MINUTES", 45), "timeout": entero("COMMAND_TIMEOUT", 900)}}
+                      "stale_min": entero("STALE_MINUTES", 45), "timeout": entero("COMMAND_TIMEOUT", 900)},
+            "e2e": {"activo": valor_e2e == "true",
+                    "invalido": None if valor_e2e in ("true", "false") else vals.get("E2E"),
+                    "timeout": entero("E2E_COMMAND_TIMEOUT", 2400),
+                    "clients": {k[12:]: lista(v) for k, v in vals.items() if k.startswith("E2E_CLIENTS.") and k[12:]},
+                    "platforms": {k[14:]: lista(v.lower()) for k, v in vals.items()
+                                  if k.startswith("E2E_PLATFORMS.") and k[14:]},
+                    "api": e2e_api},
+            "env_path": os.path.abspath(env_path) if env_path else None}
 
 
 # ----------------------------------------------------------------- util
@@ -307,6 +331,7 @@ class Board:
         if self.cfg.get("parallel_invalido") is not None:
             out.append("PARALLEL=%s no es valido: usa true o false. Se usa false (1 coder + 1 QA)"
                        % self.cfg["parallel_invalido"])
+        out += self.avisos_e2e()
         for n, r in sorted(self.cfg["repos"].items()):
             etiqueta = "REPO.%s" % n if n else "BASE_BRANCH"
             if not r["base"]:
@@ -389,6 +414,26 @@ class Board:
             texto = texto.rstrip() + "\n\n**Imágenes:**\n\n" + "\n\n".join(extra)
         return re.sub(r"\n{3,}", "\n\n", texto).strip()
 
+    RE_VIDEO = re.compile(r"(?<![\w./~-])(?:~|/)[^\s`'\"()<>\[\]]+?\.(?:mp4|webm|mov|mkv)(?!\w)", re.I)
+
+    def enlazar_videos(self, clave, texto, subcarpeta):
+        """Los videos que el texto menciona (p. ej. del agente E2E, en su copia que se va a borrar) se
+        copian a adjuntos/<clave>/<subcarpeta>/ y quedan como enlace [nombre](../adjuntos/...)."""
+        destino_dir = os.path.join(self.dir, "adjuntos", clave, subcarpeta)
+
+        def copiar(m):
+            real = os.path.realpath(os.path.expanduser(m.group(0)))
+            if not os.path.isfile(real):
+                return m.group(0)
+            if not real.startswith(os.path.realpath(self.dir) + os.sep):
+                os.makedirs(destino_dir, exist_ok=True)
+                dst = os.path.join(destino_dir, os.path.basename(real))
+                if not os.path.exists(dst):
+                    shutil.copy2(real, dst)
+                real = dst
+            return "[%s](../%s)" % (os.path.basename(real), os.path.relpath(real, self.dir).replace(os.sep, "/"))
+        return self.RE_VIDEO.sub(copiar, texto)
+
     # -- estructura
     def init(self):
         for e in ESTADOS:
@@ -464,6 +509,8 @@ class Board:
             "notas_dev": secs.get("Notas del desarrollador", ""),
             "repos_modificados": secs.get("Repos modificados", ""),
             "reporte_qa": secs.get("Reporte de QA", ""),
+            "reporte_e2e": secs.get("Reporte E2E", ""),
+            "feedback_e2e": secs.get("Feedback de E2E", ""),
             "sesion": meta.get("sesion") or None,
             "espera": meta.get("espera") or None,
             **self.adjuntos(clave),
@@ -610,7 +657,7 @@ class Board:
                 terminadas.append({"puesto": puesto, "tarea": t, "sesion": ses, "outcome": viva.get("outcome")})
             elif recuperar and not (ses and viva and viva["activa"]):
                 motivo = ("Huerfana en %s sin agente activo (recuperada al iniciar /autopilot). "
-                          "Re-encolar manualmente a new o qa." % t["estado"])
+                          "Re-encolar manualmente: wi.sh new|reqa|re-e2e <clave>." % t["estado"])
                 self.modificar(t["id"], "stopped", secs_set={"Motivo de stopped": motivo})
                 self.log("Watcher recupero tarea huerfana", "watcher", "recuperacion",
                          t["id"], t["rama"], "-", "Estaba en %s sin agente. Marcada stopped." % t["estado"])
@@ -624,7 +671,7 @@ class Board:
         libre = lambda t: not t.get("espera") or estado_de.get(t["espera"]) in (None,) + CERRADAS
         orden = lambda t: (PRIO.get(t["prioridad"], 9), int(t["numero"]))
         by = lambda s: sorted([t for t in ts if t["estado"] == s], key=orden)
-        bugfix, qa, nuevas = by("bug-fix"), by("qa"), by("new")
+        bugfix, qa, nuevas, e2e = by("bug-fix"), by("qa"), by("new"), by("e2e")
         cap = self.cfg["capacidad"]
 
         acciones = []
@@ -637,12 +684,16 @@ class Board:
             huecos -= 1
         for t in qa[:max(0, cap["qa"] - len(ocupados["qa"]))]:
             acciones.append({"puesto": "qa", "accion": "certificar", "tarea": t})
+        if self.cfg["e2e"]["activo"]:  # con E2E=false la cola e2e no se atiende (y avisos() lo dice)
+            for t in e2e[:max(0, cap["e2e"] - len(ocupados["e2e"]))]:
+                acciones.append({"puesto": "e2e", "accion": "probar-e2e", "tarea": t})
         return {"acciones": acciones, "terminadas": terminadas, "ocupados": ocupados,
                 "capacidad": cap, "parallel": self.cfg["paralelo"],
                 "en_espera": [{"id": t["id"], "espera": t["espera"]} for t in bugfix + nuevas if not libre(t)],
                 "huerfanas_recuperadas": huerfanas, "stopped": [t["id"] for t in by("stopped")],
                 "workspace": self.cfg["workspace"], "avisos": self.avisos(),
-                "cola": {"bugfix": len(bugfix), "qa": len(qa), "new": len(nuevas)}}
+                "e2e": self.cfg["e2e"]["activo"],
+                "cola": {"bugfix": len(bugfix), "qa": len(qa), "new": len(nuevas), "e2e": len(e2e)}}
 
     # -- worktree del QA
     def qa_worktree(self, clave):
@@ -681,6 +732,167 @@ class Board:
         cache = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
         nombre = repo["nombre"] or os.path.basename(repo["path"])
         return os.path.join(cache, "autopilot-kit", "qa", "%s-%s" % (nombre, clave))
+
+    # -- E2E
+    @staticmethod
+    def e2e_worktree_path(repo, clave):
+        return cache_kit("e2e", "%s-%s" % (repo["nombre"] or os.path.basename(repo["path"]), clave))
+
+    def repos_e2e(self, clave):
+        """Repos que entran en la prueba E2E, en orden: los de la tarea (en su rama), y los que hacen
+        falta para recorrer el flujo real (en su rama base): los frontends que consumen un backend
+        tocado y el backend de un frontend tocado (E2E_CLIENTS)."""
+        tarea = self.repos_de_tarea(self.leer(clave)[2])
+        nombre = lambda r: r["nombre"] or os.path.basename(r["path"])
+        nombres = [nombre(r) for r in tarea]
+        out = [dict(r, en_tarea=True) for r in tarea]
+        if self.cfg["workspace"]:
+            clients = self.cfg["e2e"]["clients"]
+            for n in list(nombres):
+                for extra in clients.get(n, []) + [be for be, fs in clients.items() if n in fs]:
+                    if extra not in nombres and extra in self.cfg["repos"]:
+                        nombres.append(extra)
+                        out.append(dict(self.repo_de(extra), en_tarea=False))
+        return out
+
+    def e2e_worktree(self, clave):
+        """Una copia por repo de repos_e2e(), solo para el agente E2E (HEAD separado): la rama de la
+        tarea en los repos que toco, la base en los demas. Incluye como probarlo: tipo de repo,
+        plataformas, si la app sabe apuntar al backend local (E2E_API) y su .env.autopilot.e2e."""
+        import e2e as e2e_mod
+        import entorno
+        clave = clave.lower()
+        meta = self.leer(clave)[2]
+        rama = meta.get("rama") or clave
+        cfg = self.cfg["e2e"]
+        out = []
+        for r in self.repos_e2e(clave):
+            n = r["nombre"] or os.path.basename(r["path"])
+            if r["en_tarea"]:
+                ref = rama
+            else:
+                existe = lambda ref_: self.git(r["path"], "rev-parse", "--verify", "--quiet", ref_,
+                                               check=False).returncode == 0
+                ref = r["base"] if existe("refs/heads/%s" % r["base"]) else "origin/%s" % r["base"]
+            destino = self.e2e_worktree_path(r, clave)
+            if os.path.isdir(destino):
+                self.git(destino, "checkout", "--detach", "--force", ref)
+            else:
+                os.makedirs(os.path.dirname(destino), exist_ok=True)
+                self.git(r["path"], "worktree", "add", "--detach", destino, ref)
+            e2e_mod.olvidar_api(destino)  # copia nueva o reusada: sin override de API todavia
+            tipo = e2e_mod.tipo_repo(destino)
+            info = {"repo": n, "worktree": destino, "ref": ref, "en_tarea": r["en_tarea"], "repo_path": r["path"],
+                    "base": r["base"], "tipo": tipo,
+                    "head": self.git(destino, "rev-parse", "--short", "HEAD").stdout.strip()}
+            if tipo in ("flutter", "web"):
+                info["plataformas"] = cfg["platforms"].get(n) or (["web", "android"] if tipo == "flutter" else ["web"])
+            if tipo == "flutter":
+                info["api"] = cfg["api"].get(n)
+            if tipo in ("backend", "web"):
+                v = entorno.validar(destino, entorno.ARCHIVO_E2E)
+                info["entorno_e2e"] = {k: v[k] for k in ("estado", "recomendacion") if k in v}
+            out.append(info)
+        return out
+
+    def e2e_worktree_borrar(self, clave):
+        import e2e as e2e_mod
+        clave = clave.lower()
+        borrados = []
+        for r in self.repos_e2e(clave):
+            destino = self.e2e_worktree_path(r, clave)
+            matar_procesos_en(destino)  # backend, servidor web, emulador: todo lo que arranco ahi
+            e2e_mod.olvidar_api(destino)
+            if os.path.isdir(destino):
+                self.git(r["path"], "worktree", "remove", "--force", destino)
+                borrados.append(destino)
+            self.git(r["path"], "worktree", "prune", check=False)
+        return {"borrados": borrados}
+
+    RE_ESTADO_CRITERIO = re.compile(r"\b(NO CUMPLE|NO VERIFICABLE|CUMPLE)\b")
+
+    def validar_e2e(self, clave):
+        """Revisa el ultimo Reporte E2E antes de aprobar: cada criterio (#### ...) CUMPLE y con al
+        menos una captura que existe en el board, y cada plataforma esperada mencionada."""
+        clave = clave.lower()
+        _, _, meta, _, secs = self.leer(clave)
+        intento = int(meta.get("intento") or 0)
+        rep = secs.get("Reporte E2E", "")
+        bloques = re.split(r"(?m)^### Intento ", rep)
+        problemas, criterios = [], []
+        ultimo = bloques[-1] if len(bloques) > 1 else ""
+        if not ultimo:
+            return {"ok": False, "problemas": ["no hay Reporte E2E"], "criterios": []}
+        if not ultimo.startswith("%d " % intento) and not ultimo.startswith("%d(" % intento):
+            problemas.append("el ultimo Reporte E2E no es del intento actual (%d)" % intento)
+        partes = re.split(r"(?m)^#### ", ultimo)
+        for p in partes[1:]:
+            titulo = p.splitlines()[0].strip()
+            m = self.RE_ESTADO_CRITERIO.search(titulo)
+            estado = m.group(1) if m else None
+            imgs = re.findall(r"!\[[^\]]*\]\(([^)\s]+)\)", p)
+            existentes = [i for i in imgs if os.path.isfile(os.path.normpath(os.path.join(self.dir, "x", i)))]
+            criterios.append({"criterio": titulo, "estado": estado, "capturas": len(existentes)})
+            if estado != "CUMPLE":
+                problemas.append("criterio '%s': %s" % (titulo, estado or "sin estado (CUMPLE / NO CUMPLE / NO VERIFICABLE)"))
+            if not existentes:
+                problemas.append("criterio '%s': sin capturas (un criterio sin capturas no esta probado)" % titulo)
+        if not criterios:
+            problemas.append("el reporte no tiene criterios con el formato '#### <criterio>: CUMPLE'")
+        esperadas = set()
+        try:
+            import e2e as e2e_mod
+            for r in self.repos_e2e(clave):
+                n = r["nombre"] or os.path.basename(r["path"])
+                tipo = e2e_mod.tipo_repo(r["path"])
+                if tipo == "flutter":
+                    esperadas |= set(self.cfg["e2e"]["platforms"].get(n) or ["web", "android"])
+                elif tipo == "web":
+                    esperadas |= set(self.cfg["e2e"]["platforms"].get(n) or ["web"])
+        except Error:
+            pass
+        for plat in sorted(esperadas):
+            if not re.search(r"\b%s\b" % plat, ultimo, re.I):
+                problemas.append("no se menciona la plataforma %s (esperada por los frontends de la tarea)" % plat)
+        return {"ok": not problemas, "problemas": problemas, "criterios": criterios,
+                "plataformas_esperadas": sorted(esperadas)}
+
+    def avisos_e2e(self):
+        cfg = self.cfg["e2e"]
+        out = []
+        if cfg["invalido"] is not None:
+            out.append("E2E=%s no es valido: usa true o false. Se usa false (sin etapa E2E)" % cfg["invalido"])
+        pendientes = [c for e, c, _ in self.archivos() if e == "e2e"] if os.path.isdir(self.dir) else []
+        if not cfg["activo"]:
+            if pendientes:
+                out.append("hay tareas en e2e (%s) pero E2E=false: nadie las va a probar. Activa E2E=true o "
+                           "muevelas a done a mano" % ", ".join(pendientes))
+            return out
+        import e2e as e2e_mod
+        falta = e2e_mod.herramientas_faltantes()
+        if falta:
+            out.append("E2E=true pero faltan herramientas E2E: %s. Corre ~/.local/share/autopilot-kit/e2e-setup.sh "
+                       "(sin eso las tareas quedaran NO CERTIFICABLE en E2E)" % ", ".join(falta))
+        for n, a in sorted(cfg["api"].items()):
+            if "invalido" in a:
+                out.append("E2E_API.%s invalido: usa <archivo>|<regex de la linea>|<reemplazo con {API}>" % n)
+        for n, r in sorted(self.cfg["repos"].items()):
+            if not os.path.isdir(r["path"]):
+                continue
+            nombre = n or os.path.basename(r["path"])
+            tipo = e2e_mod.tipo_repo(r["path"])
+            if tipo == "flutter" and nombre not in cfg["api"]:
+                out.append("%s (Flutter): falta E2E_API.%s. Sin eso el E2E no puede apuntar la app al backend "
+                           "local y la deja NO CERTIFICABLE" % (nombre, nombre))
+            if tipo in ("backend", "web"):
+                import entorno
+                v = entorno.validar(r["path"], entorno.ARCHIVO_E2E)
+                if v["estado"] != "ok":
+                    out.append("%s: %s (%s). %s" % (nombre, entorno.ARCHIVO_E2E, v["estado"], v.get("recomendacion", "")))
+        if not e2e_mod.cuentas(self.cfg):
+            out.append("E2E=true pero no hay cuentas de prueba: crea %s junto a autopilot.env con "
+                       "E2E_<ROL>_USER / E2E_<ROL>_PASSWORD (solo cuentas de QA)" % e2e_mod.ARCHIVO_CUENTAS)
+        return out
 
     # -- git
     def git(self, repo, *args, check=True):
@@ -946,9 +1158,18 @@ USO = """uso: wi.sh <env> <comando> [args]
   criterio   <clave> <texto>
   intentos   <clave> <n>
   certificar <clave> <intento_nuevo>     qa -> validando, fija Intento
-  aprobar    <clave>                     validando -> done
+  aprobar    <clave>                     validando -> done (con E2E=true: -> e2e, la cola de pruebas E2E)
   rechazar   <clave> <feedback>          validando -> bug-fix
   reqa       <clave>                     -> qa, Intento a 0 (conserva el historial)
+  probar-e2e <clave>                     e2e -> probando-e2e (ocupa el puesto e2e)
+  e2e-worktree <clave>                   copias para el E2E: repos de la tarea (su rama) + los que
+                                         hacen falta para el flujo real (E2E_CLIENTS, en su base)
+  e2e-worktree-borrar <clave>            (mata lo que haya quedado corriendo: backend, web, emulador)
+  reporte-e2e <clave> <texto|-> [--imagenes <dir>]...  reporte del E2E con sus capturas
+  validar-e2e <clave>                    revisa el ultimo Reporte E2E (JSON): criterios CUMPLE con capturas
+  aprobar-e2e <clave>                    probando-e2e -> done, SOLO si validar-e2e da ok
+  rechazar-e2e <clave> <feedback>        probando-e2e -> bug-fix (Feedback de E2E)
+  re-e2e     <clave>                     -> e2e otra vez (p. ej. tras resolver un NO CERTIFICABLE)
   add-task   <task|bug> <numero> <prioridad> <titulo> <descripcion> <criterio> [repo]
                                          (en un workspace, repo es obligatorio: la carpeta del repo)
   check                                  avisos de configuracion (ramas base vacias, repos faltantes,
@@ -973,7 +1194,7 @@ USO = """uso: wi.sh <env> <comando> [args]
 <clave> = task-<numero> | bug-<numero>   (es tambien el nombre de la rama)"""
 
 MOVER = {"in-progress": "in-progress", "qa": "qa", "validando": "validando",
-         "bugfix": "bug-fix", "done": "done"}
+         "bugfix": "bug-fix", "done": "done", "probar-e2e": "probando-e2e"}
 
 
 def main(argv):
@@ -1055,8 +1276,34 @@ def main(argv):
     elif cmd == "aprobar":
         need(1)
         n = intento_actual(a[0])
+        destino = "e2e" if b.cfg["e2e"]["activo"] else "done"
+        b.modificar(a[0], destino, secs_append={
+            "Feedback de QA": "### Intento %d — APROBADO (%s)\n\nCertificado sin observaciones.%s"
+                              % (n, ahora(), " Pasa a pruebas E2E." if destino == "e2e" else "")})
+        print("ok -> %s" % destino)
+        return 0
+    elif cmd == "aprobar-e2e":
+        need(1)
+        v = b.validar_e2e(a[0])
+        if not v["ok"]:
+            raise Error("no se puede aprobar en E2E: %s" % "; ".join(v["problemas"]))
         b.modificar(a[0], "done", secs_append={
-            "Feedback de QA": "### Intento %d — APROBADO (%s)\n\nCertificado sin observaciones." % (n, ahora())})
+            "Feedback de E2E": "### Intento %d — APROBADO E2E (%s)\n\nProbado de punta a punta: %s."
+                               % (intento_actual(a[0]), ahora(), ", ".join(
+                                   "%s (%d captura/s)" % (c["criterio"], c["capturas"]) for c in v["criterios"]))})
+    elif cmd == "rechazar-e2e":
+        need(2)
+        b.modificar(a[0], "bug-fix", secs_append={
+            "Feedback de E2E": "### Intento %d — RECHAZADO EN E2E (%s)\n\n%s" % (intento_actual(a[0]), ahora(), a[1])})
+    elif cmd == "re-e2e":
+        need(1)
+        b.modificar(a[0], "e2e", secs_set={"Motivo de stopped": ""}, secs_append={
+            "Feedback de E2E": "### Re-E2E manual (%s)\n\nDe vuelta a la cola de pruebas E2E." % ahora()})
+    elif cmd == "validar-e2e":
+        need(1)
+        v = b.validar_e2e(a[0])
+        print(json.dumps(v, ensure_ascii=False, indent=2))
+        return 0 if v["ok"] else 4
     elif cmd == "rechazar":
         need(2)
         n = intento_actual(a[0])
@@ -1082,16 +1329,17 @@ def main(argv):
         return 0
     elif cmd == "sesion":
         need(2); b.modificar(a[0], meta_set={"sesion": a[1]})
-    elif cmd in ("notas-dev", "reporte-qa"):
+    elif cmd in ("notas-dev", "reporte-qa", "reporte-e2e"):
         need(2)
         texto = sys.stdin.read() if a[1] == "-" else a[1]
         if not texto.strip():
             raise Error("texto vacio para %s" % cmd)
         carpetas = [a[i + 1] for i, x in enumerate(a) if x == "--imagenes" and i + 1 < len(a)]
-        seccion = "Notas del desarrollador" if cmd == "notas-dev" else "Reporte de QA"
+        seccion = {"notas-dev": "Notas del desarrollador", "reporte-qa": "Reporte de QA",
+                   "reporte-e2e": "Reporte E2E"}[cmd]
         n = intento_actual(a[0])
-        texto = b.incrustar_imagenes(a[0].lower(), texto, carpetas,
-                                     "%s-intento%d" % ("coder" if cmd == "notas-dev" else "qa", n))
+        sub = "%s-intento%d" % ({"notas-dev": "coder", "reporte-qa": "qa", "reporte-e2e": "e2e"}[cmd], n)
+        texto = b.incrustar_imagenes(a[0].lower(), b.enlazar_videos(a[0].lower(), texto, sub), carpetas, sub)
         b.modificar(a[0], secs_append={seccion: "### Intento %d (%s)\n\n%s" % (n, ahora(), texto)})
     elif cmd == "coder-worktree-borrar":
         need(1); print(json.dumps(b.coder_worktree_borrar(a[0]), ensure_ascii=False)); return 0
@@ -1119,6 +1367,10 @@ def main(argv):
         need(1); print(json.dumps(b.qa_worktree(a[0]), ensure_ascii=False)); return 0
     elif cmd == "qa-worktree-borrar":
         need(1); print(json.dumps(b.qa_worktree_borrar(a[0]), ensure_ascii=False)); return 0
+    elif cmd == "e2e-worktree":
+        need(1); print(json.dumps(b.e2e_worktree(a[0]), ensure_ascii=False, indent=2)); return 0
+    elif cmd == "e2e-worktree-borrar":
+        need(1); print(json.dumps(b.e2e_worktree_borrar(a[0]), ensure_ascii=False)); return 0
     elif cmd == "plan":
         print(json.dumps(b.plan(recuperar="--recuperar" in a), ensure_ascii=False))
         return 0

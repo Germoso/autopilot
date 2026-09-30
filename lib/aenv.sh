@@ -11,16 +11,21 @@
 #  El .env.autopilot lo crea el HUMANO. Nadie mas lo crea, edita ni copia.
 #  Nunca espera para siempre: tiempo maximo COMMAND_TIMEOUT (autopilot.env, default 900 s).
 #
-#  uso: aenv.sh <repo o worktree> -- <comando> [args...]
+#  --e2e: lo usa el agente e2e-tester. Usa `.env.autopilot.e2e` (base de datos EXCLUSIVA de las
+#  pruebas E2E, distinta de la de .env.autopilot) y el tiempo maximo E2E_COMMAND_TIMEOUT (2400 s).
+#
+#  uso: aenv.sh [--e2e] <repo o worktree> -- <comando> [args...]
 # ============================================================
 set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+E2E=()
+[[ "${1:-}" == "--e2e" ]] && { E2E=(--e2e); shift; }
 REPO="${1:-}"; shift || true
 [[ "${1:-}" == "--" ]] && shift
-[[ -z "$REPO" || $# -eq 0 ]] && { echo "uso: aenv.sh <repo> -- <comando> [args...]" >&2; exit 2; }
+[[ -z "$REPO" || $# -eq 0 ]] && { echo "uso: aenv.sh [--e2e] <repo> -- <comando> [args...]" >&2; exit 2; }
 [[ -d "$REPO" ]] || { echo "aenv: no existe $REPO" >&2; exit 2; }
 
-VALIDACION="$(python3 "$DIR/entorno.py" "$REPO")"
+VALIDACION="$(python3 "$DIR/entorno.py" "$REPO" "${E2E[@]}")"
 ESTADO="$(python3 -c 'import json,sys;print(json.load(sys.stdin)["estado"])' <<<"$VALIDACION")"
 if [[ "$ESTADO" != "ok" ]]; then
   python3 -c '
@@ -33,8 +38,9 @@ fi
 
 while IFS= read -r -d '' k && IFS= read -r -d '' v; do
   export "$k=$v"
-done < <(python3 "$DIR/entorno.py" "$REPO" --exportar)
+done < <(python3 "$DIR/entorno.py" "$REPO" "${E2E[@]}" --exportar)
 export AUTOPILOT_ENTORNO=1
+[[ ${#E2E[@]} -gt 0 ]] && export AUTOPILOT_E2E=1
 
 # Nunca espera para siempre: COMMAND_TIMEOUT del autopilot.env (junto al repo o, en un workspace,
 # en la carpeta padre); default 900 s. Al vencer se le pide terminar y, 30 s despues, se lo fuerza.
@@ -45,8 +51,9 @@ import entorno, workitems
 repo = entorno.repo_principal(sys.argv[1])
 for env in (os.path.join(repo, "autopilot.env"), os.path.join(os.path.dirname(repo), "autopilot.env")):
     if os.path.isfile(env):
-        print(workitems.cargar_config(env)["vigia"]["timeout"])
+        c = workitems.cargar_config(env)
+        print(c["e2e"]["timeout"] if sys.argv[3] == "e2e" else c["vigia"]["timeout"])
         break
 else:
-    print(900)' "$REPO" "$DIR" 2>/dev/null)"
+    print(2400 if sys.argv[3] == "e2e" else 900)' "$REPO" "$DIR" "${E2E:+e2e}" 2>/dev/null)"
 cd "$REPO" && exec timeout --kill-after=30 "${LIMITE:-900}" "$@"

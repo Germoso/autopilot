@@ -47,8 +47,8 @@ REGLAS INVIOLABLES:
    - Antes de modificar un archivo (con el editor O desde la terminal), reservalo: `<wi.sh> <autopilot.env> reservar <clave> <ruta del archivo>` (en Claude Code el editor lo reserva solo; desde la terminal o en OpenCode, reservalo tu).
    - Si un archivo que necesitas ya lo tiene otra tarea (el editor te bloquea o `reservar` responde con "choques"): NO lo toques por otro camino, no commitees lo parcial, deshaz tus cambios sin commitear (`git checkout -- <archivo>`) y termina con `RESULTADO: EN ESPERA` y `CHOCA CON: <clave de la otra tarea>`. Tu tarea vuelve a la cola y se retoma, en tu mismo worktree, cuando la otra termine.
 
-SI LA TAREA VIENE DE 'bug-fix' (rechazo de QA):
-- El feedback del QA te dice que no cumple. Arregla SOLO eso.
+SI LA TAREA VIENE DE 'bug-fix' (rechazo de QA o de las pruebas E2E):
+- El feedback del QA (`Feedback de QA`) o del agente E2E (`Feedback de E2E` y el `Reporte E2E`, con los pasos y las capturas del flujo real que fallo) te dice que no cumple. Arregla SOLO eso. Si el rechazo es de E2E, abre sus capturas: muestran en que paso y en que plataforma (web o android) fallo.
 - No rediseñes, no mejores, no toques cosas que el feedback no menciona.
 - Si el feedback te parece equivocado, dilo en el resumen, pero arregla lo que puedas.
 - Si tras revisar el feedback el problema es de fondo y no del sintoma, SÍ explícalo: eso es información valiosa para el humano.

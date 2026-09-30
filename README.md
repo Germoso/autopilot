@@ -67,6 +67,8 @@ mi-proyecto/
     ├── in-progress/
     ├── qa/
     ├── validando/
+    ├── e2e/                      # QA aprobó; cola de pruebas E2E (solo con E2E=true)
+    ├── probando-e2e/
     ├── bug-fix/
     ├── stopped/
     ├── done/
@@ -230,7 +232,7 @@ konectame/                      <- abrís el cliente acá
 
 - Cada repo tiene **su propia rama base**. La rama de cada tarea se crea dentro de su repo.
 - azure-sync lee **un proyecto de Azure por repo** y le pone a cada tarea su `repo:`.
-- Los puestos son globales: **un coder y un QA** para todo el workspace (ver *Dos puestos en paralelo*).
+- Los puestos son globales: **un coder y un QA** para todo el workspace (ver *Puestos en paralelo*).
 
 ### Una tarea en varios repos
 
@@ -351,12 +353,13 @@ setsid nohup python3 ~/.local/share/autopilot-kit/azure-sync.py \
 
 ---
 
-## Dos puestos en paralelo
+## Puestos en paralelo
 
 | Puesto | Agente | Toma de | Mientras trabaja | Máximo |
 |---|---|---|---|---|
 | coder | `coder` | `bug-fix` > `new` | `in-progress` | `MAX_CODERS` |
 | QA | `qa-reviewer` | `qa` | `validando` | `MAX_QA` |
+| E2E (con `E2E=true`) | `e2e-tester` | `e2e` | `probando-e2e` | `MAX_E2E` |
 
 Mientras un coder desarrolla una tarea, el QA puede estar certificando otra.
 
@@ -476,6 +479,8 @@ Code, Obsidian o GitHub:
 - las que el **coder** genera o usa, en sus notas (`adjuntos/<clave>/coder-intentoN/`);
 - las **capturas del QA** (sus tests de widget), en su reporte (`adjuntos/<clave>/qa-intentoN/`).
   Se copian del worktree del QA antes de borrarlo, así no se pierden.
+- las **capturas de cada paso de las pruebas E2E** (web y Android) y sus videos, en el
+  `## Reporte E2E` (`adjuntos/<clave>/e2e-intentoN/`), en el paso que muestran.
 
 Cualquier ruta de imagen que un agente escriba en sus notas o su reporte se convierte en
 `![nombre](../adjuntos/...)`; si está fuera del board, primero se copia.
@@ -492,12 +497,76 @@ Cualquier ruta de imagen que un agente escriba en sus notas o su reporte se conv
   evidencia de ejecución), las herramientas usadas, **qué probó** (comandos, tests temporales y capturas), **cómo verificarlo manualmente de punta a
   punta** (preparación, pasos, resultado esperado, casos borde) y **puntos a tomar en cuenta**
   (regresiones, migraciones, configuración, datos...).
+- **`## Reporte E2E`** (por intento, con `E2E=true`): plataformas y ambiente, cada criterio con los
+  pasos del flujo real y **la captura de cada paso**, videos, hosts que la red bloqueó, cómo
+  repetirlo a mano. **`## Feedback de E2E`**: aprobado o rechazado, por intento.
+
+### Pruebas E2E: terminar de certificar (`e2e-tester`)
+
+Con `E2E=true`, lo que el QA aprueba no va a `done`: pasa a la cola `e2e`. El agente **`e2e-tester`**
+recorre **como una persona** el flujo de cada criterio, de punta a punta — app o BackOffice →
+backend de la rama → base de datos — en **web** (Playwright + Chromium) y en un **emulador Android**,
+y saca **capturas en cada paso** (y video). Veredicto:
+
+- `APROBADO` → `done`. `wi.sh aprobar-e2e` **se niega** si algún criterio no dice CUMPLE, no tiene
+  capturas o falta una plataforma esperada.
+- `RECHAZADO` → `bug-fix`, con el `Feedback de E2E` y las capturas del paso que falló; el coder corrige
+  y la tarea vuelve a pasar por QA y E2E (máximo 3 intentos en total).
+- `NO CERTIFICABLE` → `stopped` (falta herramienta, cuenta, `.env.autopilot.e2e`...). Cuando lo
+  resuelvas: `wi.sh <env> re-e2e <clave>`.
+
+**Nunca contra producción, también en E2E:**
+
+- Los **backends corren locales**, desde las copias E2E, con `aenv.sh --e2e`, usando
+  **`.env.autopilot.e2e`** (lo creas tú, como `.env.autopilot`): mismas reglas (BD con "qa" en el
+  nombre, nada de producción) y además una **base de datos exclusiva para E2E**, distinta de la de
+  `.env.autopilot` (las pruebas crean usuarios, reservas...). Si es la misma, se niega (`compartida`).
+  Incluye `PORT` (el puerto del backend local).
+- Las **apps Flutter** se apuntan a ese backend local con `e2e.sh api` (`E2E_API`: reemplaza la línea
+  de la URL en la copia E2E, nunca se commitea; la URL la pone el kit: `http://localhost:<PORT>` en
+  web y `http://10.0.2.2:<PORT>` en Android). Si alguien edita ese archivo después, `e2e.sh app` no
+  corre.
+- El **navegador** no resuelve ningún servidor salvo localhost (y las fuentes de Google): una llamada
+  a otro servidor falla y queda en `red-bloqueada.txt`. El **emulador** arranca **sin DNS**: solo
+  alcanza el backend local.
+- Apps, emulador y navegador solo por `e2e.sh`; el hook/permisos bloquean `flutter build/run/drive`,
+  `playwright` y `emulator` directos.
+
+**Cuentas de prueba:** en `.env.autopilot.e2e` junto a `autopilot.env`:
+`E2E_CLIENTE_USER=…`, `E2E_CLIENTE_PASSWORD=…`, `E2E_ADMIN_USER=…` (un par por rol; solo cuentas
+de QA que existan en la base E2E). El agente nunca las escribe en el reporte.
+
+**Para activarlo:**
+
+1. `~/.local/share/autopilot-kit/e2e-setup.sh` (una vez, sin sudo, ~6 GB en
+   `~/.local/share/autopilot-e2e`: Java 17, Android SDK + emulador + AVD `autopilot_e2e`, Playwright +
+   Chromium). No toca tu Flutter, tu Java ni `~/.android`. Si no tienes acceso a `/dev/kvm`:
+   `sudo usermod -aG kvm $USER`. Para quitarlo: `rm -rf ~/.local/share/autopilot-e2e`.
+2. Crea la base exclusiva (p. ej. `KonectameQADB_E2E`) con las cuentas de prueba, y los
+   `.env.autopilot.e2e` de cada backend y front web (el del BackOffice apunta su URL de API al
+   `http://localhost:<PORT>` del backend).
+3. Revisa en `autopilot.env` el bloque E2E que propone `/autopilot-init`:
+   ```sh
+   E2E=true
+   MAX_E2E=1                        # con emulador, 1 (RAM)
+   E2E_COMMAND_TIMEOUT=2400         # el primer build de Android es largo
+   E2E_CLIENTS.Konectame_App_Clientes_BE=Konectame_App_Clientes      # qué fronts consumen cada backend
+   E2E_CLIENTS.Konectame_BackOffice_BE=Konectame_BackOffice
+   E2E_PLATFORMS.Konectame_App_Clientes=web,android
+   E2E_PLATFORMS.Konectame_BackOffice=web
+   E2E_API.Konectame_App_Clientes=lib/config/config.dart|^final baseUrl = .*;$|final baseUrl = "{API}";
+   ```
+   Con `E2E_CLIENTS`, una tarea que solo toca un backend igual se prueba desde sus apps (en su rama
+   base), y una que solo toca una app levanta su backend.
+4. `wi.sh <env> check` no debe dar avisos de E2E. Reinicia `/autopilot`.
+
+Memoria: emulador (2 GB) + build de Android + backend pesan; con 8 GB de RAM deja `MAX_E2E=1`.
 
 ## Reglas de trabajo
 
 Fijadas en `SKILL.md`, se aplican sin que nadie las recuerde:
 
-- **Dos puestos en paralelo, una tarea cada uno:** 1 coder (`in-progress`) y 1 QA (`validando`).
+- **Puestos en paralelo, una tarea cada uno:** 1 coder (`in-progress`), 1 QA (`validando`) y, con `E2E=true`, 1 E2E (`probando-e2e`).
   `wi.sh` rechaza una segunda tarea en el mismo puesto.
 - **Una rama por workitem:** `task-<numero>` / `bug-<numero>` desde `BASE_BRANCH`.
 - **Nadie hace `push` ni `merge`** (ni `pull`, que mergea). Bloqueado por permiso/hook, no por instrucción.

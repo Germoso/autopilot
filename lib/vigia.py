@@ -3,7 +3,7 @@
 vigia.py — Vigilante periodico: procesos colgados, huerfanos y tareas atascadas.
 
 Lo corre el watcher cada WATCHDOG_INTERVAL segundos (no gasta tokens). Los agentes trabajan en
-sus worktrees (~/.cache/autopilot-kit/coder|qa/<repo>-<clave>), asi que cada proceso se asocia a
+sus worktrees (~/.cache/autopilot-kit/coder|qa|e2e/<repo>-<clave>), asi que cada proceso se asocia a
 su tarea por su carpeta de trabajo (/proc/<pid>/cwd) o la de un proceso padre.
 
   huerfanos   procesos de un worktree cuya tarea ya no esta en ese puesto (done, stopped,
@@ -34,7 +34,7 @@ import workitems as wi  # noqa: E402
 INTOCABLES = {"bash", "sh", "zsh", "fish", "dash", "ksh", "tmux", "screen", "vim", "nvim", "vi", "nano",
               "emacs", "less", "more", "code", "code-oss", "cursor", "claude", "opencode", "ssh", "sudo",
               "su", "login", "systemd", "watcher.sh"}
-PUESTO_DE = {"coder": "in-progress", "qa": "validando"}
+PUESTO_DE = dict(wi.PUESTOS)  # coder, qa, e2e (el emulador del E2E arranca en su copia: tambien se vigila)
 ESTADO = wi.cache_kit("vigia.json")
 GRACIA = int(os.environ.get("AUTOPILOT_VIGIA_GRACIA", "60"))  # s: un proceso recien nacido no es huerfano
 
@@ -73,7 +73,7 @@ def worktree_de(cwd):
     """(puesto, repo, clave, ruta) si cwd esta dentro de un worktree del kit; si no None."""
     borrado = cwd.endswith(" (deleted)")
     cwd = cwd[:-len(" (deleted)")] if borrado else cwd
-    for puesto in ("coder", "qa"):
+    for puesto in PUESTO_DE:
         raiz = os.path.realpath(wi.cache_kit(puesto)) + os.sep
         if cwd.startswith(raiz):
             nombre = cwd[len(raiz):].split(os.sep)[0]
@@ -208,7 +208,7 @@ def revisar(env, simular=False):
         if not puesto:
             reportadas.pop(t["id"], None)
             continue
-        rutas = [(b.coder_worktree_path if puesto == "coder" else b.qa_worktree_path)(
+        rutas = [{"coder": b.coder_worktree_path, "qa": b.qa_worktree_path, "e2e": b.e2e_worktree_path}[puesto](
             {"nombre": r["nombre"], "path": r["path"]}, t["id"]) for r in t.get("repos", [])]
         ult = max([ultima_actividad(r, t["archivo"]) for r in rutas] or [os.path.getmtime(t["archivo"])])
         ult = max([ult] + [v["desde"] for k, v in cpu_hist.items() if k.endswith(":" + t["id"])])

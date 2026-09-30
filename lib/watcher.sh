@@ -12,9 +12,10 @@
 #  (Claude Code: en segundo plano; OpenCode: como sesiones propias via oc_sesion.py).
 #  Leer el board es leer archivos locales: no hay red ni tokens.
 #
-#  Dos puestos en paralelo, con capacidad (PARALLEL=false -> 1 y 1; true -> MAX_CODERS y MAX_QA):
-#    coder (in-progress): bug-fix primero, despues new (Critical>High>Medium>Low)
-#    qa    (validando):   la cola qa
+#  Puestos en paralelo, con capacidad (PARALLEL=false -> 1 cada uno; true -> MAX_CODERS, MAX_QA, MAX_E2E):
+#    coder (in-progress):  bug-fix primero, despues new (Critical>High>Medium>Low)
+#    qa    (validando):    la cola qa
+#    e2e   (probando-e2e): la cola e2e (solo con E2E=true: lo que el QA aprobo)
 #  Retorna cuando hay trabajo para un puesto LIBRE (`acciones`) o cuando termino una sesion de
 #  OpenCode de un puesto (`terminadas`). Solo debe haber UN watcher corriendo a la vez.
 #
@@ -102,8 +103,10 @@ p = json.load(sys.stdin); c = p["cola"]
 o = p["ocupados"]
 k = p["capacidad"]
 f = lambda x: "%d/%d%s" % (len(o[x]), k[x], (" " + ",".join(o[x])) if o[x] else "")
-print("coder %s | qa %s | cola bugfix=%d qa=%d new=%d en_espera=%d stopped=%d" % (f("coder"), f("qa"),
-      c["bugfix"], c["qa"], c["new"], len(p["en_espera"]), len(p["stopped"])))' <<<"$plan")"
+e2e = (" | e2e %s" % f("e2e")) if p.get("e2e") else ""
+print("coder %s | qa %s%s | cola bugfix=%d qa=%d%s new=%d en_espera=%d stopped=%d" % (f("coder"), f("qa"), e2e,
+      c["bugfix"], c["qa"], (" e2e=%d" % c["e2e"]) if p.get("e2e") else "", c["new"], len(p["en_espera"]),
+      len(p["stopped"])))' <<<"$plan")"
   log " #$iter idle ($c). Espero ${POLL_INTERVAL}s."
   sleep "$POLL_INTERVAL"
 done

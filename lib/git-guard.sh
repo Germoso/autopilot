@@ -14,6 +14,9 @@
 #    todos        push, merge, pull (hace merge), gh pr merge
 #    coder        + rebase, borrar ramas, reset --hard, switch/checkout -b
 #    qa           + commit, add, switch, checkout, reset, stash, rebase, borrar ramas
+#    e2e          lo mismo que qa y ademas: apps Flutter (run/drive/build/install/integration_test),
+#                 emulador y Playwright SOLO via e2e.sh (que las apunta al backend local y corta
+#                 la red a produccion)
 # ============================================================
 MODE="${1:-todos}" exec python3 -c '
 import json, os, re, shlex, sys
@@ -63,6 +66,8 @@ EXTRA = {
     "coder": {"rebase"},
     "qa": {"rebase", "commit", "add", "switch", "checkout", "reset", "stash", "cherry-pick", "revert", "am", "apply", "restore", "rm", "mv"},
 }
+EXTRA["e2e"] = EXTRA["qa"]
+AGENTES = ("coder", "qa", "e2e")
 
 def motivo(argv):
     if len(argv) >= 3 and os.path.basename(argv[0]) == "gh" and argv[1:3] == ["pr", "merge"]:
@@ -72,7 +77,7 @@ def motivo(argv):
         return None
     if sub in BASE or sub in EXTRA.get(mode, set()):
         return "git " + sub
-    if mode in ("coder", "qa"):
+    if mode in AGENTES:
         if sub == "branch" and any(a in ("-d", "-D", "--delete", "-m", "-M", "--move") for a in args):
             return "git branch " + " ".join(args)
         if sub == "reset" and "--hard" in args:
@@ -106,8 +111,8 @@ def ambiente(argv):
     if not argv:
         return None
     prog = os.path.basename(argv[0])
-    if prog == "aenv.sh":
-        return None                                   # envuelto: aenv.sh valida .env.autopilot
+    if prog in ("aenv.sh", "e2e.sh"):
+        return None                                   # envuelto: validan .env.autopilot(.e2e) / API local
     if re.search(r"(^|/)migrat|(^|/)seed", " ".join(argv[:2]), re.I):
         return "migraciones o seeds"
     if prog in ("npm", "yarn", "pnpm"):
@@ -148,6 +153,44 @@ def env_escritura(argv, crudo):
     return None
 
 
+def sin_envoltorio(argv):
+    while argv and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", argv[0]):
+        argv = argv[1:]
+    for w in ("env", "command", "sudo", "exec", "nohup", "time", "timeout"):
+        if argv and argv[0] == w:
+            argv = argv[1:]
+            while argv and (argv[0].startswith("-") or re.match(r"^\d+[smh]?$", argv[0])):
+                argv = argv[1:]
+    return argv
+
+
+def e2e_directo(argv):
+    """Modo e2e: lo que corre una app, el emulador o el navegador va SOLO por e2e.sh."""
+    argv = sin_envoltorio(argv)
+    if not argv:
+        return None
+    prog = os.path.basename(argv[0])
+    if prog == "e2e.sh":
+        return None
+    if prog == "aenv.sh" and "--" in argv:           # aenv.sh es para backends y fronts web, no para esto
+        return e2e_directo(argv[argv.index("--") + 1:])
+    if prog == "fvm" and len(argv) > 1 and argv[1] == "flutter":
+        argv, prog = argv[1:], "flutter"
+    sub = argv[1] if len(argv) > 1 else ""
+    if prog in ("flutter", "dart") and (sub in ("run", "drive", "build", "install", "attach")
+                                        or any("integration_test" in x for x in argv[2:])):
+        return "%s %s" % (prog, sub)
+    if prog in ("emulator", "qemu-system-x86_64") or re.search(r"playwright", " ".join(argv)):
+        return prog if prog != "npx" else "npx playwright"
+    if prog == "adb":
+        resto = argv[1:]
+        while resto and resto[0].startswith("-"):
+            resto = resto[2:] if resto[0] in ("-s", "-t", "-H", "-P", "-L") else resto[1:]
+        if resto and resto[0] in ("install", "install-multiple", "emu"):
+            return "adb %s" % resto[0]
+    return None
+
+
 def revisar(c, prof=0):
     for argv in partes(c):
         # bash -c "..." / sh -c / eval "...": se revisa lo de adentro
@@ -161,7 +204,17 @@ def revisar(c, prof=0):
             if m: return m
         m = motivo(argv)
         if m: return m
-        if mode in ("coder", "qa"):
+        envuelto = sin_envoltorio(argv)
+        if envuelto and os.path.basename(envuelto[0]) in ("aenv.sh", "e2e.sh") and "--" in envuelto:
+            m = motivo(envuelto[envuelto.index("--") + 1:])   # aenv.sh -- git push: sigue prohibido
+            if m: return m
+        if mode == "e2e":
+            d = e2e_directo(argv)
+            if d:
+                return ("`%s`: en E2E las apps, el emulador y el navegador se corren SOLO con "
+                        "`~/.local/share/autopilot-kit/e2e.sh` (apunta la app al backend local y corta la red a "
+                        "cualquier otro servidor). Ver `e2e.sh --help`" % d)
+        if mode in AGENTES:
             e = env_escritura(argv, c)
             if e:
                 return ("`%s`: los archivos .env* los define el humano (.env.autopilot); ningun agente los crea, "
@@ -185,7 +238,7 @@ if re.search(r"\bgit\b[^;&|]*\bcommit\b|\bgh\s+pr\s+(create|edit)\b", cmd) and A
 
 m = revisar(cmd)
 if m:
-    if "aenv.sh" in m:
+    if "aenv.sh" in m or "e2e.sh" in m:
         print("BLOQUEADO por el autopilot: " + m, file=sys.stderr)
     else:
         print("BLOQUEADO por el autopilot: %s no esta permitido (modo %s). "

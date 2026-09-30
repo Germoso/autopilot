@@ -19,6 +19,8 @@ Que hace:
   - nada entra al repo: en modo un repo ignora lo del kit en .git/info/exclude
   - prohibe push/merge al agente principal (OpenCode / Claude Code, los que esten instalados)
   - reporta avisos: ramas base vacias o inexistentes, herramientas y .env.autopilot
+  - propone la config E2E (E2E_CLIENTS, E2E_PLATFORMS, E2E_API) con E2E=false; si autopilot.env ya
+    existia y no tiene E2E=, le agrega ese bloque al final
 """
 import json
 import os
@@ -33,7 +35,7 @@ import workitems as wi  # noqa: E402
 
 PREFERIDAS = ["develop", "dev", "main", "master"]
 IGNORAR = [".workitems/", "autopilot.env", "azure-sync.env", "*.secrets.env", ".claude/settings.local.json",
-           ".env.autopilot"]
+           ".env.autopilot", ".env.autopilot.e2e"]
 RE_AZURE = re.compile(r"dev\.azure\.com/([^/]+)/([^/]+)/_git/|([^/.]+)\.visualstudio\.com/([^/]+)/_git/")
 
 
@@ -107,8 +109,59 @@ def env_autopilot(det, bases):
           "", "# Vigilante (lo corre el watcher cada WATCHDOG_INTERVAL s, sin tokens): mata procesos huerfanos",
           "# y los colgados HUNG_MINUTES sin usar CPU; avisa de tareas sin actividad STALE_MINUTES.",
           "# COMMAND_TIMEOUT: tiempo maximo (s) de lo que corre por aenv.sh.",
-          "WATCHDOG=true", "WATCHDOG_INTERVAL=60", "HUNG_MINUTES=10", "STALE_MINUTES=45", "COMMAND_TIMEOUT=900", ""]
-    return "\n".join(L)
+          "WATCHDOG=true", "WATCHDOG_INTERVAL=60", "HUNG_MINUTES=10", "STALE_MINUTES=45", "COMMAND_TIMEOUT=900"]
+    return "\n".join(L) + "\n" + bloque_e2e(det)
+
+
+RE_BASEURL = re.compile(r"^((?:final|const|var|late final|static (?:final|const))\s+(?:String\s+)?"
+                        r"(?:baseUrl|baseURL|apiUrl|apiURL|kBaseUrl)\s*=)\s*(.+);\s*$")
+
+
+def api_flutter(path):
+    """Sugerencia de E2E_API para una app Flutter: la linea `final baseUrl = ...;` de lib/."""
+    for raiz, dirs, files in os.walk(os.path.join(path, "lib")):
+        dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+        for f in sorted(files):
+            if not f.endswith(".dart"):
+                continue
+            ruta = os.path.join(raiz, f)
+            for l in open(ruta, encoding="utf-8", errors="replace"):
+                m = RE_BASEURL.match(l.rstrip("\n"))
+                if m:
+                    pre = m.group(1)
+                    return "%s|^%s .*;$|%s \"{API}\";" % (os.path.relpath(ruta, path), re.escape(pre).replace("\\ ", " "), pre)
+    return None
+
+
+def bloque_e2e(det):
+    """Config E2E sugerida (apagada): que front consume que backend, plataformas y como apuntar las apps."""
+    import e2e
+    tipos = {r["nombre"]: e2e.tipo_repo(r["path"]) for r in det["repos"]}
+    backs = [n for n, t in tipos.items() if t == "backend"]
+    fronts = [n for n, t in tipos.items() if t in ("flutter", "web")]
+    L = ["", "# ---- Pruebas E2E (agente e2e-tester, despues del QA). Antes de activar: e2e-setup.sh, una base de",
+         "# datos EXCLUSIVA para E2E en .env.autopilot.e2e de cada backend/front web, y las cuentas de prueba",
+         "# (E2E_<ROL>_USER / E2E_<ROL>_PASSWORD) en .env.autopilot.e2e junto a este archivo. Ver README.",
+         "E2E=false", "MAX_E2E=1", "E2E_COMMAND_TIMEOUT=2400"]
+    if det["modo"] == "workspace" and backs:
+        L.append("# Que frontends consumen cada backend (revisalo: se dedujo por el nombre).")
+        usados = set()
+        for b in backs:
+            base = re.sub(r"[_-](BE|be|backend|Backend|api|API)$", "", b)
+            fs = [f for f in fronts if f == base]
+            usados |= set(fs)
+            L.append("E2E_CLIENTS.%s=%s" % (b, ",".join(fs)))
+        sueltos = [f for f in fronts if f not in usados]
+        if sueltos:
+            L.append("# Sin backend deducido (agregalos al E2E_CLIENTS que corresponda): %s" % ", ".join(sueltos))
+    for f in fronts:
+        L.append("E2E_PLATFORMS.%s=%s" % (f, "web,android" if tipos[f] == "flutter" else "web"))
+    for r in det["repos"]:
+        if tipos[r["nombre"]] == "flutter":
+            api = api_flutter(r["path"])
+            L.append("E2E_API.%s=%s" % (r["nombre"], api) if api else
+                     "# E2E_API.%s=<archivo>|<regex de la linea de la URL>|<reemplazo con {API}>" % r["nombre"])
+    return "\n".join(L) + "\n"
 
 
 def env_azure(det):
@@ -159,6 +212,10 @@ def init(carpeta, bases, sin_azure=False):
         hecho.append("autopilot.env ya existia (solo se actualizan las ramas base indicadas)")
         for k, v in bases.items():
             set_linea(ap, "REPO.%s" % k if k else "BASE_BRANCH", v)
+        if not re.search(r"(?m)^\s*E2E\s*=", open(ap, encoding="utf-8").read()):
+            with open(ap, "a", encoding="utf-8") as f:
+                f.write(bloque_e2e(det))
+            hecho.append("autopilot.env: agregada la config E2E sugerida (E2E=false; revisala antes de activar)")
     for k, v in bases.items():
         hecho.append("rama base %s= %s" % ("REPO.%s" % k if k else "BASE_BRANCH", v))
 
