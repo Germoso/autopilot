@@ -1,6 +1,6 @@
 ---
 name: autopilot-init
-description: Prepara la carpeta actual para el autopilot. Detecta si es un repo o un workspace con varios repos, propone la rama base de cada uno, pregunta, y crea autopilot.env, azure-sync.env y el board. Usar cuando el usuario diga /autopilot-init, "inicializa el autopilot", "prepara este proyecto" o similar, o cuando /autopilot o /azure-sync digan que el proyecto no participa y el usuario quiera sumarlo.
+description: Prepara la carpeta actual para el autopilot. Detecta si es un repo o un workspace con varios repos, propone la rama base de cada uno, pregunta, y crea autopilot.env (con la config E2E sugerida, apagada), azure-sync.env y el board. Usar cuando el usuario diga /autopilot-init, "inicializa el autopilot", "prepara este proyecto" o similar, o cuando /autopilot o /azure-sync digan que el proyecto no participa y el usuario quiera sumarlo.
 ---
 
 # Autopilot Init
@@ -43,8 +43,20 @@ I=~/.local/share/autopilot-kit/init.py
    repo y quedarán en `stopped`; di qué instalar; **falta o no es válido `.env.autopilot`** en
    un repo con `.env`: explica que lo crea el humano copiando `.env` y apuntando BD y URLs a QA/local,
    y que sin él no se ejecuta nada contra BD/API en ese repo).
+   Avisos de **E2E** (solo si `E2E=true`): faltan herramientas → correr
+   `~/.local/share/autopilot-kit/e2e-setup.sh`; falta o es `compartida` la `.env.autopilot.e2e` de un
+   backend/front web → la crea el humano con una base de datos **exclusiva** de E2E (distinta de la de
+   QA) y `PORT`; faltan cuentas → `E2E_<ROL>_USER` / `E2E_<ROL>_PASSWORD` en `.env.autopilot.e2e` junto
+   a `autopilot.env`; falta `E2E_API.<app>` → cómo apuntar esa app Flutter al backend local.
 
-6. **Siguiente paso**, en una línea:
+6. **Config E2E.** `init.py` deja en `autopilot.env` un bloque E2E **apagado** (`E2E=false`) con lo que
+   dedujo: `E2E_CLIENTS` (qué frontends consumen cada backend, por el nombre), `E2E_PLATFORMS` y
+   `E2E_API` (la línea de la URL del API de cada app Flutter). Si `autopilot.env` ya existía y no tenía
+   `E2E=`, se lo agrega al final. Muéstraselo al usuario, señala los frontends que quedaron sin
+   backend ("Sin backend deducido") y pregúntale cuál es. No lo actives tú: el humano pone `E2E=true`
+   cuando tenga las herramientas, la base E2E y las cuentas (ver README).
+
+7. **Siguiente paso**, en una línea:
    - Azure: el sprint está en `@current` (sprint actual del equipo `<Proyecto> Team`). El PAT se
      toma de `~/.config/autopilot-kit/ado-mcp.secrets.env` si existe; si no, explica dónde ponerlo
      (nunca lo pidas en el chat).
