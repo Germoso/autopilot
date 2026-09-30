@@ -8,6 +8,9 @@ levantarlo). Este comando los corre de nuevo, en copias propias, nunca contra pr
 
   test <clave>   los casos de esa tarea, en su rama (si ya no existe, en la rama base: ya se mergeo)
   test --all     regresion: todos los casos presentes en la rama base de cada repo
+  test smoke     pruebas de humo (tests/smoke/, rama smoke-tests si existe; si no, la base)
+  --web | --android   solo los casos E2E de esa plataforma
+Antes de correr nada hace el health check (salud.py) de lo que se va a usar: si algo bloquea, no corre.
   --qa | --e2e   solo un tipo        --ref <rama>   otra rama
 
 Casos QA: su `command` en la raiz del repo (con aenv.sh si needs.db). Casos E2E: levanta los
@@ -15,7 +18,7 @@ Casos QA: su `command` en la raiz del repo (con aenv.sh si needs.db). Casos E2E:
 local como el agente E2E y corre el caso con e2e.sh (navegador sin red externa / emulador sin DNS).
 Deja un reporte .md con capturas en <workspace>/test-results/ y sale con codigo 1 si algo fallo.
 
-uso: pruebas.py <autopilot.env> <clave>|--all [--qa|--e2e] [--ref <rama>]
+uso: pruebas.py <autopilot.env> <clave>|smoke|--all [--qa|--e2e] [--web|--android] [--ref <rama>] [--skip-check]
 """
 import datetime
 import glob
@@ -41,13 +44,15 @@ E2E_SH = os.path.join(AQUI, "e2e.sh")
 
 
 class Corrida:
-    def __init__(self, env_path, clave, solo, ref):
+    def __init__(self, env_path, clave, solo, ref, plataforma=None):
+        self.env_path = env_path
         self.b = wi.Board(wi.cargar_config(env_path))
         self.cfg = self.b.cfg
-        self.clave = clave            # None = --all
+        self.plataforma = plataforma  # None | web | android
+        self.clave = clave            # None = --all | "smoke" | task-N / bug-N
         self.solo = solo              # None | "qa" | "e2e"
         self.ref = ref
-        self.id = clave or "all-%d" % int(time.time())
+        self.id = clave if clave and clave != "smoke" else "all-%d" % int(time.time())
         self.copias = {}              # repo -> worktree
         self.procesos = []            # Popen de servicios (grupo propio)
         self.emulador = None
@@ -62,8 +67,9 @@ class Corrida:
     def ref_de(self, r):
         if self.ref:
             return self.ref
-        if self.clave and self.existe(r["path"], "refs/heads/%s" % self.clave):
-            return self.clave
+        rama = "smoke-tests" if self.clave == "smoke" else self.clave
+        if rama and self.existe(r["path"], "refs/heads/%s" % rama):
+            return rama
         return r["base"] if self.existe(r["path"], "refs/heads/%s" % r["base"]) else "origin/%s" % r["base"]
 
     def claves_en(self, r, ref):
@@ -121,6 +127,9 @@ class Corrida:
                     continue
                 for caso in lista:
                     if self.solo and caso.get("type") != self.solo:
+                        continue
+                    plat = (caso.get("needs") or {}).get("platform", "web")
+                    if self.plataforma and (caso.get("type") != "e2e" or plat != self.plataforma):
                         continue
                     out.append(dict(caso, repo=nombre, clave=c, wt=wt))
         return out
@@ -186,14 +195,47 @@ class Corrida:
         if urls.get(c["repo"]):
             env["BASE_URL"] = urls[c["repo"]]
         if needs.get("platform", "web") == "android":
-            e2e.aplicar_api(c["wt"], "android")
-            if not self.emulador:
-                self.emulador = e2e.emulador_arrancar(c["wt"])["serial"]
-            self.dependencias(c["wt"])
-            cmd = [E2E_SH, "app", c["wt"], "--"] + c["command"].replace("{device}", self.emulador).split()
+            return self.caso_android(c, env)
         else:
             cmd = [E2E_SH, "web", c["wt"], c["file"], "--project", c.get("project", "web-escritorio")]
         return self.correr(cmd, c["wt"], env, self.cfg["e2e"]["timeout"])
+
+    def caso_android(self, c, env):
+        """integration_test en el emulador. Lo que Flutter necesita para correrlo (dev-deps integration_test
+        y flutter_driver, y el driver en test_driver/) se agrega SOLO en esta copia temporal: el repo no cambia."""
+        wt = c["wt"]
+        e2e.aplicar_api(wt, "android")
+        self.dependencias(wt)
+        flutter = ["fvm", "flutter"] if os.path.exists(os.path.join(wt, ".fvmrc")) else ["flutter"]
+        pub = open(os.path.join(wt, "pubspec.yaml"), encoding="utf-8").read()
+        if "integration_test:" not in pub or "flutter_driver:" not in pub:
+            r = subprocess.run([E2E_SH, "app", wt, "--"] + flutter + ["pub", "add", "dev:integration_test:{\"sdk\":\"flutter\"}",
+                                                                  "dev:flutter_driver:{\"sdk\":\"flutter\"}"],
+                               cwd=wt, capture_output=True, text=True, timeout=600)
+            if r.returncode != 0:
+                return False, 0, "no se pudo agregar integration_test en la copia:\n" + r.stdout[-1500:] + r.stderr[-1500:]
+        os.makedirs(os.path.join(wt, "test_driver"), exist_ok=True)
+        shutil.copy2(os.path.join(AQUI, "e2e_driver.dart"), os.path.join(wt, "test_driver", "e2e_driver.dart"))
+        if not self.emulador:
+            self.emulador = e2e.emulador_arrancar(wt)["serial"]
+        defines = ["--dart-define=%s=%s" % (k, v) for k, v in e2e.cuentas(self.cfg).items()]
+        cmd = [E2E_SH, "app", wt, "--"] + flutter + ["drive", "--driver=test_driver/e2e_driver.dart",
+                                                     "--target=%s" % c["file"], "-d", self.emulador] + defines
+        return self.correr(cmd, wt, env, self.cfg["e2e"]["timeout"])
+
+    def salud(self):
+        """Health check de lo que se va a usar; None si se puede correr, o el codigo de salida."""
+        if self.solo == "qa":
+            return None
+        import salud
+        s = salud.Salud(self.env_path, self.clave or "all", self.plataforma)
+        items = s.correr()
+        if any(i["nivel"] == "error" for i in items):
+            print("Health check antes de correr:\n")
+            salud.imprimir(items)
+            print("\nNo se corrio nada. Resuelve lo de arriba (o usa --skip-check bajo tu responsabilidad).")
+            return 1
+        return None
 
     # -- todo
     def ejecutar(self):
@@ -277,12 +319,17 @@ def main(a):
     posicionales = [x for i, x in enumerate(resto) if not x.startswith("--") and (i == 0 or resto[i - 1] != "--ref")]
     if "--all" in resto:
         clave = None
-    elif posicionales and re.match(r"^(task|bug)-\d+$", posicionales[0].lower()):
+    elif posicionales and re.match(r"^((task|bug)-\d+|smoke)$", posicionales[0].lower()):
         clave = posicionales[0].lower()
     else:
-        print("indica una tarea (bug-123 / task-123) o --all", file=sys.stderr)
+        print("indica una tarea (bug-123 / task-123), smoke o --all", file=sys.stderr)
         return 2
-    c = Corrida(env_path, clave, solo, ref)
+    plataforma = "web" if "--web" in resto else "android" if "--android" in resto else None
+    c = Corrida(env_path, clave, solo, ref, plataforma)
+    if "--skip-check" not in resto:
+        r = c.salud()
+        if r is not None:
+            return r
     try:
         return c.ejecutar()
     finally:

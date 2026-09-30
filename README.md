@@ -186,11 +186,27 @@ backend (igual que `.env.autopilot`, con los cambios). Si existe, el E2E usa ese
 No tienes que cambiar las URLs de las apps ni del BackOffice: en E2E el kit las apunta solo al
 backend local.
 
-**5. Comprobar y arrancar:**
+**5. Comprobar y arrancar.** Desde la carpeta del proyecto:
 
 ```sh
-~/.local/share/autopilot-kit/wi.sh autopilot.env check    # no debe quejarse de nada de E2E
+~/.local/share/autopilot-kit/health-check
 ```
+
+Revisa **todo lo que hace falta antes de correr una prueba** y dice qué hacer con cada problema:
+herramientas, acceso al emulador (KVM), config E2E, `.env.autopilot` y puertos de cada backend,
+cuentas de prueba, apps que no compilan en Linux (imports con mayúsculas), apps que no soportan web,
+y qué servidores de producción se van a bloquear. ✅ ok · ⚠️ aviso · ❌ bloquea.
+
+```
+❌ compila   Konectame_App_Clientes (dev): imports que no existen en Linux: …/AddPhoneNumber.dart
+             → corregir las mayusculas del import en el repo
+⚠️  kvm       estas en el grupo kvm pero esta sesion aun no lo ve; el kit usa `sg kvm` solo
+✅ produccion internet abierto; se bloquean: konectame-be-main.azurewebsites.net, …
+```
+
+Variantes: `health-check bug-37269` (solo lo que usan los casos de esa tarea), `--android` / `--web`,
+`--deep` (además arranca el emulador y Chromium). `run-tests` y el agente E2E lo corren solos antes
+de empezar: si hay algo ❌, no ejecutan nada.
 
 Luego `/autopilot`. Las tareas aprobadas por el QA pasan por E2E antes de llegar a `done`.
 
@@ -206,9 +222,12 @@ Luego `/autopilot`. Las tareas aprobadas por el QA pasan por E2E antes de llegar
 Los `.env`, `.env.local`, `.env.qa`… de tu equipo el autopilot no los usa para correr nada.
 
 **Cómo protege producción:** los backends corren en tu máquina contra la base de QA (o la que
-pongas en `.env.autopilot.e2e`), el kit apunta las apps y el BackOffice a ese backend local, y el
-navegador y el emulador **no pueden llegar a ningún otro servidor** (si la app lo intenta, queda
-anotado en el reporte). Las pruebas crean datos en esa base (usuarios, órdenes…).
+pongas en `.env.autopilot.e2e`) y el kit apunta las apps y el BackOffice a ese backend local. El
+navegador y el emulador **tienen internet** (íconos, imágenes, Google…), pero **los servidores de
+producción del proyecto están bloqueados**. El kit los detecta solo, en cualquier proyecto: los
+destinos de los `.env` reales que no son locales ni de QA, y las URLs del config de la app (p. ej.
+`baseUrlMain`). Para agregar otros: `E2E_BLOCK_HOSTS=host1,host2` en `autopilot.env`. Si la app intenta
+llegar a uno, se rechaza y queda anotado en el reporte. Las pruebas crean datos en la base de QA.
 
 ---
 
@@ -226,6 +245,14 @@ tests/
 └── services.json                cómo levantar este repo para los casos E2E
 ```
 
+Casos E2E de apps Flutter en Android: `tests/<tarea>/<nombre>_flow.dart` (un `integration_test`).
+En el repo **solo** queda ese archivo: lo que Flutter necesita para correrlo (`integration_test` en
+`pubspec.yaml`, el driver) lo agrega `run-tests` en su copia temporal.
+
+**Pruebas de humo** (no son de una tarea, p. ej. "el cliente puede iniciar sesión"): en
+`tests/smoke/`, guardadas en una rama **`smoke-tests`** de cada repo que tú mergeas. Se guardan con
+`wi.sh autopilot.env smoke-save <copia>` y se corren con `run-tests smoke`.
+
 - **No dejan rastro del sistema** (nada dice "autopilot" ni usa el kit) y **no cambian nada del
   proyecto**: tienen nombres que `npm test` / `flutter test` no toman solos. Si un caso no cumple
   eso, no se guarda y queda el aviso en la tarea.
@@ -236,7 +263,8 @@ Para correrlos otra vez, desde la carpeta del proyecto:
 ```sh
 K=~/.local/share/autopilot-kit
 $K/run-tests bug-37269          # los de una tarea (QA + E2E), en su rama
-$K/run-tests bug-37269 --e2e    # solo E2E (o --qa)
+$K/run-tests bug-37269 --e2e    # solo E2E (o --qa); --android / --web: solo esa plataforma
+$K/run-tests smoke              # pruebas de humo
 $K/run-tests --all              # regresión: todos los guardados, en la rama base de cada repo
 ```
 
@@ -255,7 +283,7 @@ apaga todo y deja un **reporte con capturas** en `test-results/`. Si algo falla,
 | Nada avanza | ¿Está corriendo `/autopilot`? Si cerraste el cliente, lánzalo otra vez |
 | Algo se colgó | El vigilante mata lo que lleva 10 min sin hacer nada y avisa de tareas atascadas |
 | ¿Qué le falta a mi proyecto? | `wi.sh autopilot.env check` |
-| ¿Qué le falta al E2E? | `~/.local/share/autopilot-kit/e2e.sh doctor` |
+| ¿Qué le falta al E2E? | `~/.local/share/autopilot-kit/health-check` |
 
 ---
 

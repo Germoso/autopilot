@@ -537,9 +537,15 @@ y saca **capturas en cada paso** (y video). Veredicto:
   `E2E_API.<front>=env:VITE_API_BASE_URL,VITE_WEBSOCKET_URL`, `aenv.sh --e2e` reemplaza esas
   variables por `http://localhost:<PORT>` (conserva la ruta; `https`→`http`, `wss`→`ws`). Sin
   `E2E_API`, el front usa la API de su `.env.autopilot` (QA, no el backend de la tarea).
-- El **navegador** no resuelve ningún servidor salvo localhost (y las fuentes de Google): una llamada
-  a otro servidor falla y queda en `red-bloqueada.txt`. El **emulador** arranca **sin DNS**: solo
-  alcanza el backend local.
+- **Internet abierto, producción bloqueada.** `e2e.py hosts_produccion` saca, para cualquier proyecto,
+  los servidores de producción: destinos (URLs/hosts) de los `.env` reales de cada repo que no son local
+  ni QA, URLs del archivo de `E2E_API` de cada app (p. ej. `baseUrlMain`) y `E2E_BLOCK_HOSTS`; nunca los
+  que el humano permitió en `AUTOPILOT_PERMITIR`. `e2e.sh produccion <copia|autopilot.env>` los lista.
+  - Navegador: `--host-resolver-rules` con `MAP <host> ~NOTFOUND` para esos hosts; el resto resuelve.
+    Lo bloqueado queda en `red-bloqueada.txt`.
+  - Emulador: `-http-proxy` a un proxy del kit (`proxy_e2e.py`) que deja pasar todo, rechaza esos
+    hosts (por nombre y por las IPs a las que resuelven) y anota cada destino en
+    `.e2e-capturas/red-emulador-<serial>.log` (`OK` / `BLOQUEADO`). `10.0.2.2` va al backend local.
 - Apps, emulador y navegador solo por `e2e.sh`; el hook/permisos bloquean `flutter build/run/drive`,
   `playwright` y `emulator` directos.
 
@@ -592,6 +598,46 @@ $K/wi.sh <env> e2e-worktree <clave>               # copias E2E para probar tú m
 ```
 
 ---
+
+## Health check (health-check)
+
+`~/.local/share/autopilot-kit/health-check [<clave>|smoke|--all] [--web|--android] [--deep] [--json]`
+(o `wi.sh <env> health ...`). Busca `autopilot.env` en la carpeta actual o la de arriba. Sale con 1 si
+hay algo que bloquea. Con una clave o `smoke`, revisa solo los repos que usan esos casos (y sus
+servicios).
+
+| Área | Qué revisa | Nivel |
+|---|---|---|
+| herramientas | Java, Android SDK, emulador, AVD, Playwright, Chromium | ❌ |
+| kvm | acceso a `/dev/kvm`; en el grupo pero sesión vieja → usa `sg kvm` | ⚠️ / ❌ |
+| config | `E2E`, fronts sin `E2E_CLIENTS`, `E2E_API` encuentra 1 línea en la rama | ⚠️ / ❌ |
+| ambiente | `.env.autopilot(.e2e)` válido, `PORT` definido y distinto, puertos libres | ❌ / ⚠️ |
+| cuentas | `cuentas-e2e.env` y los roles de `needs.accounts` | ❌ |
+| compila | imports Dart con mayúsculas que no existen (Linux), `org.gradle.java.home` ajeno, Firebase sin web | ❌ / ⚠️ |
+| casos | `cases.json` válidos, `tests/services.json` de los servicios pedidos | ❌ |
+| produccion | servidores que se bloquean (aviso si no detecta ninguno) | ⚠️ |
+| deep | arranca y apaga el emulador; abre Chromium | ❌ |
+
+`run-tests` lo corre antes de ejecutar (salvo `--qa` o `--skip-check`) y no corre nada si hay ❌. El
+agente E2E lo corre como primer paso; el orquestador no lanza al agente si hay ❌ (la tarea va a
+`stopped` con el detalle).
+
+## Pruebas de humo (tests/smoke/)
+
+Casos que no son de una tarea (p. ej. login). Se escriben en `tests/smoke/` de una copia de trabajo y
+`wi.sh <env> smoke-save <copia>` los valida (mismas reglas que los de una tarea) y los commitea en la
+rama **`smoke-tests`** del repo (sale de su rama base; la mergea el humano). Un repo que solo aporta
+`tests/services.json` también se guarda así. Se corren con `run-tests smoke` (en `smoke-tests` si
+existe; si no, en la base) y entran en `run-tests --all` una vez mergeados.
+
+## Casos Android (Flutter)
+
+`tests/<clave>/<nombre>_flow.dart` (`integration_test`) con `needs.platform = "android"`. El runner,
+**solo en su copia temporal**, agrega `integration_test`/`flutter_driver` a `pubspec.yaml` y el driver
+del kit en `test_driver/`, apunta la app al backend local, arranca el emulador y corre
+`flutter drive --target=<archivo> -d <serial> --dart-define=E2E_...` (cuentas). Capturas con
+`binding.takeScreenshot`. Si un plugin nativo no responde en la prueba, el caso simula su canal con
+`setMockMethodCallHandler`.
 
 ## Casos de prueba guardados (tests/)
 
@@ -747,7 +793,9 @@ dotenvs/
 │   ├── git-guard.sh            # bloquea push/merge (hooks de Claude Code)
 │   ├── aenv.sh / entorno.py    # nunca contra produccion: corre con .env.autopilot(.e2e) validado
 │   ├── vigia.py                # vigilante: procesos colgados/huerfanos, tareas atascadas
-│   ├── e2e.sh / e2e.py         # agente E2E: apps al backend local, emulador sin DNS, navegador con red cortada
+│   ├── e2e.sh / e2e.py         # agente E2E: apps al backend local, internet abierto con produccion bloqueada
+│   ├── proxy_e2e.py            # proxy del emulador: deja pasar internet, rechaza produccion
+│   ├── salud.py, health-check  # health check E2E: que falta ANTES de correr
 │   ├── e2e-setup.sh            # instala Java, Android SDK + emulador + AVD, Playwright (una vez, sin sudo)
 │   ├── pruebas.py, run-tests   # vuelve a correr los casos guardados en los repos (tests/<clave>/)
 │   ├── e2e-playwright.config.cjs, e2e-pasos.cjs, e2e_driver.dart   # capturas en cada paso (web/Android)
