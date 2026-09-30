@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-oc_sesion.py — Subagentes en segundo plano para OpenCode, via la API de su servicio local.
+oc_sesion.py — Sesiones de OpenCode de los puestos, via la API de su servicio local.
 
-OpenCode puede correr varios subagentes en paralelo, pero el agente principal espera a que
-terminen. Para que el coder y el QA trabajen de verdad en paralelo (y el principal siga
-atendiendo el board), cada tarea corre en SU PROPIA SESION de OpenCode:
+Con OpenCode v2 el orquestador lanza cada puesto como subagente en segundo plano (task con
+background: true, una sesion hija) y registra su id con `wi.sh sesion`; de aca se usan estado,
+resultado y permisos. `lanzar` queda para OpenCode viejo, cuyo subagente bloquea al principal:
+ahi cada tarea corre en SU PROPIA SESION, creada por la API:
 
   lanzar    crea la sesion con el agente (coder / qa-reviewer) en la carpeta del
             proyecto, le manda el encargo (con imagenes adjuntas) y NO espera: /prompt agenda

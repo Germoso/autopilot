@@ -9,7 +9,8 @@
 #    nativas (subagent) o con wi.sh para los estados.
 #
 #  NO lanza agentes: solo lee el board. Los subagentes los lanza el agente principal
-#  (Claude Code: en segundo plano; OpenCode: como sesiones propias via oc_sesion.py).
+#  en segundo plano (Claude Code y OpenCode: subagentes background; en OpenCode su sesion se
+#  registra con `wi.sh sesion` y aca se detecta cuando termina).
 #  Leer el board es leer archivos locales: no hay red ni tokens.
 #
 #  Puestos en paralelo, con capacidad (PARALLEL=false -> 1 cada uno; true -> MAX_CODERS, MAX_QA, MAX_E2E):

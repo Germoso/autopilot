@@ -374,10 +374,13 @@ probando una tercera.
 
 - **Claude Code:** los subagentes corren en segundo plano; Claude Code avisa al agente principal
   cuando terminan.
-- **OpenCode:** cada tarea corre como **su propia sesión** de OpenCode, lanzada por la API del
-  servicio local (`oc_sesion.py`). Las ves en tu lista de sesiones y podés mirarlas en vivo. El
-  watcher avisa cuando una termina. Si cerrás OpenCode, esas sesiones siguen; al volver,
-  `/autopilot` las retoma. **Nunca te piden permiso:** cada sesión (y cada agente de OpenCode) puede
+- **OpenCode (v2):** igual que en Claude Code. Cada tarea corre como **subagente en segundo plano**
+  (herramienta `task` con `background: true`), que es una **sesión hija** de la del autopilot: la ves
+  anidada debajo y podés abrirla y mirarla en vivo. El principal no la espera; OpenCode le avisa cuando
+  termina, y el watcher también (el orquestador registra el id de la sesión con `wi.sh sesion`). Si
+  cerrás OpenCode, esas sesiones siguen en su servicio; al volver, `/autopilot` las retoma. En OpenCode
+  viejo, donde un subagente bloquea al principal, se usa `oc_sesion.py lanzar` (una sesión suelta por
+  la API). **Nunca te piden permiso:** cada sesión (y cada agente de OpenCode) puede
   usar sin preguntar su copia de trabajo (`~/.cache/autopilot-kit/<puesto>/`), el kit y `/tmp`; cualquier
   otro directorio externo se **deniega** al instante. Si igual queda un pedido pendiente, el watcher lo
   rechaza solo en su siguiente vuelta, le dice al agente que siga sin eso, lo anota en el log de la
