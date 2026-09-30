@@ -771,15 +771,100 @@ class Board:
             else:
                 os.makedirs(os.path.dirname(destino), exist_ok=True)
                 self.git(r["path"], "worktree", "add", "--detach", destino, rama)
-            out.append({"repo": r["nombre"] or os.path.basename(r["path"]), "worktree": destino, "rama": rama,
-                        "repo_path": r["path"], "base": r["base"],
-                        "head": self.git(destino, "rev-parse", "--short", "HEAD").stdout.strip()})
+            nombre = r["nombre"] or os.path.basename(r["path"])
+            info = {"repo": nombre, "worktree": destino, "rama": rama,
+                    "repo_path": r["path"], "base": r["base"],
+                    "head": self.git(destino, "rev-parse", "--short", "HEAD").stdout.strip()}
+            b = self.restaurar_borrador(clave, "qa", nombre, destino)
+            if b:
+                info["borrador"] = b
+            out.append(info)
         return out
+
+    # -- borradores: los tests de un QA/E2E que no aprobo se guardan y la proxima corrida parte de ellos
+    RE_PRUEBA = re.compile(r"(^|/)(tests|\.e2e|integration_test|test_driver)/|"
+                           r"(\.(spec|test|check)\.[cm]?[jt]sx?|_test\.dart|_check\.dart|_flow\.dart|\.flow\.cjs)$|(^|/)__qa")
+    RE_NO_BORRADOR = re.compile(r"(^|/)(node_modules|build|dist|coverage|\.dart_tool|\.qa-capturas|\.e2e-capturas)/|"
+                                r"(^|/)\.env")
+
+    def borrador_dir(self, clave, puesto):
+        return os.path.join(self.dir, "adjuntos", clave, "borradores", puesto)
+
+    def guardar_borrador(self, clave, puesto, copias):
+        """Copia las pruebas NUEVAS (no versionadas) de las copias del puesto al board. copias: [(repo, ruta)].
+        Solo el ultimo borrador por puesto; si esta corrida no dejo pruebas, se conserva el anterior."""
+        dst = self.borrador_dir(clave, puesto)
+        tmp = dst + ".nuevo"
+        shutil.rmtree(tmp, ignore_errors=True)
+        archivos, total = [], 0
+        for nombre, wt in copias:
+            if not os.path.isdir(wt):
+                continue
+            otros = self.git(wt, "ls-files", "--others", "--exclude-standard", "-z", check=False).stdout.split("\0")
+            for rel in sorted(x for x in otros if x):
+                p = os.path.join(wt, rel)
+                if self.RE_NO_BORRADOR.search(rel) or not self.RE_PRUEBA.search(rel) or os.path.islink(p) \
+                        or not os.path.isfile(p) or os.path.getsize(p) > 1024 * 1024:
+                    continue
+                total += os.path.getsize(p)
+                if total > 10 * 1024 * 1024:
+                    break
+                destino = os.path.join(tmp, nombre, rel)
+                os.makedirs(os.path.dirname(destino), exist_ok=True)
+                shutil.copy2(p, destino)
+                archivos.append("%s/%s" % (nombre, rel))
+        if not archivos:
+            shutil.rmtree(tmp, ignore_errors=True)
+            return None
+        meta = self.leer(clave)[2]
+        info = {"puesto": puesto, "intento": int(meta.get("intento") or 0), "fecha": ahora(),
+                "estado": self.buscar(clave)[0], "archivos": archivos}
+        escribir_atomico(os.path.join(tmp, "borrador.json"), json.dumps(info, ensure_ascii=False, indent=1))
+        shutil.rmtree(dst, ignore_errors=True)
+        os.rename(tmp, dst)
+        self.log("Borrador de pruebas guardado", "sistema", "nota", clave, clave, "-",
+                 "%s: %d archivo(s) para la proxima corrida" % (puesto, len(archivos)))
+        return info
+
+    def restaurar_borrador(self, clave, puesto, nombre, wt):
+        """Pone en la copia `wt` del repo `nombre` el ultimo borrador del puesto (sin pisar lo que exista)."""
+        src = os.path.join(self.borrador_dir(clave, puesto), nombre)
+        if not os.path.isdir(src):
+            return None
+        try:
+            info = json.load(open(os.path.join(self.borrador_dir(clave, puesto), "borrador.json")))
+        except (OSError, ValueError):
+            info = {}
+        puestos, saltados = [], []
+        for raiz, _, files in os.walk(src):
+            for f in files:
+                rel = os.path.relpath(os.path.join(raiz, f), src)
+                destino = os.path.join(wt, rel)
+                if os.path.exists(destino):
+                    saltados.append(rel)
+                    continue
+                os.makedirs(os.path.dirname(destino), exist_ok=True)
+                shutil.copy2(os.path.join(raiz, f), destino)
+                puestos.append(rel)
+        if not puestos and not saltados:
+            return None
+        return {"de_intento": info.get("intento"), "fecha": info.get("fecha"), "restaurados": sorted(puestos),
+                "ya_existian": sorted(saltados)}
+
+    def borrar_borrador(self, clave, puesto):
+        shutil.rmtree(self.borrador_dir(clave, puesto), ignore_errors=True)
 
     def qa_worktree_borrar(self, clave):
         clave = clave.lower()
         borrados = []
-        for r in self.repos_de_tarea(self.leer(clave)[2]):
+        repos = self.repos_de_tarea(self.leer(clave)[2])
+        copias = [(r["nombre"] or os.path.basename(r["path"]), self.qa_worktree_path(r, clave)) for r in repos]
+        # Aprobada por QA: sus pruebas ya estan en la rama. Si no: borrador para la proxima corrida.
+        if self.buscar(clave)[0] in ("e2e", "probando-e2e", "done", "reviewed"):
+            self.borrar_borrador(clave, "qa")
+        else:
+            self.guardar_borrador(clave, "qa", copias)
+        for r in repos:
             destino = self.qa_worktree_path(r, clave)
             matar_procesos_en(destino)  # que no quede nada corriendo (p. ej. un MongoDB en memoria)
             if os.path.isdir(destino):
@@ -854,6 +939,9 @@ class Board:
                 v = entorno.validar(destino, entorno.archivo_e2e(destino))
                 info["entorno_e2e"] = dict({k: v[k] for k in ("estado", "recomendacion") if k in v},
                                            archivo=os.path.basename(v["archivo"]))
+            b = self.restaurar_borrador(clave, "e2e", n, destino)
+            if b:
+                info["borrador"] = b
             out.append(info)
         return out
 
@@ -861,7 +949,13 @@ class Board:
         import e2e as e2e_mod
         clave = clave.lower()
         borrados = []
-        for r in self.repos_e2e(clave):
+        repos = self.repos_e2e(clave)
+        copias = [(r["nombre"] or os.path.basename(r["path"]), self.e2e_worktree_path(r, clave)) for r in repos]
+        if self.buscar(clave)[0] in ("done", "reviewed"):
+            self.borrar_borrador(clave, "e2e")
+        else:
+            self.guardar_borrador(clave, "e2e", copias)
+        for r in repos:
             destino = self.e2e_worktree_path(r, clave)
             matar_procesos_en(destino)  # backend, servidor web, emulador: todo lo que arranco ahi
             e2e_mod.olvidar_api(destino)
@@ -1430,7 +1524,10 @@ USO = """uso: wi.sh <env> <comando> [args]
   reporte-qa <clave> <texto|-> [--imagenes <dir>]...   reporte del QA (- = stdin)
                                          Las imagenes mencionadas en el texto (y las de --imagenes)
                                          se copian a adjuntos/<clave>/ y quedan como ![..](..) en el .md
-  qa-worktree        <clave>             copia de trabajo aislada para el QA (en la punta de la rama)
+  qa-worktree        <clave>             copia de trabajo aislada para el QA (en la punta de la rama). Si
+                                         hay borrador de pruebas de una corrida anterior, lo pone en la copia
+  borrador   <clave> [qa|e2e]            borrador de pruebas guardado (JSON): los tests de un QA/E2E que no
+                                         aprobo se guardan al borrar sus copias y se reusan en la proxima
   coder-worktree-borrar <clave>          quita los worktrees del coder y libera sus reservas
   reservar   <clave> <archivo>...        reserva archivos para la tarea (ruta en su worktree o relativa
                                          al repo principal); falla si otra tarea activa los tiene
@@ -1645,6 +1742,15 @@ def main(argv):
         need(1); print(json.dumps(b.qa_worktree_borrar(a[0]), ensure_ascii=False)); return 0
     elif cmd == "smoke-save":
         need(1); print(json.dumps(b.guardar_smoke(a[0]), ensure_ascii=False)); return 0
+    elif cmd == "borrador":
+        need(1)
+        out = {}
+        for puesto in ([a[1]] if len(a) > 1 else ["qa", "e2e"]):
+            try:
+                out[puesto] = json.load(open(os.path.join(b.borrador_dir(a[0].lower(), puesto), "borrador.json")))
+            except (OSError, ValueError):
+                out[puesto] = None
+        print(json.dumps(out, ensure_ascii=False, indent=2)); return 0
     elif cmd == "e2e-worktree":
         need(1); print(json.dumps(b.e2e_worktree(a[0]), ensure_ascii=False, indent=2)); return 0
     elif cmd == "e2e-worktree-borrar":

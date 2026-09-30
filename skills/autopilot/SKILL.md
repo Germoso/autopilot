@@ -275,7 +275,9 @@ Al pasar a `done` o `stopped`, el worktree del coder se borra solo y se liberan 
        la devuelve a la cola con `$W "$E" reqa <clave>`.
    - Cualquier otra respuesta, o un APROBADO con algún criterio que no sea CUMPLE → trátalo como
      `NO CERTIFICABLE`. Nunca apruebes por tu cuenta.
-3. `$W "$E" qa-worktree-borrar <clave>` (borra las copias de todos los repos).
+3. `$W "$E" qa-worktree-borrar <clave>` (borra las copias de todos los repos). Si la tarea no quedó
+   aprobada, **guarda solo** las pruebas del QA como borrador (`adjuntos/<clave>/borradores/qa/`) y la
+   próxima `qa-worktree` las vuelve a poner en la copia: el QA no las reescribe desde cero.
 
 ### D. Terminó el E2E (aviso, o `terminadas` con puesto `e2e`)
 
@@ -298,6 +300,7 @@ Al pasar a `done` o `stopped`, el worktree del coder se borra solo y se liberan 
      cuando el humano lo resuelva, `$W "$E" re-e2e <clave>`.
    - Cualquier otra respuesta → como `NO CERTIFICABLE`.
 3. `$W "$E" e2e-worktree-borrar <clave>` (borra las copias y mata backend, web y emulador que queden).
+   Si no quedó aprobada, guarda las pruebas del E2E como borrador (`borradores/e2e/`) para la próxima.
 
 ### E. El watcher retorna con `atascadas` (vigilante)
 
@@ -361,7 +364,8 @@ sin detenerse. Pídele que termine con su formato `NOTAS DEL DESARROLLADOR` + `R
 ### Encargo del QA
 
 **La ruta del archivo de la tarea** (`tarea.archivo`: léelo completo); clave y título; rama e
-intento; **cada worktree con su repo y su rama base** (lo que devuelve `qa-worktree`);
+intento; **cada worktree con su repo y su rama base** (lo que devuelve `qa-worktree`, **incluido su
+`borrador`** si lo trae: las pruebas de la corrida anterior, para que no las reescriba);
 descripción y criterio **textuales**; la lista de **repos modificados** (`tarea.repos_modificados`); las **`Notas del desarrollador`** (`tarea.notas_dev`); `tarea.adjuntos`.
 Pídele que termine con su formato `REPORTE DE QA` + `VEREDICTO`.
 
@@ -369,6 +373,7 @@ Pídele que termine con su formato `REPORTE DE QA` + `VEREDICTO`.
 
 **La ruta del archivo de la tarea** (`tarea.archivo`: léelo completo); clave, título, rama e
 intento; **cada copia E2E** tal como la devuelve `e2e-worktree` (repo, ruta, ref, si es de la tarea,
+`borrador` si lo trae,
 tipo, plataformas, `api`, `entorno_e2e`); criterio de aceptación **textual**; el **Reporte de QA**
 (`tarea.reporte_qa`, sobre todo "Cómo verificarlo manualmente"); las `Notas del desarrollador`;
 `tarea.adjuntos`; la ruta de `$E`; y el resultado de `$K/e2e.sh doctor` y de `$W "$E" check`
