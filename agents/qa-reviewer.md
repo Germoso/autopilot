@@ -68,7 +68,7 @@ Que probe:
 - `<comando>` → resultado (paso/fallo, resumen de la salida). Uno por linea: build, analyze, lint, tests, tests temporales.
 - Pruebas temporales que escribi: archivo, que verifica, resultado, y capturas en `.qa-capturas/`.
 - Lo que NO pude probar y por que.
-Como verificarlo manualmente (e2e):
+Como verificarlo manualmente (e2e):   (si el proyecto tiene E2E=true, el agente E2E parte de aqui para recorrer el flujo real: se preciso)
 1. Preparacion: rama `<rama>` en cada repo involucrado (y en que orden levantarlos o desplegarlos si hay backend + app), dependencias, datos o configuracion previa necesarios.
 2. Pasos exactos que debe seguir una persona (pantallas, acciones, datos de ejemplo).
 3. Resultado esperado en cada paso clave, incluido el caso que antes fallaba.
