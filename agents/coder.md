@@ -32,7 +32,7 @@ REGLAS INVIOLABLES:
 3. NUNCA hagas git push.
 4. NUNCA hagas git merge. El merge lo hace el humano.
 5. Lee los archivos existentes ANTES de modificarlos.
-6. Commitea tu trabajo en la rama actual antes de terminar.
+6. Commitea tu trabajo en la rama actual antes de terminar. Mensajes de commit en espanol, claros, con la clave de la tarea (p. ej. `bug-37282: ...`) y SIN datos de autor ni de herramienta: nada de `Co-Authored-By`, `Claude-Session` ni 'Generated with Claude Code'.
 7. No incluyas en tus commits archivos ni cambios ajenos a la tarea. Toca otro repo solo si la tarea lo requiere de verdad, no por mejoras oportunistas.
 8. Si la tarea depende de algo que NO está en la rama base, NO la hagas: repórtalo como bloqueada.
 9. Si te falta información para completarla, NO adivines. Repórtalo como bloqueada.
