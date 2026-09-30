@@ -3,7 +3,8 @@
 azure-sync.py — Importador ADITIVO de Azure DevOps al board de workitems.
 
 COPIA aditiva de /home/user/sync_workitems.py, adaptada para alimentar
-el board de carpetas + Markdown del autopilot (workitems.py, misma carpeta).
+el board del autopilot. Es una integracion EXTERNA: el autopilot no la conoce;
+solo usa la API publica del board (workitems.py del kit instalado).
 
 Cada Work Item se escribe como new/<tipo>-<numero>-<slug>.md, donde tipo es
 task o bug segun System.WorkItemType. <tipo>-<numero> es tambien el nombre de
@@ -48,15 +49,19 @@ import time
 import urllib.parse
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# El formato del board vive en un solo lugar: workitems.py, en esta misma carpeta.
-sys.path.insert(0, SCRIPT_DIR)
+# El formato del board vive en el kit del autopilot (workitems.py); se busca en
+# $AUTOPILOT_KIT, en el kit instalado o en el lib/ del repo (si se corre desde el repo).
+KIT = os.environ.get("AUTOPILOT_KIT") or os.path.join(
+    os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "autopilot-kit")
+for d in (KIT, os.path.join(SCRIPT_DIR, "..", "..", "lib")):  # el ultimo insertado gana
+    if os.path.exists(os.path.join(d, "workitems.py")):
+        sys.path.insert(0, os.path.abspath(d))
 try:
     import workitems as wi
 except ImportError:
     print(json.dumps({"action": "error",
-                      "message": "no encuentro workitems.py junto a azure-sync.py",
-                      "hint": "reinstala el kit con install.sh"}, ensure_ascii=False, indent=2))
+                      "message": "no encuentro workitems.py del autopilot (busque en %s)" % KIT,
+                      "hint": "instala el kit con install.sh o exporta AUTOPILOT_KIT"}, ensure_ascii=False, indent=2))
     sys.exit(2)
 
 # Prioridad de Azure (1=alta) -> board
@@ -84,7 +89,7 @@ def leer_env(path):
 def load_config(path):
     """Carga azure-sync.env, las fuentes y el PAT (entorno > secrets.env > PAT del MCP)."""
     if not os.path.exists(path):
-        die("No existe el archivo de config: %s" % path, "Crealo con /autopilot-init o install.sh --init")
+        die("No existe el archivo de config: %s" % path, "Copia azure-sync.env.example de la integracion a la raiz del proyecto")
     vals = leer_env(path)
     CFG["org"] = vals.get("AZURE_ORG", "")
     CFG["user"] = vals.get("AZURE_USER", "") or "pat"

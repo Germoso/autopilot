@@ -46,8 +46,12 @@ Si no existe, este proyecto **no participa** del sistema. No preguntes, no asuma
 - **La tarea vive en la base.** Los `.md` se regeneran solos en la carpeta de su estado para que el
   humano los lea; si el humano mueve o edita uno a mano, el cambio se importa. Tú **no los leas** (crecen
   con cada intento): usa `$W "$E" get <clave> [parte]`, y escribe siempre con `wi.sh`.
-- **Clave de la tarea = `<tipo>-<numero>`** (`task-123`, `bug-140123`). Es también el
-  **nombre de su rama**. Es lo que se le pasa a `wi.sh`.
+- **Clave de la tarea = `<tipo>-<id>`** (`task-123`, `bug-login_social`). El `<id>` lo da quien crea la
+  tarea: número o texto (minúsculas, dígitos y `_`). Es también el **nombre de su rama**. Es lo que se le
+  pasa a `wi.sh`.
+- **Cómo llegan las tareas es externo al autopilot**: `wi.sh add-task`, un `.md` en `.workitems/new/` o la
+  app web. Cualquier integración (un tracker, un script) usa esos mismos puntos de entrada; el autopilot
+  solo trabaja lo que hay en el board.
 - Cada tarea tiene estado, prioridad, intento, rama, repo(s), origen, descripción, criterio, adjuntos,
   repos modificados, resultado, motivo de stopped y un **historial por intento** (notas del desarrollador,
   reporte y feedback de QA, reporte y feedback de E2E).
@@ -121,7 +125,7 @@ de vigilar. En OpenCode las sesiones de los puestos sí siguen; al volver, `--in
 
 ## REGLAS DE GIT (sin excepciones)
 
-- **Una rama independiente por workitem.** Nombre: `task-<numero>` o `bug-<numero>`.
+- **Una rama independiente por workitem.** Nombre: `task-<id>` o `bug-<id>`.
   Ejemplo: `bug-140123`.
 - **Toda rama nueva sale de la rama base de SU repo**, definida en `autopilot.env`:
   `BASE_BRANCH=<rama>` si es un repo, o `REPO.<carpeta>=<rama>` por repo si es un workspace.
@@ -173,7 +177,7 @@ $W "$E" new         <clave>
 $W "$E" reviewed    <clave>                   # SOLO el humano: done -> reviewed
 $W "$E" stopped     <clave> "<motivo>"
 $W "$E" resultado   <clave> "<rama | commit | resumen>"
-$W "$E" add-task    <task|bug> <numero> <prioridad> "<titulo>" "<descripcion>" "<criterio>" [repo]   # repo obligatorio en workspace
+$W "$E" add-task    <task|bug> <id> <prioridad> "<titulo>" "<descripcion>" "<criterio>" [repo]   # repo obligatorio en workspace
 $W "$E" log <evento> <origen> <tipo> <tarea> <rama> <commit> <detalle>
 $W "$E" query [estado]
 $W "$E" sesion      <clave> <ses_id>          # OpenCode: sesión que trabaja la tarea
@@ -330,7 +334,7 @@ Relanza el watcher después.
 ### Avisos por Telegram
 
 Con `TELEGRAM=true`, los cambios de estado (coder, QA, E2E, rechazos, `done`, `stopped`), el vigía,
-azure-sync, run-tests y el arranque se avisan **solos** desde `wi.sh`: no los mandes tú. Tú avisas
+run-tests y el arranque se avisan **solos** desde `wi.sh`: no los mandes tú. Tú avisas
 cuando **necesitas una decisión del humano** que no es un `stopped` (p. ej. dos opciones válidas, una
 duda de alcance): `$K/telegram.sh send "<pregunta>" --alert`, y sigues con lo demás mientras responde.
 Si el watcher trae `"pausa": true`, el humano pausó con `/pausa`: no tomes tareas nuevas.
@@ -405,11 +409,11 @@ vez que corre el kit nuevo (o con `$W "$E" limpiar-imagenes [--simular]`).
 
 ### Adjuntos (capturas y videos)
 
-`tarea.adjuntos` trae las rutas absolutas de las imágenes de la tarea: capturas incrustadas en
-Azure, imágenes adjuntas y **fotogramas de los videos** (`<video>.frames/fNN.png`, en orden
+`tarea.adjuntos` trae las rutas absolutas de las imágenes de la tarea: capturas de la tarea
+original, imágenes adjuntas y **fotogramas de los videos** (`<video>.frames/fNN.png`, en orden
 temporal). Viven en `.workitems/adjuntos/<clave>/`. `tarea.videos` lista los videos originales:
 ningún modelo los ve directamente, por eso se extraen fotogramas. Si hay videos pero no
-fotogramas, falta ffmpeg: dilo en el resumen (`azure-sync.py --fotogramas` los genera después).
+fotogramas, dilo en el resumen: el agente no puede ver ese video.
 
 ## La máquina de estados
 
@@ -491,9 +495,6 @@ E2E; no commitea. Veredicto `APROBADO` (cada criterio CUMPLE con capturas, en ca
 Los bloqueos son reales, no instrucciones: en OpenCode son permisos `deny` del agente; en
 Claude Code, un hook `PreToolUse` (`$K/git-guard.sh`) que cancela el comando. `/autopilot-init`
 además prohíbe push/merge al agente principal.
-
-Ningún subagente usa el MCP de Azure DevOps: si hay que escribir en Azure, lo hace
-el orquestador.
 
 ## Log de actividad
 

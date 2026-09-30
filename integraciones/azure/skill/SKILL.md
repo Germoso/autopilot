@@ -28,13 +28,14 @@ Es **aditivo**, igual que el script original `sync_workitems.py`:
 **Nunca** mueve, borra ni sobrescribe una tarea existente. **Nunca** borra ni archiva.
 El script original `/home/user/sync_workitems.py` no se modifica.
 
-Usa `workitems.py` (misma carpeta), que define el formato del board.
+Es una integración **externa** al autopilot: solo usa la API pública del board (`workitems.py` del kit
+instalado), igual que `wi.sh add-task`. El autopilot no sabe que existe Azure.
 
 ## Arranque
 
 1. Verifica que existe `azure-sync.env` en la raíz del proyecto actual. Si no existe, para y
-   dile al usuario que este proyecto no importa de Azure (se prepara con
-   `/autopilot-init`). No lo busques en otro sitio ni lo adivines.
+   dile al usuario que este proyecto no importa de Azure (se prepara copiando
+   `azure-sync.env.example` de la integración; ver "Configurar un proyecto nuevo"). No lo busques en otro sitio ni lo adivines.
 2. Verifica que hay un PAT: variable `AZURE_DEVOPS_PAT`, `azure-sync.secrets.env` junto al
    config, o el del MCP (`~/.config/autopilot-kit/ado-mcp.secrets.env`), en ese orden. Si no hay, explica cómo configurarlo y para. **No lo pidas en el chat** ni lo
    escribas en un archivo versionado.
@@ -46,7 +47,7 @@ Usa `workitems.py` (misma carpeta), que define el formato del board.
 6. Si el script devuelve error, no reintentes a lo bruto: reporta el error.
 
 ```sh
-K=~/.local/share/autopilot-kit
+K=~/.local/share/autopilot-kit/integraciones/azure
 P=<PROYECTO>
 
 python3 "$K/azure-sync.py" --config "$P/azure-sync.env" --dry-run   # que haria, sin escribir
@@ -139,11 +140,11 @@ Un archivo `new/<tipo>-<id>-<slug>.md`:
 
 ## Configurar un proyecto nuevo
 
-```sh
-/autopilot-init        # desde el agente, en la carpeta del repo o del workspace
-# azure-sync.env queda armado desde los remotos (org, proyecto, sprint @current)
-# PAT: si ya configuraste el MCP, se reutiliza ~/.config/autopilot-kit/ado-mcp.secrets.env
-```
+1. El proyecto tiene que tener el autopilot preparado (`/autopilot-init`).
+2. Copia `~/.local/share/autopilot-kit/integraciones/azure/azure-sync.env.example` (o el del repo del kit,
+   `integraciones/azure/`) a la raíz del proyecto como `azure-sync.env` y completa org, proyecto y sprint
+   (`@current` = sprint actual del equipo). En un workspace, una línea `SYNC.<repo>=<proyecto>|<sprint>` por repo.
+3. PAT: si ya configuraste el MCP, se reutiliza `~/.config/autopilot-kit/ado-mcp.secrets.env`.
 
 `azure-sync.secrets.env` debe estar en `.gitignore`.
 

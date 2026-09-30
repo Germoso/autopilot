@@ -7,14 +7,13 @@ Todo el detalle técnico. Para empezar a usarlo, lee primero el [README](../READ
 1. [Cómo funciona: estados, ramas y reglas](#cómo-funciona)
 2. [Instalación y configurar un proyecto](#instalación)
 3. [autopilot.env: todas las variables](#autopilotenv)
-4. [Azure DevOps, adjuntos y el watcher](#uso)
+4. [Uso: entrada de tareas, adjuntos y el watcher](#uso)
 5. [Trabajo en paralelo, vigilante, producción, QA y E2E](#puestos-en-paralelo)
 6. [Telegram](#telegram)
 7. [Casos de prueba guardados y el comando `test`](#casos-de-prueba-guardados-tests)
 8. [Comandos de wi.sh](#comandos-de-wish)
-9. [MCP de Azure DevOps](#mcp-de-azure-devops-opcional)
-10. [Estructura del kit](#qué-incluye)
-11. [Seguridad](#seguridad)
+9. [Estructura del kit](#qué-incluye)
+10. [Seguridad](#seguridad)
 
 ---
 
@@ -64,8 +63,9 @@ mi-proyecto/
 - **`reviewed`**: cuando revisas una tarea de `done`, muévela a `reviewed/` (arrastrando el archivo
   o con `wi.sh <env> reviewed <clave>`). Así `done` queda solo con lo pendiente de revisar. El
   autopilot nunca mueve tareas a `reviewed` ni las vuelve a tocar.
-- **El nombre del archivo es `<tipo>-<numero>-<slug>.md`.** `<tipo>-<numero>` es la clave de
-  la tarea y **el nombre de su rama**.
+- **El nombre del archivo es `<tipo>-<id>-<slug>.md`.** `<tipo>-<id>` es la clave de
+  la tarea y **el nombre de su rama**. El `<id>` lo da quien crea la tarea: número (`140123`) o
+  texto (`login_social`), en minúsculas, dígitos y `_` (sin `-`, que separa la clave del slug).
 - **El board no está en git.** Si lo estuviera, cada vez que una rama cambia el
   tablero cambiaría con ella. `install.sh --init` lo agrega al `.gitignore`. Con
   `WORKITEMS_DIR` se puede poner en otra carpeta (un vault de Obsidian, una carpeta compartida).
@@ -80,7 +80,7 @@ prioridad: High
 intento: 1
 rama: bug-140123
 repo: -
-origen: azure:Konectame_App_Clientes
+origen: manual
 actualizado: 2026-09-29T14:02:00+00:00
 ---
 # Login falla con Google
@@ -115,7 +115,7 @@ El feedback de QA **se acumula por intento**: al llegar a `stopped`, el historia
 |---|---|
 | `tareas` | una fila por tarea: estado, metadatos, título, descripción, criterio, resultado, motivo |
 | `entradas` | una fila por bloque de historial: tipo (`notas_dev`, `reporte_qa`, `feedback_qa`, `reporte_e2e`, `feedback_e2e`), intento, fecha, título, texto |
-| `adjuntos` | cada archivo de `adjuntos/<clave>/`: ruta relativa a `.workitems/`, origen (azure/coder/qa/e2e/humano), intento, tipo, tamaño, sha256 |
+| `adjuntos` | cada archivo de `adjuntos/<clave>/`: ruta relativa a `.workitems/`, origen (original/humano/coder/qa/e2e), intento, tipo, tamaño, sha256 |
 | `log` | el log de actividad (también se sigue agregando a `log.md`) |
 | `meta` | versión del esquema y marca de migración |
 
@@ -140,7 +140,7 @@ el resto (`notas --ultimo`, `qa --ultimo`, `historial`...) en vez de leer el `.m
 
 ### Ramas
 
-- **Una rama independiente por workitem**: `task-<numero>` o `bug-<numero>` (ej. `bug-140123`).
+- **Una rama independiente por workitem**: `task-<id>` o `bug-<id>` (ej. `bug-140123`, `task-login_social`).
 - **Siempre desde la rama base de su repo**, definida en `autopilot.env` (obligatoria):
   `BASE_BRANCH=<rama>` en un repo, o `REPO.<carpeta>=<rama>` por repo en un workspace.
   Si está vacía o la rama no existe (ni local ni en `origin`), la tarea pasa a `stopped`:
@@ -161,13 +161,12 @@ Fijadas en `SKILL.md`, se aplican sin que nadie las recuerde:
 
 - **Puestos en paralelo, una tarea cada uno:** 1 coder (`in-progress`), 1 QA (`validando`) y, con `E2E=true`, 1 E2E (`probando-e2e`).
   `wi.sh` rechaza una segunda tarea en el mismo puesto.
-- **Una rama por workitem:** `task-<numero>` / `bug-<numero>` desde `BASE_BRANCH`.
+- **Una rama por workitem:** `task-<id>` / `bug-<id>` desde `BASE_BRANCH`.
 - **Nadie hace `push` ni `merge`** (ni `pull`, que mergea). Bloqueado por permiso/hook, no por instrucción.
 - **QA y E2E no tocan el código:** prueban en sus propias copias (worktree); solo escriben pruebas temporales ahí; no commitean ni cambian de rama.
 - **Nada se certifica sin probarlo:** sin compilación, tests y una prueba por criterio, el veredicto es `NO CERTIFICABLE` y la tarea queda en `stopped`. En E2E, un criterio sin capturas no está probado.
 - **Nunca contra producción:** solo `.env.autopilot` / `.env.autopilot.e2e` que crea el humano (local o QA), apps apuntadas al backend local, red cortada en navegador y emulador.
 - **Todo queda escrito en la tarea:** repos modificados, notas del desarrollador, reporte de QA y reporte E2E (con capturas), por intento.
-- **Los subagentes no usan el MCP de Azure.**
 - **`bug-fix` tiene prioridad** sobre trabajo nuevo: siempre se toma primero.
 - **3 intentos** de certificación (los rechazos de QA y de E2E suman juntos). Al cuarto, `stopped` con el historial.
 - **`stopped` es para el humano**, con motivo escrito. Nunca inventar.
@@ -181,10 +180,9 @@ git clone <tu-repo> dotenvs
 cd dotenvs
 ./install.sh                              # detecta OpenCode y Claude Code
 ./install.sh --claude                     # o solo uno
-./install.sh --with-ado-mcp codikasrl     # ademas registra el MCP de Azure DevOps
 ```
 
-No pisa nada que no haya generado el kit: si ya existe una skill, agente o MCP con el mismo
+No pisa nada que no haya generado el kit: si ya existe una skill o agente con el mismo
 nombre y no es del kit, lo deja y avisa. Reinstalar actualiza lo que sí es del kit.
 
 Para las pruebas E2E (opcional), además, una vez: `~/.local/share/autopilot-kit/e2e-setup.sh`
@@ -196,8 +194,8 @@ Para las pruebas E2E (opcional), además, una vez: `~/.local/share/autopilot-kit
 ./install.sh --uninstall
 ```
 
-Quita scripts, skills, agentes, comandos y el registro del MCP. Quedan intactos los proyectos
-(`.env`, board, guardas) y tu PAT en `~/.config/autopilot-kit/`. Las herramientas E2E
+Quita scripts, skills, agentes, comandos y las integraciones instaladas. Quedan intactos los proyectos
+(`.env`, board, guardas) y `~/.config/autopilot-kit/`. Las herramientas E2E
 (`~/.local/share/autopilot-e2e/`, ~6 GB) tampoco se tocan: bórralas con
 `rm -rf ~/.local/share/autopilot-e2e` si ya no las usas.
 
@@ -220,8 +218,7 @@ También sin agente: `./install.sh --init /ruta --base dev` (un repo) o
 
 Qué hace:
 
-- crea `autopilot.env`, `azure-sync.env` (org y proyecto deducidos del remoto de cada repo,
-  sprint `@current`) y el board `.workitems/`
+- crea `autopilot.env` y el board `.workitems/`
 - **no toca archivos de los repos**: en un repo, lo del kit se ignora solo en tu copia local
   (`.git/info/exclude`); en un workspace todo vive en la carpeta padre. No hay nada que commitear.
 - prohíbe push/merge también al agente principal (en cada cliente instalado)
@@ -236,14 +233,12 @@ Qué hace:
 konectame/                      <- abrís el cliente acá
 ├── autopilot.env               REPO.Konectame_App_Clientes=dev
 │                               REPO.Konectame_BackOffice=master ...
-├── azure-sync.env              SYNC.Konectame_App_Clientes=Konectame_App_Clientes|@current ...
 ├── .workitems/                 un solo board; cada tarea dice su repo (repo: <carpeta>)
 ├── Konectame_App_Clientes/     <- la rama bug-140123 se crea ACÁ, desde dev
 └── Konectame_BackOffice/
 ```
 
 - Cada repo tiene **su propia rama base**. La rama de cada tarea se crea dentro de su repo.
-- azure-sync lee **un proyecto de Azure por repo** y le pone a cada tarea su `repo:`.
 - Los puestos son globales: **un coder, un QA (y un E2E)** para todo el workspace (ver *Puestos en paralelo*).
 
 ### Una tarea en varios repos
@@ -267,9 +262,6 @@ Todas las variables: [autopilot.env](#autopilotenv).
 
 **La rama base se define por proyecto/repo** en su `autopilot.env`. Para cambiarla, editá la
 línea o volvé a correr `/autopilot-init`; no hace falta reinstalar nada.
-
-El PAT para `azure-sync.py` se busca en `AZURE_DEVOPS_PAT`, `azure-sync.secrets.env` y, si no,
-en el del MCP (`~/.config/autopilot-kit/ado-mcp.secrets.env`): con el MCP configurado no hace falta nada más.
 
 ---
 
@@ -308,66 +300,38 @@ Valores booleanos: solo `true` o `false`.
 
 ```sh
 /autopilot-init   # una vez por proyecto/workspace
-/azure-sync       # importa Work Items de Azure al board
 /autopilot        # arranca el bucle: espera tareas y las trabaja
 ```
 
-Crear una tarea a mano:
+### Entrada de tareas
+
+Cómo llegan las tareas es **externo al autopilot**: él solo trabaja lo que hay en `new/`. Hay tres
+puertas de entrada, las mismas para una persona o para una integración con un tracker:
+
+1. `wi.sh add-task` (valida el formato, el id único y, en un workspace, el repo):
 
 ```sh
 ~/.local/share/autopilot-kit/wi.sh ./autopilot.env \
   add-task bug 140123 High "Login falla con Google" "descripcion" "criterio" [repo]   # repo: obligatorio en workspace
 ```
 
-(o escribir el `.md` directamente en `.workitems/new/` respetando el nombre `<tipo>-<numero>-*.md`).
+   El `<id>` lo das tú: número o texto (`add-task task login_social Medium ...` → rama `task-login_social`).
+2. Un `.md` en `.workitems/new/` con el nombre `<tipo>-<id>-*.md` (se importa en el próximo comando).
+3. La app web (*Nueva tarea*), con adjuntos.
 
-En un proyecto sin el `.env`, ambos comandos dicen que el proyecto no participa
-y no hacen nada.
+Una integración puede además dejar archivos en `.workitems/adjuntos/<clave>/` (aparecen como *Tarea
+original*) y usar `origen:` para marcar de dónde vino la tarea (`manual` por defecto). Ejemplo completo:
+[integraciones/azure](../integraciones/azure/README.md) (Azure DevOps, opcional).
 
-### azure-sync
-
-Importa a `.workitems/new/` los work items **Task/Bug en estado New** del sprint. Solo crea,
-nunca modifica; no gasta tokens; deduplica por número (los IDs son únicos en la organización).
-
-`azure-sync.env` (lo genera `/autopilot-init` desde los remotos de git):
-
-```ini
-AZURE_ORG=codikasrl
-
-# Un repo
-AZURE_PROJECT=Konectame_App_Clientes
-AZURE_ITERATION=@current
-
-# Workspace: una fuente por repo -> SYNC.<carpeta>=<proyecto de Azure>|<sprint>
-SYNC.Konectame_App_Clientes=Konectame_App_Clientes|@current
-SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
-```
-
-- **Sprint:** `@current` = sprint actual del equipo `<Proyecto> Team` (se actualiza solo al
-  cambiar de sprint); `@current:<Equipo>` para otro equipo; o una ruta fija `Proyecto\Sprint X`.
-- En un workspace cada tarea se crea con su `repo:`. Cada `SYNC.<repo>` necesita su `REPO.<repo>`.
-- Si **cualquier** fuente falla, no se escribe nada en el board.
-- `--refrescar [clave…]` vuelve a traer de Azure la descripción, el criterio y los adjuntos de tareas
-  **ya importadas** (sin claves: todas) con el formato actual. No cambia su estado ni toca notas,
-  reportes ni feedback. Útil para tareas importadas antes de una mejora del importador.
-- `--dry-run` muestra qué importaría (con cuántas imágenes/videos); `--status` cuenta por fuente;
-  `--watch 60` en bucle; `--fotogramas` procesa videos ya descargados (tras instalar ffmpeg).
+En un proyecto sin `autopilot.env`, `/autopilot` dice que el proyecto no participa
+y no hace nada.
 
 ### Adjuntos: capturas y videos
 
-Cada work item importado trae sus adjuntos a `.workitems/adjuntos/<clave>/`:
-
-- **Imágenes** de la descripción o los pasos: se descargan y quedan referenciadas en su lugar en el
-  texto como `📷 <archivo> — imagen N` (no incrustadas; la app web las abre y las muestra en *Tarea original*).
-- **Adjuntos** del work item (imágenes, videos, otros), listados en la sección `## Adjuntos`.
-- **Videos:** con `ffmpeg` instalado se extraen hasta 12 fotogramas (primer cuadro + cambios de
-  escena, repartidos) en `<video>.frames/fNN.png`, porque ningún modelo ve video directamente.
-  Sin ffmpeg se guarda el video y queda la nota; después: `azure-sync.py --config ... --fotogramas`.
-- Límite de 50 MB por archivo. Un adjunto que falla no frena la importación: queda anotado.
-
-El autopilot le pasa las imágenes y fotogramas al coder, al QA y al agente E2E (`tarea.adjuntos`).
-
-**Requisito:** `sudo apt install ffmpeg` para los fotogramas.
+Los adjuntos de una tarea viven en `.workitems/adjuntos/<clave>/`: los de la tarea original (los deja
+quien la crea), los que subes desde la app web (`humano/`) y los que producen coder, QA y E2E en cada
+intento. El autopilot le pasa las imágenes y fotogramas (`<video>.frames/fNN.png`, porque ningún modelo
+ve video) al coder, al QA y al agente E2E (`tarea.adjuntos`).
 
 ### El watcher
 
@@ -378,13 +342,6 @@ El autopilot le pasa las imágenes y fotogramas al coder, al QA y al agente E2E 
   (en primer plano lo cortaría a los 10 minutos).
 
 No hay demonios que abran sesiones aparte. **Limitación:** si cerrás el cliente, deja de vigilar.
-
-`azure-sync` sí puede correr como demonio, porque no lanza agentes:
-
-```sh
-setsid nohup python3 ~/.local/share/autopilot-kit/azure-sync.py \
-  --config ./azure-sync.env --watch 60 &>/dev/null &
-```
 
 ---
 
@@ -646,7 +603,7 @@ con `wi.sh <env> telegram-setup`. `wi.sh <env> notify-test` manda una prueba; `w
 "<texto>" [--alert]` o `telegram.sh send ...` manda un aviso.
 
 - **Salida:** `Board.modificar` avisa cada cambio de estado; también `esperar`, el vigía (atascadas,
-  colgados), azure-sync (tareas nuevas), run-tests (resultado o health check que bloquea) y el watcher
+  colgados), run-tests (resultado o health check que bloquea) y el watcher
   (arranque con `--inicio`, y si lo detienen). Se manda en segundo plano (nunca bloquea `wi.sh`), se
   filtran los valores de todos los `.env*` y de `cuentas-e2e.env`, y los avisos repetibles (vigía,
   arranque) no se repiten en 10 minutos. `TELEGRAM_ALERTS_ONLY=true`: solo 🚨 (done, stopped, atascada,
@@ -825,7 +782,7 @@ uso: wi.sh <env> <comando> [args]
                                          vuelve a correr los casos guardados en los repos
                                          (tests/<clave>/cases.json); --all = regresion en las ramas base.
                                          Reporte en <workspace>/test-results/. Alias: run-tests
-  add-task   <task|bug> <numero> <prioridad> <titulo> <descripcion> <criterio> [repo]
+  add-task   <task|bug> <id> <prioridad> <titulo> <descripcion> <criterio> [repo]
                                          (en un workspace, repo es obligatorio: la carpeta del repo)
   check                                  avisos de configuracion (ramas base vacias, repos faltantes,
                                          herramientas, .env.autopilot)
@@ -849,12 +806,12 @@ uso: wi.sh <env> <comando> [args]
   esperar    <clave> <otra>              choco con <otra>: vuelve a la cola hasta que <otra> termine
   qa-worktree-borrar <clave>
 
-<clave> = task-<numero> | bug-<numero>   (es tambien el nombre de la rama)
+<clave> = task-<id> | bug-<id>   (es tambien el nombre de la rama; <id>: numero o texto, [a-z0-9_])
 ```
 
 Otros scripts en `~/.local/share/autopilot-kit/`: `aenv.sh [--e2e] <repo> -- <cmd>` (corre con
 `.env.autopilot` validado), `e2e.sh --help` (herramientas del agente E2E), `e2e-setup.sh`,
-`vigia.py <env> --simular`, `azure-sync.py --help`, `autopilot-web [--lan] [--port N]`.
+`vigia.py <env> --simular`, `autopilot-web [--lan] [--port N]`.
 
 ---
 
@@ -869,7 +826,7 @@ Muestra todos los proyectos donde se usó el kit: cada `wi.sh` registra su `auto
   de la pausa.
 - **Gestionar / editar:** cada botón llama a `wi.sh` (mismas validaciones, log y avisos de Telegram).
   Los adjuntos subidos van a `adjuntos/<clave>/humano/`; nunca se aceptan archivos `.env*`.
-- **Correr:** `health-check`, `run-tests` y `azure-sync` como trabajos en segundo plano (uno de cada
+- **Correr:** `health-check` y `run-tests` como trabajos en segundo plano (uno de cada
   tipo por proyecto a la vez), con su salida.
 
 **Seguridad:** sin `--lan` escucha solo en `127.0.0.1`. Con `--lan` escucha en la red y pide la clave
@@ -878,31 +835,6 @@ de `~/.config/autopilot-kit/web.env` (600, se genera sola); la sesión es una co
 sirve archivos dentro de `.workitems/` y `test-results/` (nunca la base ni `.env*`); los SVG se
 descargan en vez de mostrarse; la salida pasa por el mismo filtro de secretos que Telegram. Va sin
 HTTPS: úsala solo en una red de confianza.
-
----
-
-## MCP de Azure DevOps (opcional)
-
-Usa el [servidor local oficial de Microsoft](https://github.com/microsoft/azure-devops-mcp)
-(`@azure-devops/mcp`) con **autenticación por PAT**:
-
-- **No requiere admin** de la organización ni del tenant. El servidor *remoto*
-  (`mcp.dev.azure.com`) sí lo requiere para clientes como OpenCode y Claude Code (app registration +
-  admin consent en Entra ID), por eso no se usa.
-- Requisitos: Node 20+, organización respaldada por Entra ID, y un PAT personal con
-  **Work Items (Read & Write)**.
-- El PAT **nunca** va en la config del cliente: `ado-mcp.sh` lo lee de
-  `~/.config/autopilot-kit/ado-mcp.secrets.env` (o de `AZURE_DEVOPS_PAT`) y lo pasa al MCP.
-- Dominios cargados: `core work work-items`.
-
-Guardar el PAT (en tu terminal, no en el chat del agente):
-
-```sh
-(umask 077; read -rsp 'PAT: ' p; echo; printf 'AZURE_DEVOPS_PAT=%s\n' "$p" > ~/.config/autopilot-kit/ado-mcp.secrets.env)
-```
-
-La **importación** al board la sigue haciendo `azure-sync.py` (sin tokens, con dedup). El MCP
-sirve para consultar Azure o escribir de vuelta desde el agente principal; los subagentes no lo usan.
 
 ---
 
@@ -917,7 +849,6 @@ dotenvs/
 │   ├── web/, autopilot-web     # app web: ver, gestionar, crear y correr (stdlib + JS, sin CDN)
 │   ├── wi.sh                   # unica via de escritura del board + ramas
 │   ├── watcher.sh              # sensor: lee el board y retorna
-│   ├── azure-sync.py           # importador aditivo de Azure DevOps (uno o varios proyectos)
 │   ├── init.py                 # prepara un repo o workspace (lo usa /autopilot-init)
 │   ├── git-guard.sh            # bloquea push/merge (hooks de Claude Code)
 │   ├── aenv.sh / entorno.py    # nunca contra produccion: corre con .env.autopilot(.e2e) validado
@@ -928,18 +859,18 @@ dotenvs/
 │   ├── telegram.py, telegram.sh # avisos por Telegram y comandos desde el chat
 │   ├── e2e-setup.sh            # instala Java, Android SDK + emulador + AVD, Playwright (una vez, sin sudo)
 │   ├── pruebas.py, run-tests   # vuelve a correr los casos guardados en los repos (tests/<clave>/)
-│   ├── e2e-playwright.config.cjs, e2e-pasos.cjs, e2e_driver.dart   # capturas en cada paso (web/Android)
-│   └── ado-mcp.sh              # lanza el MCP de Azure DevOps con tu PAT
+│   └── e2e-playwright.config.cjs, e2e-pasos.cjs, e2e_driver.dart   # capturas en cada paso (web/Android)
 ├── skills/                     # -> carpeta de skills de cada cliente
 │   ├── autopilot/SKILL.md      # reglas, maquina de estados, arranque por cliente
-│   ├── autopilot-init/SKILL.md # /autopilot-init
-│   └── azure-sync/SKILL.md
+│   └── autopilot-init/SKILL.md # /autopilot-init
 ├── agents/                     # fuente unica de los subagentes
 │   ├── coder.md
 │   ├── qa-reviewer.md
 │   └── e2e-tester.md           # pruebas E2E en web y Android (con E2E=true)
 ├── clients/render.py           # genera agentes/comandos/guardas para cada cliente
-└── examples/proyecto/          # autopilot.env, azure-sync.env, cuentas-e2e.env, .env.autopilot.e2e (ejemplos)
+├── examples/proyecto/          # autopilot.env, cuentas-e2e.env, .env.autopilot.e2e (ejemplos)
+└── integraciones/              # opcionales y externas al autopilot: cargan tareas en el board
+    └── azure/                  # Azure DevOps: azure-sync.py, skill /azure-sync, MCP (instalar.sh aparte)
 ```
 
 ### Qué se instala en cada cliente
@@ -948,11 +879,10 @@ dotenvs/
 |---|---|---|
 | Skills | `~/.config/opencode/skills/` | `~/.claude/skills/` |
 | Subagentes | `~/.config/opencode/agents/*.md` | `~/.claude/agents/*.md` |
-| `/autopilot-init`, `/autopilot`, `/azure-sync` | comandos en `~/.config/opencode/commands/` | las propias skills |
+| `/autopilot-init`, `/autopilot` | comandos en `~/.config/opencode/commands/` | las propias skills |
 | Bloqueo de push/merge en subagentes | `permission.bash` con `deny` | hook `PreToolUse` → `git-guard.sh` |
 | Bloqueo en el agente principal (por proyecto) | `opencode.json` del proyecto | `.claude/settings.local.json` (deny + hook) |
 | Cómo espera el watcher | primer plano | segundo plano (`run_in_background`): Claude Code te re-invoca al terminar |
-| MCP de Azure DevOps | `opencode.json` → `ado-mcp.sh` | `claude mcp` (scope user) → `ado-mcp.sh` |
 | Herramientas E2E (opcional, `e2e-setup.sh`) | `~/.local/share/autopilot-e2e/` | la misma carpeta |
 
 Los agentes se escriben **una vez** en `agents/`; `clients/render.py` genera la versión de cada
@@ -967,4 +897,4 @@ cliente. Todo lo generado lleva una marca y `--uninstall` solo borra lo que tien
 - En los proyectos, `.env.autopilot`, `.env.autopilot.e2e` y `cuentas-e2e.env` los crea solo el humano; ningún agente
   los crea, edita ni imprime sus valores. En modo un repo se ignoran en `.git/info/exclude`.
 - Las cuentas de prueba del E2E son solo de QA y nunca se escriben en reportes ni capturas.
-- El PAT **nunca** se hardcodea: va en variable de entorno o en `*.secrets.env`.
+- Los tokens **nunca** se hardcodean: van en variable de entorno o en `*.secrets.env` / `~/.config/autopilot-kit/`.

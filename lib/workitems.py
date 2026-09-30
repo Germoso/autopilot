@@ -3,7 +3,7 @@
 workitems.py — El tablero de workitems en carpetas + Markdown.
 
 Unica implementacion del formato. La usan wi.sh (escritura), watcher.sh
-(lectura) y azure-sync.py (alta de tareas). Solo stdlib.
+(lectura) y cualquier integracion externa (alta de tareas). Solo stdlib.
 
 ESTRUCTURA
   $WORKITEMS_DIR/
@@ -15,8 +15,9 @@ ESTRUCTURA
   - Adjuntos en adjuntos/<clave>/ (fuera de las carpetas de estado: mover la tarea no los mueve).
     Desde el .md se referencian como ../adjuntos/<clave>/... (todas las carpetas de estado estan
     a la misma profundidad). Los fotogramas de un video van en <video>.frames/fNN.png.
-  - Archivo: <tipo>-<numero>-<slug>.md. La clave de la tarea es <tipo>-<numero>,
-    que es tambien el nombre de su rama de git. Ej: bug-140123.
+  - Archivo: <tipo>-<id>-<slug>.md. La clave de la tarea es <tipo>-<id>,
+    que es tambien el nombre de su rama de git. El <id> lo da quien crea la tarea:
+    numero o texto (minusculas, digitos y _; sin -). Ej: bug-140123, task-login_social.
 
 DOS MODOS (autopilot.env):
   - Un repo:    BASE_BRANCH=<rama>. El repo es la carpeta del .env (o REPO_PATH).
@@ -53,7 +54,20 @@ VIDEO = {".mp4", ".mov", ".webm", ".avi", ".mkv", ".m4v", ".3gp"}
 CAMPOS = ["id", "tipo", "prioridad", "intento", "rama", "repo", "repos_extra", "origen", "sesion", "espera",
           "actualizado"]
 
-RE_ARCHIVO = re.compile(r"^(task|bug)-(\d+)(?:-.*)?\.md$")
+# Identificador de la tarea: lo da quien la crea (numero o texto). Sin "-": separa la clave del slug.
+ID = r"[a-z0-9_]+"
+RE_ID = re.compile(r"^%s$" % ID)
+RE_CLAVE = re.compile(r"^(task|bug)-%s$" % ID)
+RE_ARCHIVO = re.compile(r"^(task|bug)-(%s)(?:-.*)?\.md$" % ID)
+
+
+def es_clave(s):
+    return bool(RE_CLAVE.match((s or "").strip().lower()))
+
+
+def orden_id(id_):
+    """Orden natural de ids: primero los numericos por valor, despues los de texto alfabeticamente."""
+    return (0, int(id_), "") if id_.isdigit() else (1, 0, id_)
 
 
 class Error(Exception):
@@ -181,7 +195,7 @@ def cache_kit(*partes):
     return os.path.join(base, "autopilot-kit", *partes)
 
 
-RE_WT = re.compile(r"^(?P<repo>.+)-(?P<clave>(task|bug)-\d+)$")
+RE_WT = re.compile(r"^(?P<repo>.+)-(?P<clave>(task|bug)-%s)$" % ID)
 
 
 def coder_wt_activo(repo, clave):
@@ -657,13 +671,13 @@ class Board:
         return out
 
     def numeros(self):
-        """Numeros de workitem presentes en cualquier estado (para dedup)."""
+        """Ids de workitem presentes en cualquier estado (para dedup)."""
         return {c.split("-", 1)[1] for _, c, _ in self.archivos()}
 
     def buscar(self, clave):
         clave = clave.strip().lower()
-        if not re.match(r"^(task|bug)-\d+$", clave):
-            raise Error("clave invalida '%s'. Formato: task-<numero> o bug-<numero>" % clave)
+        if not es_clave(clave):
+            raise Error("clave invalida '%s'. Formato: task-<id> o bug-<id>" % clave)
         hits = [(e, p) for e, c, p in self.archivos() if c == clave]
         if not hits:
             raise Error("no existe la tarea %s en %s" % (clave, self.dir))
@@ -794,19 +808,19 @@ class Board:
     NOMBRE_TIPO = {"notas_dev": "Notas del desarrollador", "reporte_qa": "Reporte de QA", "feedback_qa": "Feedback de QA",
                    "reporte_e2e": "Reporte E2E", "feedback_e2e": "Feedback de E2E"}
 
-    PASO_ADJUNTO = {"azure": "Tarea original (Azure)", "humano": "Subidos por el humano", "coder": "Coder",
+    PASO_ADJUNTO = {"original": "Tarea original", "humano": "Subidos por el humano", "coder": "Coder",
                     "qa": "QA", "e2e": "E2E"}
 
     @classmethod
     def grupo_adjunto(cls, a):
         """(orden, nombre) del paso que produjo el adjunto: tarea original, humano, y despues cada paso
         en el orden en que ocurrio (coder intento 0 -> QA 1 -> E2E 1 -> coder 1 -> QA 2 ...)."""
-        origen = a.get("origen") or "azure"
+        origen = a.get("origen") or "original"
         if origen in ("coder", "qa", "e2e"):
             n = a.get("intento") or 0
             ronda = n + 1 if origen == "coder" else n   # el coder trabaja con el intento anterior al del QA que lo revisa
             return (2, ronda, ["coder", "qa", "e2e"].index(origen)), "%s · intento %s" % (cls.PASO_ADJUNTO[origen], n)
-        return ((0 if origen == "azure" else 1), 0, 0), cls.PASO_ADJUNTO.get(origen, origen)
+        return ((0 if origen == "original" else 1), 0, 0), cls.PASO_ADJUNTO.get(origen, origen)
 
     @classmethod
     def lista_adjuntos(cls, adj):
@@ -930,16 +944,16 @@ class Board:
         tipo = tipo.lower()
         if tipo not in TIPOS:
             raise Error("tipo invalido '%s'. Usa task o bug" % tipo)
-        numero = str(numero).strip()
-        if not numero.isdigit():
-            raise Error("numero de workitem invalido: '%s'" % numero)
+        numero = str(numero).strip().lower()
+        if not RE_ID.match(numero):
+            raise Error("id de workitem invalido: '%s'. Numero o texto: letras, digitos y _ (sin espacios ni -)" % numero)
         if prioridad not in PRIO:
             raise Error("prioridad invalida '%s'. Usa %s" % (prioridad, "|".join(PRIO)))
         if self.cfg["workspace"]:
             self.repo_de(repo)  # valida: en un workspace cada tarea debe decir a que repo va
         with self.lock():
             if numero in self.numeros():
-                raise Error("ya existe un workitem con numero %s en el board" % numero)
+                raise Error("ya existe un workitem con id %s en el board" % numero)
             clave = "%s-%s" % (tipo, numero)
             meta = {"id": numero, "tipo": tipo, "prioridad": prioridad, "intento": "0",
                     "rama": clave, "repo": repo or "-", "origen": origen, "actualizado": ahora()}
@@ -1000,7 +1014,7 @@ class Board:
         estado_de = {t["id"]: t["estado"] for t in ts}
         # Una tarea "en espera" (choco con archivos de otra) no se ofrece hasta que la otra termine.
         libre = lambda t: not t.get("espera") or estado_de.get(t["espera"]) in (None,) + CERRADAS
-        orden = lambda t: (PRIO.get(t["prioridad"], 9), int(t["numero"]))
+        orden = lambda t: (PRIO.get(t["prioridad"], 9), orden_id(t["numero"]))
         by = lambda s: sorted([t for t in ts if t["estado"] == s], key=orden)
         bugfix, qa, nuevas, e2e = by("bug-fix"), by("qa"), by("new"), by("e2e")
         cap = self.cfg["capacidad"]
@@ -1849,7 +1863,7 @@ USO = """uso: wi.sh <env> <comando> [args]
                                          vuelve a correr los casos guardados en los repos
                                          (tests/<clave>/cases.json); --all = regresion en las ramas base.
                                          Reporte en <workspace>/test-results/. Alias: run-tests
-  add-task   <task|bug> <numero> <prioridad> <titulo> <descripcion> <criterio> [repo]
+  add-task   <task|bug> <id> <prioridad> <titulo> <descripcion> <criterio> [repo]
                                          (en un workspace, repo es obligatorio: la carpeta del repo)
   check                                  avisos de configuracion (ramas base vacias, repos faltantes,
                                          herramientas, .env.autopilot)
@@ -1882,7 +1896,7 @@ USO = """uso: wi.sh <env> <comando> [args]
   esperar    <clave> <otra>              choco con <otra>: vuelve a la cola hasta que <otra> termine
   qa-worktree-borrar <clave>
 
-<clave> = task-<numero> | bug-<numero>   (es tambien el nombre de la rama)"""
+<clave> = task-<id> | bug-<id>   (es tambien el nombre de la rama; <id>: numero o texto, [a-z0-9_])"""
 
 MOVER = {"in-progress": "in-progress", "qa": "qa", "validando": "validando",
          "bugfix": "bug-fix", "done": "done", "probar-e2e": "probando-e2e"}
@@ -1920,10 +1934,10 @@ def main(argv):
         need(1)
         import entorno
         objetivo = a[0]
-        if re.match(r"^(task|bug)-\d+$", objetivo.lower()):
-            objetivo = [r["path"] for r in b.repos_de_tarea(b.leer(objetivo)[2])]
-        elif objetivo in b.cfg["repos"]:
+        if objetivo in b.cfg["repos"]:  # primero el repo: un repo puede llamarse como una clave (bug-tracker)
             objetivo = [b.cfg["repos"][objetivo]["path"]]
+        elif es_clave(objetivo):
+            objetivo = [r["path"] for r in b.repos_de_tarea(b.leer(objetivo)[2])]
         else:
             objetivo = [objetivo]
         res = [entorno.validar(x) for x in objetivo]

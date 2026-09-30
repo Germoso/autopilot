@@ -2,7 +2,8 @@
 
 Agentes de IA que **trabajan tus tareas solos** mientras tú revisas y mergeas.
 
-Tú pones tareas en una carpeta (o las trae Azure DevOps). El autopilot las toma una por una:
+Tú pones tareas en el tablero (a mano, desde la app web o con cualquier integración que las traiga de
+afuera). El autopilot las toma una por una:
 
 ```
  tarea nueva ──> CODER ────────> QA ─────────────> E2E (opcional) ─────> LISTA
@@ -11,7 +12,7 @@ Tú pones tareas en una carpeta (o las trae Azure DevOps). El autopilot las toma
 ```
 
 - Funciona con **Claude Code** y **OpenCode**.
-- Cada tarea tiene **su propia rama** (`bug-140123`, `task-2051`). **Nunca hace push ni merge**: eso lo haces tú.
+- Cada tarea tiene **su propia rama** (`bug-140123`, `task-login_social`). **Nunca hace push ni merge**: eso lo haces tú.
 - **Nunca toca producción.** Solo usa los ambientes de QA que tú le das.
 - Todo queda escrito en un archivo `.md` por tarea: qué hizo el coder, qué probó el QA, capturas.
 
@@ -53,9 +54,13 @@ La base de datos **tiene que decir "qa" en su nombre**. Si no, el autopilot no e
 ## Usarlo (día a día)
 
 ```
-/azure-sync     trae las tareas nuevas del sprint de Azure DevOps
 /autopilot      arranca: toma las tareas y las trabaja
 ```
+
+Las tareas entran al tablero por la app web (*Nueva tarea*), con `wi.sh autopilot.env add-task ...` o
+poniendo un `.md` en `.workitems/new/`. Cómo llegan es cosa tuya: si vienen de un tracker, una
+integración las carga por esos mismos caminos (hay una de ejemplo para Azure DevOps en
+[integraciones/azure](integraciones/azure/README.md)).
 
 Mientras `/autopilot` corre, abre la **[app web](#app-web)** o mira la carpeta **`.workitems/`** de tu
 proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te dice cómo va**:
@@ -86,7 +91,8 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
   ~/.local/share/autopilot-kit/wi.sh autopilot.env reqa bug-140123
   ```
 - **Crear una tarea a mano:** desde la app web (*Nueva tarea*), o pon un `.md` en `.workitems/new/` llamado
-  `bug-<número>-<título>.md` o `task-<número>-<título>.md`.
+  `bug-<id>-<título>.md` o `task-<id>-<título>.md`. El `<id>` lo eliges tú: un número (`140123`) o un
+  texto (`login_social`: minúsculas, dígitos y `_`, sin `-`). Es también el nombre de la rama.
 
 > Si cierras Claude Code / OpenCode, el autopilot se detiene. Al volver, escribe `/autopilot` otra vez.
 
@@ -110,7 +116,7 @@ Muestra todos tus proyectos del autopilot:
   botones para ver solo los de un agente.
 - **Gestionar:** devolver a QA o a E2E, detener, marcar revisada, cambiar prioridad, pausar el autopilot.
 - **Crear y editar** tareas y subirles capturas.
-- **Correr** el health check, las pruebas guardadas y el sync de Azure, viendo la salida.
+- **Correr** el health check y las pruebas guardadas, viendo la salida.
 - El **log** de actividad y los reportes de `run-tests`.
 
 Con `--lan` pide una clave, que está en `~/.config/autopilot-kit/web.env` (se crea sola). Va sin
@@ -328,7 +334,7 @@ responder desde el chat**.
 4. `health-check` debe mostrar `✅ telegram`.
 
 **Qué te llega:** coder empezó / terminó, QA y E2E certificando, rechazos con el motivo, ✅ lista para
-mergear, 🚨 detenida (con el motivo y cómo resolverla), 🚨 atascada, tareas nuevas de Azure, resultado
+mergear, 🚨 detenida (con el motivo y cómo resolverla), 🚨 atascada, resultado
 de `run-tests`, y cuando el autopilot arranca o se detiene. Nunca contraseñas ni valores de los `.env`.
 
 **Qué le puedes escribir:**
@@ -364,6 +370,6 @@ Solo responde a **tu** chat; los mensajes de cualquier otro se ignoran.
 ## Más información
 
 - **[docs/REFERENCIA.md](docs/REFERENCIA.md)** — todo el detalle: estados, variables, comandos de
-  `wi.sh`, Azure DevOps y su MCP, trabajo en paralelo, vigilante, E2E por dentro y estructura del kit.
+  `wi.sh`, cómo cargar tareas desde afuera, trabajo en paralelo, vigilante, E2E por dentro y estructura del kit.
 - Actualizar el kit: `cd ~/code/dotenvs && git pull && ./install.sh`.
 - Desinstalar: `./install.sh --uninstall` (no toca tus proyectos).
