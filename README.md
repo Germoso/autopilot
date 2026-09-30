@@ -9,7 +9,7 @@ Dos subsistemas independientes, ambos opt-in por proyecto:
 | Comando | Qué hace | Consume tokens |
 |---|---|---|
 | `/autopilot-init` | Prepara la carpeta abierta: un repo o un **workspace con varios repos**. Detecta ramas y proyectos de Azure, pregunta la rama base de cada repo y crea la config y el board. | sí (poco) |
-| `/autopilot` | Detecta tareas en el board y las trabaja con subagentes, cada una en su rama. Ciclo completo: `new` → `in-progress` → `qa` → `validando` → `done`, con `bug-fix` hasta 3 intentos. | sí |
+| `/autopilot` | Detecta tareas en el board y las trabaja con subagentes, cada una en su rama. Ciclo completo: `new` → `in-progress` → `qa` → `validando` → `done`, con `bug-fix` hasta 3 intentos. Opcional (`E2E=true`): antes de `done`, pruebas E2E en web y Android (`e2e` → `probando-e2e`). | sí |
 | `/azure-sync` | Importa Work Items de Azure DevOps al board como `new`. Aditivo, con dedup. | no |
 
 ---
@@ -26,6 +26,11 @@ dotenvs/
 │   ├── azure-sync.py           # importador aditivo de Azure DevOps (uno o varios proyectos)
 │   ├── init.py                 # prepara un repo o workspace (lo usa /autopilot-init)
 │   ├── git-guard.sh            # bloquea push/merge (hooks de Claude Code)
+│   ├── aenv.sh / entorno.py    # nunca contra produccion: corre con .env.autopilot(.e2e) validado
+│   ├── vigia.py                # vigilante: procesos colgados/huerfanos, tareas atascadas
+│   ├── e2e.sh / e2e.py         # agente E2E: apps al backend local, emulador sin DNS, navegador con red cortada
+│   ├── e2e-setup.sh            # instala Java, Android SDK + emulador + AVD, Playwright (una vez, sin sudo)
+│   ├── e2e-playwright.config.cjs, e2e-pasos.cjs, e2e_driver.dart   # capturas en cada paso (web/Android)
 │   └── ado-mcp.sh              # lanza el MCP de Azure DevOps con tu PAT
 ├── skills/                     # -> carpeta de skills de cada cliente
 │   ├── autopilot/SKILL.md      # reglas, maquina de estados, arranque por cliente
@@ -33,9 +38,10 @@ dotenvs/
 │   └── azure-sync/SKILL.md
 ├── agents/                     # fuente unica de los subagentes
 │   ├── coder.md
-│   └── qa-reviewer.md
+│   ├── qa-reviewer.md
+│   └── e2e-tester.md           # pruebas E2E en web y Android (con E2E=true)
 ├── clients/render.py           # genera agentes/comandos/guardas para cada cliente
-└── examples/proyecto/          # autopilot.env, azure-sync.env
+└── examples/proyecto/          # autopilot.env, azure-sync.env, .env.autopilot.e2e (ejemplos)
 ```
 
 ### Qué se instala en cada cliente
@@ -49,6 +55,7 @@ dotenvs/
 | Bloqueo en el agente principal (por proyecto) | `opencode.json` del proyecto | `.claude/settings.local.json` (deny + hook) |
 | Cómo espera el watcher | primer plano | segundo plano (`run_in_background`): Claude Code te re-invoca al terminar |
 | MCP de Azure DevOps | `opencode.json` → `ado-mcp.sh` | `claude mcp` (scope user) → `ado-mcp.sh` |
+| Herramientas E2E (opcional, `e2e-setup.sh`) | `~/.local/share/autopilot-e2e/` | la misma carpeta |
 
 Los agentes se escriben **una vez** en `agents/`; `clients/render.py` genera la versión de cada
 cliente. Todo lo generado lleva una marca y `--uninstall` solo borra lo que tiene la marca.
@@ -158,6 +165,9 @@ cd dotenvs
 No pisa nada que no haya generado el kit: si ya existe una skill, agente o MCP con el mismo
 nombre y no es del kit, lo deja y avisa. Reinstalar actualiza lo que sí es del kit.
 
+Para las pruebas E2E (opcional), además, una vez: `~/.local/share/autopilot-kit/e2e-setup.sh`
+(ver *Pruebas E2E: terminar de certificar*).
+
 ### Desinstalar
 
 ```sh
@@ -165,7 +175,9 @@ nombre y no es del kit, lo deja y avisa. Reinstalar actualiza lo que sí es del 
 ```
 
 Quita scripts, skills, agentes, comandos y el registro del MCP. Quedan intactos los proyectos
-(`.env`, board, guardas) y tu PAT en `~/.config/autopilot-kit/`.
+(`.env`, board, guardas) y tu PAT en `~/.config/autopilot-kit/`. Las herramientas E2E
+(`~/.local/share/autopilot-e2e/`, ~6 GB) tampoco se tocan: bórralas con
+`rm -rf ~/.local/share/autopilot-e2e` si ya no las usas.
 
 ---
 
@@ -216,7 +228,10 @@ Qué hace:
 - **no toca archivos de los repos**: en un repo, lo del kit se ignora solo en tu copia local
   (`.git/info/exclude`); en un workspace todo vive en la carpeta padre. No hay nada que commitear.
 - prohíbe push/merge también al agente principal (en cada cliente instalado)
-- avisa si falta alguna rama base o si no existe
+- avisa si falta alguna rama base o si no existe, herramientas o un `.env.autopilot` válido
+- deja en `autopilot.env` la **config E2E sugerida, apagada** (`E2E=false`): qué app consume cada
+  backend, plataformas y cómo apuntar cada app Flutter al backend local. Si `autopilot.env` ya
+  existía, le agrega ese bloque al final (ver *Pruebas E2E*)
 
 ### Workspace: varios repos, un board
 
@@ -232,7 +247,7 @@ konectame/                      <- abrís el cliente acá
 
 - Cada repo tiene **su propia rama base**. La rama de cada tarea se crea dentro de su repo.
 - azure-sync lee **un proyecto de Azure por repo** y le pone a cada tarea su `repo:`.
-- Los puestos son globales: **un coder y un QA** para todo el workspace (ver *Puestos en paralelo*).
+- Los puestos son globales: **un coder, un QA (y un E2E)** para todo el workspace (ver *Puestos en paralelo*).
 
 ### Una tarea en varios repos
 
@@ -260,6 +275,10 @@ git, lo hace `wi.sh` con las mismas validaciones (base del repo, árbol limpio).
 | `REPO.<carpeta>` | **una por repo** (workspace) | Rama base de ese repo. Si hay alguna, es un workspace |
 | `WORKITEMS_DIR` | `$REPO_PATH/.workitems` | Carpeta del board |
 | `POLL_INTERVAL` | `5` | Segundos entre lecturas del board |
+| `PARALLEL`, `MAX_CODERS`, `MAX_QA`, `MAX_E2E` | `false`, `2`, `2`, `1` | Agentes a la vez (ver *Cuántos agentes a la vez*) |
+| `WATCHDOG`, `WATCHDOG_INTERVAL`, `HUNG_MINUTES`, `STALE_MINUTES`, `COMMAND_TIMEOUT` | `true`, `60`, `10`, `45`, `900` | Vigilante y tiempo máximo de `aenv.sh` (ver *Vigilante*) |
+| `E2E`, `E2E_COMMAND_TIMEOUT` | `false`, `2400` | Etapa de pruebas E2E y su tiempo máximo por comando (ver *Pruebas E2E*) |
+| `E2E_CLIENTS.<backend>`, `E2E_PLATFORMS.<front>`, `E2E_API.<app>` | — | Qué fronts consumen cada backend, en qué plataformas se prueban, cómo apuntar la app al backend local |
 
 **La rama base se define por proyecto/repo** en su `autopilot.env`. Para cambiarla, editá la
 línea o volvé a correr `/autopilot-init`; no hace falta reinstalar nada.
@@ -330,7 +349,7 @@ Cada work item importado trae sus adjuntos a `.workitems/adjuntos/<clave>/`:
   Sin ffmpeg se guarda el video y queda la nota; después: `azure-sync.py --config ... --fotogramas`.
 - Límite de 50 MB por archivo. Un adjunto que falla no frena la importación: queda anotado.
 
-El autopilot le pasa las imágenes y fotogramas al coder y al QA (`tarea.adjuntos`).
+El autopilot le pasa las imágenes y fotogramas al coder, al QA y al agente E2E (`tarea.adjuntos`).
 
 **Requisito:** `sudo apt install ffmpeg` para los fotogramas.
 
@@ -361,7 +380,8 @@ setsid nohup python3 ~/.local/share/autopilot-kit/azure-sync.py \
 | QA | `qa-reviewer` | `qa` | `validando` | `MAX_QA` |
 | E2E (con `E2E=true`) | `e2e-tester` | `e2e` | `probando-e2e` | `MAX_E2E` |
 
-Mientras un coder desarrolla una tarea, el QA puede estar certificando otra.
+Mientras un coder desarrolla una tarea, el QA puede estar certificando otra y el agente E2E
+probando una tercera.
 
 - **Claude Code:** los subagentes corren en segundo plano; Claude Code avisa al agente principal
   cuando terminan.
@@ -372,15 +392,19 @@ Mientras un coder desarrolla una tarea, el QA puede estar certificando otra.
 - **El QA trabaja en su propia copia del repo** (`git worktree` en `~/.cache/autopilot-kit/qa/`,
   en la punta de la rama de la tarea): puede compilar y correr tests o la app sin pisar al coder.
   Se borra al dar el veredicto.
+- **El agente E2E también** (`~/.cache/autopilot-kit/e2e/`): una copia por cada repo de la tarea y
+  por cada repo que pide el flujo real (el backend de una app, las apps de un backend). Se borra al
+  dar el veredicto, matando backend, servidor web y emulador que queden ahí.
 
 ### Cuántos agentes a la vez
 
 En `autopilot.env`:
 
 ```ini
-PARALLEL=false  # false = 1 coder + 1 QA (defecto). true = hasta MAX_CODERS y MAX_QA a la vez
+PARALLEL=false  # false = 1 coder + 1 QA + 1 E2E (defecto). true = hasta MAX_CODERS, MAX_QA y MAX_E2E
 MAX_CODERS=2
 MAX_QA=2
+MAX_E2E=1       # solo cuenta con E2E=true
 ```
 
 - **Cada agente trabaja un workitem distinto.** Nunca hay dos coders en la misma tarea.
@@ -393,7 +417,7 @@ MAX_QA=2
   avisa si comparten alguno (posible conflicto al mergear).
 - Límites: dos tareas pueden tocar archivos distintos y aun así depender una de otra; eso lo ve el
   QA o se ve al mergear. **Cada agente gasta tokens y memoria**: con 7 GB de RAM y Flutter, 2 + 2 es
-  el máximo razonable.
+  el máximo razonable; con E2E (emulador de 2 GB + build de Android) conviene bajar a 1 + 1 + 1.
 
 ### Vigilante: nada se queda colgado
 
@@ -412,8 +436,9 @@ mira los procesos de cada tarea (los reconoce porque corren dentro de su copia d
 - **Prevención:** lo que corre por `aenv.sh` tiene tiempo máximo (`COMMAND_TIMEOUT`), y los agentes
   corren los tests con límite (`flutter test --timeout 120s`, jest `--testTimeout`) y apagan lo que
   levantan.
-- Solo toca procesos de trabajo (node, dart, flutter, mongod, tests…) dentro de las copias de este
-  board; nunca terminales, editores ni los clientes. Todo queda en `log.md`.
+- Solo toca procesos de trabajo (node, dart, flutter, mongod, tests…, y el emulador del E2E, que
+  arranca dentro de su copia) dentro de las copias de este board (coder, QA y E2E); nunca
+  terminales, editores ni los clientes. Todo queda en `log.md`.
 
 ```ini
 WATCHDOG=true           # false = apagado
@@ -421,6 +446,7 @@ WATCHDOG_INTERVAL=60    # segundos entre revisiones
 HUNG_MINUTES=10         # minutos sin usar CPU para considerar colgado
 STALE_MINUTES=45        # minutos sin actividad para avisar de una tarea atascada
 COMMAND_TIMEOUT=900     # segundos máximos de un comando por aenv.sh
+E2E_COMMAND_TIMEOUT=2400  # lo mismo para aenv.sh --e2e y e2e.sh (builds de Android)
 ```
 
 Revisarlo a mano: `python3 ~/.local/share/autopilot-kit/vigia.py <autopilot.env> --simular`.
@@ -450,8 +476,9 @@ cp .env .env.autopilot     # y cambia la BD y las URLs a las de QA (o a local)
   watcher avisan de los repos sin un `.env.autopilot` válido.
 - Ningún agente crea, copia ni edita `.env*`. Ante la duda de si algo es producción, la tarea va a
   `stopped` con la recomendación de qué hacer.
-- Apps Flutter: la URL de la API está fija en `config.dart`, así que no se levantan contra una API
-  real; los tests unitarios y de widget (sin red) sí corren.
+- Apps Flutter: la URL de la API está fija en `config.dart`, así que el coder y el QA no las levantan
+  contra una API real; los tests unitarios y de widget (sin red) sí corren. Solo el agente E2E corre
+  las apps, apuntadas por el kit a un backend **local** (ver *Pruebas E2E*).
 
 ### El QA certifica al 100% o no certifica
 
@@ -461,7 +488,7 @@ copia de trabajo). "Cumple por lectura de código" no alcanza.
 
 - **Lo visual** (espacios, colores, layout) se prueba con un **test de widget temporal** que mide la
   pantalla y guarda una **captura PNG**, que el QA abre y compara con las capturas del bug.
-- **Tres veredictos:** `APROBADO` → `done`; `RECHAZADO` → `bug-fix` (trabajo para el coder);
+- **Tres veredictos:** `APROBADO` → `done` (o a la cola `e2e` con `E2E=true`); `RECHAZADO` → `bug-fix` (trabajo para el coder);
   **`NO CERTIFICABLE`** → `stopped` con lo que falta (herramienta, versión, entorno o dato). Cuando
   lo resuelvas: `wi.sh <env> reqa <clave>` la devuelve a la cola del QA.
 - **Herramientas:** el QA usa la versión que pide cada repo (`fvm` con la de `.fvmrc`, Flutter, Node).
@@ -489,7 +516,7 @@ Cualquier ruta de imagen que un agente escriba en sus notas o su reporte se conv
 
 - **`## Repos modificados`**: tabla calculada **desde git** al pasar a `qa` (repo, rama, base,
   commits, archivos), con aviso si no coincide con lo que declaró el coder. Te dice qué ramas
-  mergear y dónde.
+  mergear y dónde. En JSON: `wi.sh <env> repos-modificados <clave>`.
 - **`## Notas del desarrollador`** (por intento): empieza con **REPOS MODIFICADOS** (la lista que
   declara el coder), y luego qué se hizo y por qué, archivos cambiados,
   decisiones, cómo probarlo, pruebas que corrió, riesgos y pendientes.
@@ -532,6 +559,9 @@ y saca **capturas en cada paso** (y video). Veredicto:
 - Apps, emulador y navegador solo por `e2e.sh`; el hook/permisos bloquean `flutter build/run/drive`,
   `playwright` y `emulator` directos.
 
+Ejemplo comentado de los tres `.env.autopilot.e2e` (backend, front web y cuentas):
+`examples/proyecto/env.autopilot.e2e.example`.
+
 **Cuentas de prueba:** en `.env.autopilot.e2e` junto a `autopilot.env`:
 `E2E_CLIENTE_USER=…`, `E2E_CLIENTE_PASSWORD=…`, `E2E_ADMIN_USER=…` (un par por rol; solo cuentas
 de QA que existan en la base E2E). El agente nunca las escribe en el reporte.
@@ -562,6 +592,19 @@ de QA que existan en la base E2E). El agente nunca las escribe en el reporte.
 
 Memoria: emulador (2 GB) + build de Android + backend pesan; con 8 GB de RAM deja `MAX_E2E=1`.
 
+Comandos útiles (todos los de `wi.sh`: `wi.sh <env> help`):
+
+```sh
+K=~/.local/share/autopilot-kit
+$K/e2e.sh doctor                                  # qué herramientas E2E faltan
+$K/wi.sh <env> check                              # avisos: herramientas, .env.autopilot.e2e, cuentas, E2E_API
+$K/wi.sh <env> entorno <repo>                     # .env.autopilot (sin mostrar valores)
+python3 $K/entorno.py <repo> --e2e                # .env.autopilot.e2e (ok / compartida / inseguro...)
+$K/wi.sh <env> validar-e2e <clave>                # ¿el último Reporte E2E alcanza para aprobar?
+$K/wi.sh <env> re-e2e <clave>                     # volver a probar en E2E (tras resolver un NO CERTIFICABLE)
+$K/wi.sh <env> e2e-worktree <clave>               # copias E2E para probar tú mismo (y e2e-worktree-borrar)
+```
+
 ## Reglas de trabajo
 
 Fijadas en `SKILL.md`, se aplican sin que nadie las recuerde:
@@ -570,12 +613,13 @@ Fijadas en `SKILL.md`, se aplican sin que nadie las recuerde:
   `wi.sh` rechaza una segunda tarea en el mismo puesto.
 - **Una rama por workitem:** `task-<numero>` / `bug-<numero>` desde `BASE_BRANCH`.
 - **Nadie hace `push` ni `merge`** (ni `pull`, que mergea). Bloqueado por permiso/hook, no por instrucción.
-- **QA no toca el código:** prueba en su propia copia (worktree); solo escribe tests temporales ahí; no commitea ni cambia de rama.
-- **Nada se certifica sin probarlo:** sin compilación, tests y una prueba por criterio, el veredicto es `NO CERTIFICABLE` y la tarea queda en `stopped`.
-- **Todo queda escrito en la tarea:** notas del desarrollador y reporte de QA, por intento.
+- **QA y E2E no tocan el código:** prueban en sus propias copias (worktree); solo escriben pruebas temporales ahí; no commitean ni cambian de rama.
+- **Nada se certifica sin probarlo:** sin compilación, tests y una prueba por criterio, el veredicto es `NO CERTIFICABLE` y la tarea queda en `stopped`. En E2E, un criterio sin capturas no está probado.
+- **Nunca contra producción:** solo `.env.autopilot` / `.env.autopilot.e2e` que crea el humano (local o QA; E2E con base exclusiva), apps apuntadas al backend local, red cortada en navegador y emulador.
+- **Todo queda escrito en la tarea:** repos modificados, notas del desarrollador, reporte de QA y reporte E2E (con capturas), por intento.
 - **Los subagentes no usan el MCP de Azure.**
 - **`bug-fix` tiene prioridad** sobre trabajo nuevo: siempre se toma primero.
-- **3 intentos** de certificación. Al cuarto, `stopped` con el historial.
+- **3 intentos** de certificación (los rechazos de QA y de E2E suman juntos). Al cuarto, `stopped` con el historial.
 - **`stopped` es para el humano**, con motivo escrito. Nunca inventar.
 
 ---
@@ -584,4 +628,7 @@ Fijadas en `SKILL.md`, se aplican sin que nadie las recuerde:
 
 - El kit **no contiene secretos**. Solo plantillas.
 - `.gitignore` bloquea `*.env`, `*.secrets.env` y los `.log`.
+- En los proyectos, `.env.autopilot` y `.env.autopilot.e2e` los crea solo el humano; ningún agente
+  los crea, edita ni imprime sus valores. En modo un repo se ignoran en `.git/info/exclude`.
+- Las cuentas de prueba del E2E son solo de QA y nunca se escriben en reportes ni capturas.
 - El PAT **nunca** se hardcodea: va en variable de entorno o en `*.secrets.env`.
