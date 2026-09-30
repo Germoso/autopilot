@@ -357,8 +357,8 @@ SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
 
 Cada work item importado trae sus adjuntos a `.workitems/adjuntos/<clave>/`:
 
-- **Imágenes incrustadas** en la descripción o los pasos: se descargan y quedan en su lugar en el
-  texto como `![imagen N](../adjuntos/<clave>/...)`.
+- **Imágenes** de la descripción o los pasos: se descargan y quedan referenciadas en su lugar en el
+  texto como `📷 <archivo> — imagen N` (no incrustadas; la app web las abre y las muestra en *Tarea original*).
 - **Adjuntos** del work item (imágenes, videos, otros), listados en la sección `## Adjuntos`.
 - **Videos:** con `ffmpeg` instalado se extraen hasta 12 fotogramas (primer cuadro + cambios de
   escena, repartidos) en `<video>.frames/fNN.png`, porque ningún modelo ve video directamente.
@@ -523,10 +523,13 @@ Code, Obsidian o GitHub:
 - las **capturas del QA** (sus tests de widget), en su reporte (`adjuntos/<clave>/qa-intentoN/`).
   Se copian del worktree del QA antes de borrarlo, así no se pierden.
 - las **capturas de cada paso de las pruebas E2E** (web y Android) y sus videos, en el
-  `## Reporte E2E` (`adjuntos/<clave>/e2e-intentoN/`), en el paso que muestran.
+  `## Reporte E2E` (`adjuntos/<clave>/e2e-intentoN/`), referenciadas en el paso que muestran.
 
-Cualquier ruta de imagen que un agente escriba en sus notas o su reporte se convierte en
-`![nombre](../adjuntos/...)`; si está fuera del board, primero se copia.
+Cualquier ruta de imagen que un agente escriba en sus notas o su reporte queda como `📷 <nombre>`
+(referenciada, no incrustada; si está fuera del board, primero se copia a la carpeta del intento), y el
+intento termina con una línea `📎 N capturas → [<paso>-intentoN/](...)`. La app web muestra esas imágenes
+en una galería plegable bajo su intento. Las tareas viejas se convierten con `wi.sh <env> limpiar-imagenes`
+(o solas, la primera vez que corre el kit nuevo; antes se respalda `autopilot.db`).
 
 ### Qué queda escrito en cada tarea
 

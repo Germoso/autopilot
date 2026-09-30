@@ -89,8 +89,8 @@ SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
 
 Cada work item importado trae sus adjuntos a `.workitems/adjuntos/<clave>/`:
 
-- **Imágenes incrustadas** en la descripción o los pasos: se descargan y quedan en su lugar en el
-  texto como `![imagen N](../adjuntos/<clave>/...)`.
+- **Imágenes** de la descripción o los pasos: se descargan y quedan referenciadas en su lugar en el
+  texto como `📷 <archivo> — imagen N` (no incrustadas; la app web las abre y las muestra en *Tarea original*).
 - **Adjuntos** del work item (imágenes, videos, otros), listados en la sección `## Adjuntos`.
 - **Videos:** con `ffmpeg` instalado se extraen hasta 12 fotogramas (primer cuadro + cambios de
   escena, repartidos) en `<video>.frames/fNN.png`, porque ningún modelo ve video directamente.

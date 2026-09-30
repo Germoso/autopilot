@@ -227,7 +227,8 @@ Antes de verificar, recarga los repos de la tarea: el coder pudo haber sumado ot
 
 1. Toma su respuesta. Guarda su bloque `NOTAS DEL DESARROLLADOR` completo, con sus capturas:
    `$W "$E" notas-dev <clave> - --imagenes ~/.cache/autopilot-kit/capturas/<clave> <<'FIN'` … `FIN`.
-   Las imágenes que mencione (y las de esa carpeta) quedan copiadas y **visibles en el `.md`**.
+   Las imágenes que mencione (y las de esa carpeta) se copian a `adjuntos/<clave>/coder-intentoN/` y quedan
+   **referenciadas** en su intento (`📷 nombre` + carpeta), no incrustadas en el texto.
 2. `RESULTADO: QA` **y** hay commits nuevos en **al menos uno** de sus repos
    (`$W "$E" repos-modificados <clave>`: commits y archivos por repo, desde git) →
    `$W "$E" qa <clave>` (escribe solo la sección **`## Repos modificados`** en la tarea y avisa si
@@ -278,7 +279,7 @@ Al pasar a `done` o `stopped`, el worktree del coder se borra solo y se liberan 
 1. Guarda su bloque `REPORTE E2E` completo, **antes** de borrar sus copias:
    `$W "$E" reporte-e2e <clave> - --imagenes <copia1>/.e2e-capturas [--imagenes <copia2>/.e2e-capturas] <<'FIN'` … `FIN`.
    Las capturas que cita (y las de esas carpetas) se copian a `adjuntos/<clave>/e2e-intentoN/` y
-   quedan **incrustadas en el `.md`**, en el paso que muestran.
+   quedan **referenciadas** (`📷 nombre`) en el paso que muestran; la app web las muestra en la galería del intento.
 2. Veredicto:
    - `APROBADO` → `$W "$E" aprobar-e2e <clave>` (va a `done`). También guarda los casos E2E y los
      `tests/services.json` de sus copias en la rama (commit `test: ...`); si un repo del flujo no era
@@ -391,13 +392,16 @@ los ❌ son `[coder]` → `--bloqueo`; si hay alguno `[humano]` → `stopped`. E
 di exactamente qué corregir (archivo, línea, cómo) y que es preexistente pero impide certificar la tarea.
 Si la misma tarea vuelve a bloquearse por lo mismo después de un `--bloqueo`, ahí sí `stopped`.
 
-### Imágenes en el `.md`
+### Imágenes: referenciadas por intento, no incrustadas
 
-`notas-dev`, `reporte-qa` y `reporte-e2e` convierten toda ruta de imagen que aparezca en el texto (y
-las de `--imagenes <carpeta>`) en `![nombre](../adjuntos/<clave>/...)`: las que están fuera del board
-se copian a `adjuntos/<clave>/coder-intentoN/`, `qa-intentoN/` o `e2e-intentoN/`. Los videos que
-mencionen (`.mp4`, `.webm`...) también se copian y quedan enlazados. Así el humano ve en la tarea las
-capturas del bug, las del coder, las del QA y las de cada paso del E2E. Pásales siempre el texto tal cual, con las rutas completas.
+`notas-dev`, `reporte-qa` y `reporte-e2e` copian toda imagen que aparezca en el texto (y las de
+`--imagenes <carpeta>`) a `adjuntos/<clave>/coder-intentoN/`, `qa-intentoN/` o `e2e-intentoN/`. En el
+texto, cada ruta queda como `📷 <nombre>` (sin incrustar) y al final del intento va una sola línea
+`📎 N capturas → [<paso>-intentoN/](...)`. La app web (`autopilot-web`) muestra esas imágenes en una galería
+plegable bajo el intento al que pertenecen, y cada `📷` abre la suya. Los videos que mencionen (`.mp4`,
+`.webm`...) también se copian y quedan enlazados. `validar-e2e` cuenta los `📷` de cada criterio.
+Pásales siempre el texto tal cual, con las rutas completas. Las tareas viejas se convierten solas la primera
+vez que corre el kit nuevo (o con `$W "$E" limpiar-imagenes [--simular]`).
 
 ### Adjuntos (capturas y videos)
 
@@ -480,7 +484,7 @@ los backends de la tarea **locales** contra la base de QA (`aenv.sh --e2e`), apu
 las apps a ese backend (`e2e.sh api`), y recorre el flujo de cada criterio como una persona: BackOffice
 y apps Flutter en web (Playwright) y las apps en un **emulador Android** (internet abierto, producción
 bloqueada). Saca **capturas
-en cada paso** (y video) que quedan incrustadas en el `## Reporte E2E`. Solo escribe en sus copias
+en cada paso** (y video) que quedan referenciadas en su paso del `## Reporte E2E`. Solo escribe en sus copias
 E2E; no commitea. Veredicto `APROBADO` (cada criterio CUMPLE con capturas, en cada plataforma),
 `RECHAZADO` (→ `bug-fix`) o `NO CERTIFICABLE` (→ `stopped`).
 

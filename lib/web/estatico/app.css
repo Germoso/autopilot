@@ -88,3 +88,8 @@ details summary { cursor: pointer; font-weight: 550; }
 .tabla td:first-child { white-space: nowrap; }
 .grupo-adjuntos { border-top: 1px solid var(--borde); padding: 8px 0; }
 .grupo-adjuntos > summary { margin-bottom: 8px; }
+.ref-img { display: inline; padding: 1px 6px; margin: 0 1px; border: 1px solid var(--borde); border-radius: 6px; background: var(--fondo); color: inherit; font: inherit; font-size: .92em; cursor: zoom-in; }
+.ref-img:hover { border-color: var(--suave); }
+.galeria-entrada { margin-top: 10px; }
+.galeria-entrada > summary { cursor: pointer; color: var(--suave); font-size: 14px; }
+.galeria-entrada .galeria { margin-top: 8px; }

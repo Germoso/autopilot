@@ -335,20 +335,19 @@ def descargar_adjuntos(item, clave, imagenes):
         if origen.startswith("img"):
             por_img[int(origen[3:])] = rel(destino)
         if ext in VIDEO:
-            frames, nota = fotogramas(destino, os.path.splitext(destino)[0] + ".frames")
-            lineas.append("- Video [`%s`](%s) — %s" % (os.path.basename(destino), rel(destino), nota))
-            lineas += ["  - ![%s](%s)" % (os.path.basename(f), rel(f)) for f in frames]
+            _, nota = fotogramas(destino, os.path.splitext(destino)[0] + ".frames")
+            lineas.append("- 🎞️ Video [`%s`](%s) — %s" % (os.path.basename(destino), rel(destino), nota))
         elif ext in IMAGEN:
-            lineas.append("- ![%s](%s)" % (os.path.basename(destino), rel(destino)))
+            lineas.append("- 📷 %s" % os.path.basename(destino))   # referenciada: la app web la muestra aparte
         else:
             lineas.append("- [`%s`](%s)" % (os.path.basename(destino), rel(destino)))
     return por_img, "\n".join(lineas), fallidos
 
 
 def poner_imagenes(txt, por_img):
-    """Marcadores de imagen -> ![imagen N](ruta) en su lugar, cada una en su parrafo."""
+    """Marcadores de imagen -> `📷 <archivo> — imagen N` en su lugar (referenciada, no incrustada)."""
     txt = re.sub(r"[ \t]*\x00IMG(\d+)\x00[ \t]*",
-                 lambda m: ("\n\n![imagen %d](%s)\n\n" % (int(m.group(1)) + 1, por_img[int(m.group(1))])
+                 lambda m: ("\n\n📷 %s — imagen %d\n\n" % (por_img[int(m.group(1))].rsplit("/", 1)[-1], int(m.group(1)) + 1)
                             if int(m.group(1)) in por_img else " [imagen %d no descargada] " % (int(m.group(1)) + 1)),
                  txt)
     return re.sub(r"\n{3,}", "\n\n", txt).strip()
