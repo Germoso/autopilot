@@ -130,7 +130,7 @@ Fijadas en `SKILL.md`, se aplican sin que nadie las recuerde:
 - **Nadie hace `push` ni `merge`** (ni `pull`, que mergea). Bloqueado por permiso/hook, no por instrucción.
 - **QA y E2E no tocan el código:** prueban en sus propias copias (worktree); solo escriben pruebas temporales ahí; no commitean ni cambian de rama.
 - **Nada se certifica sin probarlo:** sin compilación, tests y una prueba por criterio, el veredicto es `NO CERTIFICABLE` y la tarea queda en `stopped`. En E2E, un criterio sin capturas no está probado.
-- **Nunca contra producción:** solo `.env.autopilot` / `.env.autopilot.e2e` que crea el humano (local o QA; E2E con base exclusiva), apps apuntadas al backend local, red cortada en navegador y emulador.
+- **Nunca contra producción:** solo `.env.autopilot` / `.env.autopilot.e2e` que crea el humano (local o QA), apps apuntadas al backend local, red cortada en navegador y emulador.
 - **Todo queda escrito en la tarea:** repos modificados, notas del desarrollador, reporte de QA y reporte E2E (con capturas), por intento.
 - **Los subagentes no usan el MCP de Azure.**
 - **`bug-fix` tiene prioridad** sobre trabajo nuevo: siempre se toma primero.
@@ -261,6 +261,7 @@ Lo crea `/autopilot-init`; se edita a mano. En un workspace va en la carpeta pad
 | `E2E_CLIENTS.<backend>` | — | Qué frontends consumen ese backend (`app1,app2`) |
 | `E2E_PLATFORMS.<front>` | Flutter: `web,android`; web: `web` | En qué plataformas se prueba |
 | `E2E_API.<app-flutter>` | — | `<archivo>\|<regex de la línea>\|<reemplazo con {API}>`: cómo apuntar la app al backend local |
+| `E2E_API.<front-web>` | — | `env:VAR1,VAR2`: variables de URL que se apuntan al backend local |
 
 Valores booleanos: solo `true` o `false`.
 
@@ -522,27 +523,31 @@ y saca **capturas en cada paso** (y video). Veredicto:
 
 **Nunca contra producción, también en E2E:**
 
-- Los **backends corren locales**, desde las copias E2E, con `aenv.sh --e2e`, usando
-  **`.env.autopilot.e2e`** (lo creas tú, como `.env.autopilot`): mismas reglas (BD con "qa" en el
-  nombre, nada de producción) y además una **base de datos exclusiva para E2E**, distinta de la de
-  `.env.autopilot` (las pruebas crean usuarios, reservas...). Si es la misma, se niega (`compartida`).
-  Incluye `PORT` (el puerto del backend local).
+- Los **backends corren locales**, desde las copias E2E, con `aenv.sh --e2e`. Usan el
+  **`.env.autopilot.e2e`** del repo si lo creaste (p. ej. otra base u otro puerto) y, si no, el mismo
+  **`.env.autopilot`** (la base de QA). Mismas reglas en los dos: BD con "qa" en el nombre, nada de
+  producción. El puerto es su `PORT` (o el del `.env` si no lo define). Las pruebas crean datos en
+  esa base.
 - Las **apps Flutter** se apuntan a ese backend local con `e2e.sh api` (`E2E_API`: reemplaza la línea
   de la URL en la copia E2E, nunca se commitea; la URL la pone el kit: `http://localhost:<PORT>` en
   web y `http://10.0.2.2:<PORT>` en Android). Si alguien edita ese archivo después, `e2e.sh app` no
   corre.
+- Los **fronts web** (BackOffice) se apuntan solos al backend local: con
+  `E2E_API.<front>=env:VITE_API_BASE_URL,VITE_WEBSOCKET_URL`, `aenv.sh --e2e` reemplaza esas
+  variables por `http://localhost:<PORT>` (conserva la ruta; `https`→`http`, `wss`→`ws`). Sin
+  `E2E_API`, el front usa la API de su `.env.autopilot` (QA, no el backend de la tarea).
 - El **navegador** no resuelve ningún servidor salvo localhost (y las fuentes de Google): una llamada
   a otro servidor falla y queda en `red-bloqueada.txt`. El **emulador** arranca **sin DNS**: solo
   alcanza el backend local.
 - Apps, emulador y navegador solo por `e2e.sh`; el hook/permisos bloquean `flutter build/run/drive`,
   `playwright` y `emulator` directos.
 
-Ejemplo comentado de los tres `.env.autopilot.e2e` (backend, front web y cuentas):
+Ejemplo comentado (cuentas y, opcional, otra base/puerto para un backend):
 `examples/proyecto/env.autopilot.e2e.example`.
 
 **Cuentas de prueba:** en `.env.autopilot.e2e` junto a `autopilot.env`:
 `E2E_CLIENTE_USER=…`, `E2E_CLIENTE_PASSWORD=…`, `E2E_ADMIN_USER=…` (un par por rol; solo cuentas
-de QA que existan en la base E2E). El agente nunca las escribe en el reporte.
+de QA que existan en la base que usa el E2E). El agente nunca las escribe en el reporte.
 
 **Para activarlo:**
 
@@ -550,9 +555,9 @@ de QA que existan en la base E2E). El agente nunca las escribe en el reporte.
    `~/.local/share/autopilot-e2e`: Java 17, Android SDK + emulador + AVD `autopilot_e2e`, Playwright +
    Chromium). No toca tu Flutter, tu Java ni `~/.android`. Si no tienes acceso a `/dev/kvm`:
    `sudo usermod -aG kvm $USER`. Para quitarlo: `rm -rf ~/.local/share/autopilot-e2e`.
-2. Crea la base exclusiva (p. ej. `KonectameQADB_E2E`) con las cuentas de prueba, y los
-   `.env.autopilot.e2e` de cada backend y front web (el del BackOffice apunta su URL de API al
-   `http://localhost:<PORT>` del backend).
+2. Pon las cuentas de prueba en `.env.autopilot.e2e` junto a `autopilot.env`. Revisa que el
+   `.env.autopilot` de cada backend tenga `PORT` (puertos distintos entre backends). Opcional: un
+   `.env.autopilot.e2e` en un backend si quieres otra base u otro puerto solo para E2E.
 3. Revisa en `autopilot.env` el bloque E2E que propone `/autopilot-init`:
    ```sh
    E2E=true
@@ -563,6 +568,7 @@ de QA que existan en la base E2E). El agente nunca las escribe en el reporte.
    E2E_PLATFORMS.Konectame_App_Clientes=web,android
    E2E_PLATFORMS.Konectame_BackOffice=web
    E2E_API.Konectame_App_Clientes=lib/config/config.dart|^final baseUrl = .*;$|final baseUrl = "{API}";
+   E2E_API.Konectame_BackOffice=env:VITE_API_BASE_URL,VITE_WEBSOCKET_URL
    ```
    Con `E2E_CLIENTS`, una tarea que solo toca un backend igual se prueba desde sus apps (en su rama
    base), y una que solo toca una app levanta su backend.
@@ -577,7 +583,7 @@ K=~/.local/share/autopilot-kit
 $K/e2e.sh doctor                                  # qué herramientas E2E faltan
 $K/wi.sh <env> check                              # avisos: herramientas, .env.autopilot.e2e, cuentas, E2E_API
 $K/wi.sh <env> entorno <repo>                     # .env.autopilot (sin mostrar valores)
-python3 $K/entorno.py <repo> --e2e                # .env.autopilot.e2e (ok / compartida / inseguro...)
+python3 $K/entorno.py <repo> --e2e                # ambiente que usa el E2E en ese repo (ok / inseguro...)
 $K/wi.sh <env> validar-e2e <clave>                # ¿el último Reporte E2E alcanza para aprobar?
 $K/wi.sh <env> re-e2e <clave>                     # volver a probar en E2E (tras resolver un NO CERTIFICABLE)
 $K/wi.sh <env> e2e-worktree <clave>               # copias E2E para probar tú mismo (y e2e-worktree-borrar)

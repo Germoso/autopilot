@@ -21,10 +21,8 @@ Estados de un repo:
   inseguro    alguna clave destino de .env.autopilot no es local ni qa.
   incompleto  alguna clave destino de .env / .env.local / ... no esta en .env.autopilot.
 
-E2E: el agente e2e-tester usa `.env.autopilot.e2e` (tambien lo crea el humano), con las mismas
-reglas y una mas: su base de datos es EXCLUSIVA de las pruebas E2E, distinta de la de
-.env.autopilot (las pruebas crean usuarios, reservas, ordenes... y no deben ensuciar la de QA).
-  compartida  alguna BD de .env.autopilot.e2e es la misma que la de .env.autopilot.
+E2E: el agente e2e-tester usa `.env.autopilot.e2e` si el humano lo creo (p. ej. para otra base de
+datos o puerto), y si no, el mismo `.env.autopilot` (la base de QA). Mismas reglas en ambos casos.
 
 uso: entorno.py <repo o worktree> [--e2e]          JSON
      entorno.py <repo> [--e2e] --exportar          pares CLAVE\\0VALOR\\0 para aenv.sh (solo si ok)
@@ -104,8 +102,9 @@ def repo_principal(path):
     return os.path.abspath(path)
 
 
-def es_bd(k):
-    return bool(re.search(r"(DATABASE|(^|_)DB(_|$)|MONGO|POSTGRES|MYSQL|MARIADB|MSSQL|SQL(_|$))", k, re.I))
+def archivo_e2e(path):
+    """El que usa el agente E2E: .env.autopilot.e2e si existe; si no, .env.autopilot (la base de QA)."""
+    return ARCHIVO_E2E if os.path.isfile(os.path.join(repo_principal(path), ARCHIVO_E2E)) else ARCHIVO
 
 
 def validar(path, archivo=ARCHIVO):
@@ -121,9 +120,7 @@ def validar(path, archivo=ARCHIVO):
     if not os.path.isfile(out["archivo"]):
         out["estado"] = "falta"
         out["recomendacion"] = ("Crea %s en %s (copia de .env) apuntando a local o QA: base de datos cuyo "
-                                "NOMBRE diga qa, URLs de QA, NODE_ENV distinto de production.%s"
-                                % (archivo, repo, " Para E2E, con una base de datos EXCLUSIVA (distinta de la de "
-                                   ".env.autopilot), p. ej. <Proyecto>QADB_E2E." if archivo == ARCHIVO_E2E else ""))
+                                "NOMBRE diga qa, URLs de QA, NODE_ENV distinto de production." % (archivo, repo))
         return out
     permitidas = {x.strip() for x in auto.get("AUTOPILOT_PERMITIR", "").split(",") if x.strip()}
     for k, v in sorted(auto.items()):
@@ -132,29 +129,16 @@ def validar(path, archivo=ARCHIVO):
         if clasificar(k, v) == "no-permitido":
             (out["permitidas_por_humano"] if k in permitidas else out["inseguras"]).append(k)
     out["faltan"] = [k for k in destinos_reales if k not in auto]
-    out["compartidas"] = []
-    if archivo == ARCHIVO_E2E:
-        # Base exclusiva: ninguna BD de E2E puede ser una de las que usa .env.autopilot (coder/QA).
-        qa = leer(os.path.join(repo, ARCHIVO))
-        nombres_qa = {(nombre_bd(v) or v).lower() for k, v in qa.items() if v and es_bd(k) and es_destino(k)}
-        for k, v in sorted(auto.items()):
-            if v and es_bd(k) and es_destino(k) and (nombre_bd(v) or v).lower() in nombres_qa:
-                out["compartidas"].append(k)
     if out["inseguras"]:
         out["estado"] = "inseguro"
         out["recomendacion"] = ("En %s estas claves no apuntan a local ni a QA: %s. Cambialas a QA/local "
                                 "(la BD debe decir qa en su nombre) o, si es a proposito y seguro, "
-                                "agregalas a AUTOPILOT_PERMITIR." % (ARCHIVO, ", ".join(out["inseguras"])))
-    elif out["compartidas"]:
-        out["estado"] = "compartida"
-        out["recomendacion"] = ("En %s la base de datos de %s es la misma que usa .env.autopilot. Las pruebas "
-                                "E2E crean datos: usa una base EXCLUSIVA para E2E (su nombre tambien debe decir "
-                                "qa, p. ej. <Proyecto>QADB_E2E)." % (archivo, ", ".join(out["compartidas"])))
+                                "agregalas a AUTOPILOT_PERMITIR." % (archivo, ", ".join(out["inseguras"])))
     elif out["faltan"]:
         out["estado"] = "incompleto"
         out["recomendacion"] = ("%s no define %s, que el .env del repo si tiene: al ejecutar se usaria el "
                                 "valor real. Agregalas a %s con valores de QA/local."
-                                % (ARCHIVO, ", ".join(out["faltan"]), ARCHIVO))
+                                % (archivo, ", ".join(out["faltan"]), archivo))
     return out
 
 
@@ -162,7 +146,7 @@ def main(a):
     if not a:
         print(__doc__, file=sys.stderr)
         return 1
-    v = validar(a[0], ARCHIVO_E2E if "--e2e" in a else ARCHIVO)
+    v = validar(a[0], archivo_e2e(a[0]) if "--e2e" in a else ARCHIVO)
     if "--exportar" in a:
         if v["estado"] != "ok":
             print(json.dumps(v, ensure_ascii=False), file=sys.stderr)

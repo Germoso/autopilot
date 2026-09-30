@@ -11,8 +11,8 @@
 #  El .env.autopilot lo crea el HUMANO. Nadie mas lo crea, edita ni copia.
 #  Nunca espera para siempre: tiempo maximo COMMAND_TIMEOUT (autopilot.env, default 900 s).
 #
-#  --e2e: lo usa el agente e2e-tester. Usa `.env.autopilot.e2e` (base de datos EXCLUSIVA de las
-#  pruebas E2E, distinta de la de .env.autopilot) y el tiempo maximo E2E_COMMAND_TIMEOUT (2400 s).
+#  --e2e: lo usa el agente e2e-tester. Usa `.env.autopilot.e2e` si existe (p. ej. otra base o puerto)
+#  y si no, `.env.autopilot` (la base de QA); tiempo maximo E2E_COMMAND_TIMEOUT (2400 s).
 #
 #  uso: aenv.sh [--e2e] <repo o worktree> -- <comando> [args...]
 # ============================================================
@@ -40,7 +40,16 @@ while IFS= read -r -d '' k && IFS= read -r -d '' v; do
   export "$k=$v"
 done < <(python3 "$DIR/entorno.py" "$REPO" "${E2E[@]}" --exportar)
 export AUTOPILOT_ENTORNO=1
-[[ ${#E2E[@]} -gt 0 ]] && export AUTOPILOT_E2E=1
+if [[ ${#E2E[@]} -gt 0 ]]; then
+  export AUTOPILOT_E2E=1
+  # Front web en su copia E2E: sus variables de URL (E2E_API.<repo>=env:...) van al backend LOCAL.
+  WEB_ENV="$(mktemp)"
+  python3 "$DIR/e2e.py" web-env "$REPO" > "$WEB_ENV" || { rm -f "$WEB_ENV"; exit 3; }
+  while IFS= read -r -d '' k && IFS= read -r -d '' v; do
+    export "$k=$v"; echo "aenv: $k -> $v (backend local)" >&2
+  done < "$WEB_ENV"
+  rm -f "$WEB_ENV"
+fi
 
 # Nunca espera para siempre: COMMAND_TIMEOUT del autopilot.env (junto al repo o, en un workspace,
 # en la carpeta padre); default 900 s. Al vencer se le pide terminar y, 30 s despues, se lo fuerza.

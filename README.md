@@ -160,21 +160,28 @@ paso. Actívalo cuando quieras más confianza antes de mergear.
 ~/.local/share/autopilot-kit/e2e-setup.sh
 ```
 
-**2. Crear una base de datos solo para E2E** (p. ej. `KonectameQADB_E2E`) con usuarios de prueba.
-Tiene que ser **distinta** de la de QA, porque las pruebas crean datos.
+**2. Poner las cuentas de prueba** en un archivo `.env.autopilot.e2e` en la carpeta del proyecto
+(junto a `autopilot.env`), una por rol, que existan en la base de QA:
 
-**3. Crear `.env.autopilot.e2e`** (a mano, como el otro) en tres lugares:
+```
+E2E_CLIENTE_USER=cliente@prueba.com
+E2E_CLIENTE_PASSWORD=...
+E2E_ADMIN_USER=admin@prueba.com
+E2E_ADMIN_PASSWORD=...
+```
 
-| Dónde | Qué lleva |
-|---|---|
-| Cada backend | Lo mismo que su `.env.autopilot`, pero con la base de E2E y `PORT=3101` (un puerto distinto por backend) |
-| El BackOffice | Su URL de API apuntando a `http://localhost:<PORT de su backend>` |
-| La carpeta del proyecto (junto a `autopilot.env`) | Las cuentas de prueba: `E2E_CLIENTE_USER`, `E2E_CLIENTE_PASSWORD`, `E2E_ADMIN_USER`… |
+**3. Base de datos.** Por defecto el E2E usa **la misma base de QA** del `.env.autopilot` de cada
+backend: no tienes que crear nada. Solo asegúrate de que ese `.env.autopilot` tenga `PORT` (el
+puerto del backend; si no, se toma el del `.env`).
 
-Ejemplo comentado: [`examples/proyecto/env.autopilot.e2e.example`](examples/proyecto/env.autopilot.e2e.example).
+¿Prefieres otra base u otro puerto solo para E2E? Crea un `.env.autopilot.e2e` en ese backend (igual
+que `.env.autopilot`, con los cambios). Si existe, el E2E usa ese. Ejemplo:
+[`examples/proyecto/env.autopilot.e2e.example`](examples/proyecto/env.autopilot.e2e.example).
 
 **4. Activarlo.** En `autopilot.env`, `/autopilot-init` ya dejó un bloque E2E sugerido. Revísalo
 (sobre todo `E2E_CLIENTS`: qué app usa cada backend) y cambia `E2E=false` por `E2E=true`.
+No tienes que cambiar las URLs de las apps ni del BackOffice: en E2E el kit las apunta solo al
+backend local.
 
 **5. Comprobar y arrancar:**
 
@@ -184,9 +191,10 @@ Ejemplo comentado: [`examples/proyecto/env.autopilot.e2e.example`](examples/proy
 
 Luego `/autopilot`. Las tareas aprobadas por el QA pasan por E2E antes de llegar a `done`.
 
-**Cómo protege producción:** los backends corren en tu máquina contra la base de E2E, el kit apunta
-la app a ese backend local, y el navegador y el emulador **no pueden llegar a ningún otro servidor**
-(si la app lo intenta, queda anotado en el reporte).
+**Cómo protege producción:** los backends corren en tu máquina contra la base de QA (o la que
+pongas en `.env.autopilot.e2e`), el kit apunta las apps y el BackOffice a ese backend local, y el
+navegador y el emulador **no pueden llegar a ningún otro servidor** (si la app lo intenta, queda
+anotado en el reporte). Las pruebas crean datos en esa base (usuarios, órdenes…).
 
 ---
 
