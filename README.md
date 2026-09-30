@@ -196,10 +196,13 @@ backend local.
 Revisa **todo lo que hace falta antes de correr una prueba** y dice qué hacer con cada problema:
 herramientas, acceso al emulador (KVM), config E2E, `.env.autopilot` y puertos de cada backend,
 cuentas de prueba, apps que no compilan en Linux (imports con mayúsculas), apps que no soportan web,
-y qué servidores de producción se van a bloquear. ✅ ok · ⚠️ aviso · ❌ bloquea.
+y qué servidores de producción se van a bloquear. ✅ ok · ⚠️ aviso · ❌ bloquea. Cada ❌ dice **quién**
+lo resuelve: `[coder]` (se arregla con un commit, p. ej. un import roto) o `[humano]` (herramienta,
+ambiente, cuenta, configuración). Lo del coder **vuelve solo al coder**, sin contar como intento
+fallido y sin molestarte; solo lo `[humano]` detiene la tarea y te avisa.
 
 ```
-❌ compila   Konectame_App_Clientes (dev): imports que no existen en Linux: …/AddPhoneNumber.dart
+❌ compila   Konectame_App_Clientes (dev): imports que no existen en Linux: …/AddPhoneNumber.dart [coder]
              → corregir las mayusculas del import en el repo
 ⚠️  kvm       estas en el grupo kvm pero esta sesion aun no lo ve; el kit usa `sg kvm` solo
 ✅ produccion internet abierto; se bloquean: konectame-be-main.azurewebsites.net, …

@@ -645,9 +645,14 @@ servicios).
 | produccion | servidores que se bloquean (aviso si no detecta ninguno) | ⚠️ |
 | deep | arranca y apaga el emulador; abre Chromium | ❌ |
 
-`run-tests` lo corre antes de ejecutar (salvo `--qa` o `--skip-check`) y no corre nada si hay ❌. El
-agente E2E lo corre como primer paso; el orquestador no lanza al agente si hay ❌ (la tarea va a
-`stopped` con el detalle).
+Cada ❌ lleva `responsable`: **`coder`** (área `compila` y `cases.json` inválido: se arregla con un commit
+en la rama, aunque sea preexistente) o **`humano`** (todo lo demás). `run-tests` lo corre antes de
+ejecutar (salvo `--qa` o `--skip-check`) y no corre nada si hay ❌. El agente E2E lo corre como primer
+paso. El orquestador, si todos los ❌ son `coder`, devuelve la tarea con
+`wi.sh rechazar|rechazar-e2e <clave> "<qué corregir>" --bloqueo`: va a `bug-fix` **sin contar como
+intento** (el feedback dice "BLOQUEO PREEXISTENTE") y el aviso de Telegram es 🔧, no 🚨. Si hay algún
+`humano`, la tarea va a `stopped`. QA y E2E separan en su NO CERTIFICABLE `FALTA (codigo)` de
+`FALTA (humano)`, con la misma regla; el coder corrige lo preexistente que bloquea en un commit aparte.
 
 ## Pruebas de humo (tests/smoke/)
 
@@ -736,7 +741,8 @@ uso: wi.sh <env> <comando> [args]
   intentos   <clave> <n>
   certificar <clave> <intento_nuevo>     qa -> validando, fija Intento
   aprobar    <clave>                     validando -> done (con E2E=true: -> e2e, la cola de pruebas E2E)
-  rechazar   <clave> <feedback>          validando -> bug-fix
+  rechazar   <clave> <feedback> [--bloqueo]   validando -> bug-fix. --bloqueo: algo preexistente que se
+                                         arregla en codigo impide compilar/probar; no cuenta como intento
   reqa       <clave>                     -> qa, Intento a 0 (conserva el historial)
   probar-e2e <clave>                     e2e -> probando-e2e (ocupa el puesto e2e)
   e2e-worktree <clave>                   copias para el E2E: repos de la tarea (su rama) + los que
@@ -745,7 +751,7 @@ uso: wi.sh <env> <comando> [args]
   reporte-e2e <clave> <texto|-> [--imagenes <dir>]...  reporte del E2E con sus capturas
   validar-e2e <clave>                    revisa el ultimo Reporte E2E (JSON): criterios CUMPLE con capturas
   aprobar-e2e <clave>                    probando-e2e -> done, SOLO si validar-e2e da ok
-  rechazar-e2e <clave> <feedback>        probando-e2e -> bug-fix (Feedback de E2E)
+  rechazar-e2e <clave> <feedback> [--bloqueo]   probando-e2e/e2e -> bug-fix (Feedback de E2E); --bloqueo igual
   re-e2e     <clave>                     -> e2e otra vez (p. ej. tras resolver un NO CERTIFICABLE)
   telegram-setup                         conecta el bot del autopilot a tu chat (interactivo, en tu terminal)
   notify-test                            manda un mensaje de prueba por Telegram

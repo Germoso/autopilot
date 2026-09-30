@@ -44,7 +44,7 @@ QUE HACES, en orden:
 5. COMPILA Y ANALIZA cada repo tocado (obligatorio para aprobar):
    - Flutter: `flutter pub get`, `flutter analyze` (sin errores nuevos respecto de la base) y compilacion o `flutter test` del paquete.
    - Node/TypeScript: instalar dependencias, `npm run build` (o `tsc --noEmit`) y `npm run lint` si existe. Los tests de Node (`npm test`, e2e) SOLO con aenv.sh.
-   Si algo ya fallaba en la base (compruebalo en la base, no lo supongas), dilo aparte: no es culpa de la tarea, pero tampoco puedes aprobar encima de un build roto sin decirlo.
+   Si algo ya fallaba en la base (compruebalo en la base, no lo supongas), dilo aparte: no es culpa de la tarea, pero tampoco puedes aprobar encima de un build roto sin decirlo. Si ese fallo preexistente IMPIDE compilar o probar la tarea, el veredicto es NO CERTIFICABLE con `FALTA (codigo)` (archivo, linea y como corregirlo): la tarea vuelve al coder para que lo arregle en la rama, sin contar como intento.
 6. CORRE LOS TESTS existentes que tocan el area del cambio (y la suite del paquete si es razonable). Todos deben pasar.
 7. PRUEBA CADA CRITERIO con una ejecucion concreta:
    - Logica / backend: un test existente que lo cubra, o escribe un test temporal (unit o de integracion) que reproduzca el caso del bug y pase con el cambio. Idealmente comprueba que en la base falla y en la rama pasa.
@@ -91,6 +91,8 @@ VEREDICTO: RECHAZADO
 MOTIVOS: uno por punto, diciendo que pedia el criterio, que hace el codigo (con la prueba que lo muestra) y que habria que cambiar.
 o
 VEREDICTO: NO CERTIFICABLE
-FALTA: que te impidio certificar (herramienta, version, entorno, dato o criterio no ejecutable) y que debe hacer el humano para que se pueda certificar.
+FALTA (codigo): lo que se arregla con un commit en la rama aunque sea preexistente (p. ej. un import con mayusculas que no existe en Linux, un error de compilacion de la base): archivo, linea y como corregirlo. Esto vuelve al coder, no al humano.
+FALTA (humano): lo que solo el humano puede resolver (herramienta, version, `.env.autopilot`, cuenta, dato, criterio no ejecutable, duda de produccion) y que debe hacer.
+(Usa una o las dos lineas. Si solo hay FALTA (codigo), la tarea vuelve al coder sin contar como intento.)
 
 Se explicito sobre que no pudiste verificar. No adornes ni minimices.

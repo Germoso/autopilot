@@ -639,8 +639,14 @@ class Board:
             self.avisar("📱 E2E probando %s" % t)
         elif estado == "bug-fix":
             quien = "E2E" if "Feedback de E2E" in escritas else "QA"
+            bloque = re.split(r"(?m)^### ", secs.get("Feedback de %s" % quien, "").strip())[-1]
             fb = ultimo("Feedback de %s" % quien)
-            self.avisar("↩️ %s rechazada por %s (intento %s), vuelve al coder:\n%s" % (t, quien, n, fb[:600]))
+            if "BLOQUEO PREEXISTENTE" in bloque.split("\n", 1)[0]:
+                cuerpo = bloque.split("\n", 1)[1].strip() if "\n" in bloque else ""
+                self.avisar("🔧 %s vuelve al coder para corregir algo que impedia probar (no necesita tu "
+                            "intervencion, no cuenta como intento):\n%s" % (t, cuerpo[:600]))
+            else:
+                self.avisar("↩️ %s rechazada por %s (intento %s), vuelve al coder:\n%s" % (t, quien, n, fb[:600]))
         elif estado == "done":
             self.avisar("✅ %s lista y certificada: revisala y mergea.\n%s" % (t, (secs.get("Resultado", "") or "")[:500]),
                         alerta=True)
@@ -1388,7 +1394,8 @@ USO = """uso: wi.sh <env> <comando> [args]
   intentos   <clave> <n>
   certificar <clave> <intento_nuevo>     qa -> validando, fija Intento
   aprobar    <clave>                     validando -> done (con E2E=true: -> e2e, la cola de pruebas E2E)
-  rechazar   <clave> <feedback>          validando -> bug-fix
+  rechazar   <clave> <feedback> [--bloqueo]   validando -> bug-fix. --bloqueo: algo preexistente que se
+                                         arregla en codigo impide compilar/probar; no cuenta como intento
   reqa       <clave>                     -> qa, Intento a 0 (conserva el historial)
   probar-e2e <clave>                     e2e -> probando-e2e (ocupa el puesto e2e)
   e2e-worktree <clave>                   copias para el E2E: repos de la tarea (su rama) + los que
@@ -1397,7 +1404,7 @@ USO = """uso: wi.sh <env> <comando> [args]
   reporte-e2e <clave> <texto|-> [--imagenes <dir>]...  reporte del E2E con sus capturas
   validar-e2e <clave>                    revisa el ultimo Reporte E2E (JSON): criterios CUMPLE con capturas
   aprobar-e2e <clave>                    probando-e2e -> done, SOLO si validar-e2e da ok
-  rechazar-e2e <clave> <feedback>        probando-e2e -> bug-fix (Feedback de E2E)
+  rechazar-e2e <clave> <feedback> [--bloqueo]   probando-e2e/e2e -> bug-fix (Feedback de E2E); --bloqueo igual
   re-e2e     <clave>                     -> e2e otra vez (p. ej. tras resolver un NO CERTIFICABLE)
   telegram-setup                         conecta el bot del autopilot a tu chat (interactivo, en tu terminal)
   notify-test                            manda un mensaje de prueba por Telegram
@@ -1549,8 +1556,14 @@ def main(argv):
                                    "%s (%d captura/s)" % (c["criterio"], c["capturas"]) for c in v["criterios"]))})
     elif cmd == "rechazar-e2e":
         need(2)
-        b.modificar(a[0], "bug-fix", secs_append={
-            "Feedback de E2E": "### Intento %d — RECHAZADO EN E2E (%s)\n\n%s" % (intento_actual(a[0]), ahora(), a[1])})
+        n = intento_actual(a[0])
+        if "--bloqueo" in a:
+            b.modificar(a[0], "bug-fix", meta_set={"intento": str(max(0, n - 1))}, secs_append={
+                "Feedback de E2E": "### Intento %d — BLOQUEO PREEXISTENTE, no cuenta como intento (%s)\n\n%s"
+                                   % (n, ahora(), a[1])})
+        else:
+            b.modificar(a[0], "bug-fix", secs_append={
+                "Feedback de E2E": "### Intento %d — RECHAZADO EN E2E (%s)\n\n%s" % (n, ahora(), a[1])})
     elif cmd == "re-e2e":
         need(1)
         b.modificar(a[0], "e2e", secs_set={"Motivo de stopped": ""}, secs_append={
@@ -1563,8 +1576,15 @@ def main(argv):
     elif cmd == "rechazar":
         need(2)
         n = intento_actual(a[0])
-        b.modificar(a[0], "bug-fix", secs_append={
-            "Feedback de QA": "### Intento %d — RECHAZADO (%s)\n\n%s" % (n, ahora(), a[1])})
+        if "--bloqueo" in a:
+            # Algo preexistente impide compilar/probar y se arregla en codigo: vuelve al coder SIN contar
+            # como intento fallido (el proximo `certificar` vuelve a usar este mismo numero).
+            b.modificar(a[0], "bug-fix", meta_set={"intento": str(max(0, n - 1))}, secs_append={
+                "Feedback de QA": "### Intento %d — BLOQUEO PREEXISTENTE, no cuenta como intento (%s)\n\n%s"
+                                  % (n, ahora(), a[1])})
+        else:
+            b.modificar(a[0], "bug-fix", secs_append={
+                "Feedback de QA": "### Intento %d — RECHAZADO (%s)\n\n%s" % (n, ahora(), a[1])})
     elif cmd == "reqa":
         need(1)
         b.modificar(a[0], "qa", meta_set={"intento": "0"}, secs_append={
