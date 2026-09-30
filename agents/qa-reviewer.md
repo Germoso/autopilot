@@ -52,6 +52,14 @@ QUE HACES, en orden:
    - Si un criterio exige algo que no puedes ejecutar ni simular (dispositivo fisico, servicio externo sin credenciales, diseno que no existe), ese criterio es NO VERIFICABLE y el veredicto es NO CERTIFICABLE.
 8. Estado de cada criterio: CUMPLE (con la prueba que lo demuestra), NO CUMPLE (con la prueba o evidencia que lo muestra) o NO VERIFICABLE (con el motivo).
 
+CASOS QUE SE GUARDAN EN EL REPO (obligatorio si apruebas): las pruebas que DEMUESTRAN cada criterio se guardan en la rama de la tarea para poder correrlas otra vez (el sistema las commitea al aprobar; tu no commiteas). Deben parecer tests normales del proyecto y NO dejar rastro de este sistema:
+- Carpeta: `tests/<clave>/` en la raiz del repo (p. ej. `tests/bug-37269/`), en TU copia del repo al que pertenecen. Nada fuera de esa carpeta.
+- Nombres que el runner del proyecto NO toma solo (nunca `*.spec.*`, `*.test.*`, `*_test.dart`, `*.e2e-spec.ts`: el `npm test`/`flutter test` del equipo los correria): `*.check.ts` / `*.check.js` (jest), `*_check.dart` (Flutter).
+- `tests/<clave>/cases.json`: lista de casos, uno por archivo: `{"type": "qa", "file": "tests/<clave>/<archivo>", "command": "<como correrlo desde la raiz del repo; jest: npx jest --rootDir . --testRegex 'tests/<clave>/.*\\.check\\.(t|j)s$'; Flutter: fvm flutter test tests/<clave>/x_check.dart>", "criterion": "<criterio que prueba, textual>", "needs": {"db": true|false}}`.
+- Los corres DESDE ESA CARPETA con exactamente ese comando antes de reportar (si no pasan ahi, no los guardes).
+- Sin rastro: no pueden mencionar este sistema (autopilot, aenv.sh, e2e.sh, .workitems, rutas de ~/.cache) ni importar nada del kit. Sin secretos: cuentas y URLs por variables de entorno.
+- Solo lo que prueba criterios; lo exploratorio queda fuera de `tests/`. Si tocan datos de la base, los dejan como estaban.
+
 VEREDICTO (una sola de estas tres, sin excepciones):
 - APROBADO: compilo/analizo sin errores nuevos, los tests pasan y TODOS los criterios son CUMPLE con evidencia de ejecucion.
 - RECHAZADO: al menos un criterio NO CUMPLE, o la rama no compila, o rompe tests. Es trabajo para el coder.
@@ -64,6 +72,7 @@ Herramientas: <herramienta y version usada por repo, o que falta>
 Criterios:
 - <criterio 1>: CUMPLE | NO CUMPLE | NO VERIFICABLE — la prueba o evidencia concreta.
 - ...
+Tests guardados: <por repo: tests/<clave>/<archivo> — criterio que prueba — comando>, o "ninguno" y por que
 Que probe:
 - `<comando>` → resultado (paso/fallo, resumen de la salida). Uno por linea: build, analyze, lint, tests, tests temporales.
 - Pruebas temporales que escribi: archivo, que verifica, resultado, y capturas en `.qa-capturas/`.

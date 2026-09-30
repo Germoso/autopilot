@@ -129,17 +129,23 @@ def cuentas(cfg):
     return {k: v for k, v in entorno.leer(path).items() if k.startswith("E2E_") and v}
 
 
+RE_RUN = re.compile(r"^(?P<repo>.+)-(?P<clave>(task|bug)-\d+|all-\d+)$")
+
+
 def worktree_e2e(path):
-    """(raiz del worktree, repo, clave) si path esta dentro de una copia E2E del kit."""
+    """(raiz del worktree, repo, clave) si path esta dentro de una copia E2E del kit o de una copia del
+    comando `test` (~/.cache/autopilot-kit/run/<repo>-<clave|all-N>)."""
     real = os.path.realpath(os.path.expanduser(path))
-    raiz = os.path.realpath(wi.cache_kit("e2e")) + os.sep
-    if not real.startswith(raiz):
-        raise Error("%s no es una copia E2E (%s<repo>-<clave>). Pidela con wi.sh e2e-worktree <clave>" % (path, raiz))
-    nombre = real[len(raiz):].split(os.sep)[0]
-    m = wi.RE_WT.match(nombre)
-    if not m:
-        raise Error("%s no es una copia E2E valida" % path)
-    return raiz + nombre, m.group("repo"), m.group("clave")
+    for sub, patron in (("e2e", wi.RE_WT), ("run", RE_RUN)):
+        raiz = os.path.realpath(wi.cache_kit(sub)) + os.sep
+        if real.startswith(raiz):
+            nombre = real[len(raiz):].split(os.sep)[0]
+            m = patron.match(nombre)
+            if not m:
+                raise Error("%s no es una copia E2E valida" % path)
+            return raiz + nombre, m.group("repo"), m.group("clave")
+    raise Error("%s no es una copia E2E (%s<repo>-<clave>). Pidela con wi.sh e2e-worktree <clave>"
+                % (path, os.path.realpath(wi.cache_kit("e2e")) + os.sep))
 
 
 def marca(wt):
@@ -305,7 +311,7 @@ def app(path, cmd):
     m = verificar_api(wt)
     print("e2e: %s apunta a %s (%s)" % (repo, m["url"], m["plataforma"]), file=sys.stderr)
     env = env_herramientas()
-    env["E2E_CAPTURAS"] = os.path.join(wt, ".e2e-capturas", "android")
+    env["E2E_CAPTURAS"] = os.environ.get("E2E_CAPTURAS") or os.path.join(wt, ".e2e-capturas", "android")
     os.makedirs(env["E2E_CAPTURAS"], exist_ok=True)
     os.chdir(wt)
     os.execvpe("timeout", ["timeout", "--kill-after=30", str(cfg_timeout(wt))] + cmd, env)
@@ -340,8 +346,10 @@ def web(path, spec, extra):
         raise Error("falta Playwright: corre e2e-setup.sh")
     env = env_herramientas()
     env["E2E_SPEC"] = spec
-    env["E2E_SALIDA"] = os.path.join(wt, ".e2e-capturas", "web")
-    os.makedirs(env["E2E_SALIDA"], exist_ok=True)
+    env["E2E_SALIDA"] = os.environ.get("E2E_SALIDA") or os.path.join(wt, ".e2e-capturas", "web")
+    # Los casos que se guardan en el repo no usan nada del kit: hacen sus capturas en SCREENSHOTS_DIR.
+    env["SCREENSHOTS_DIR"] = os.environ.get("SCREENSHOTS_DIR") or os.path.join(env["E2E_SALIDA"], "capturas")
+    os.makedirs(env["SCREENSHOTS_DIR"], exist_ok=True)
     os.chdir(wt)
     os.execvpe("timeout", ["timeout", "--kill-after=30", str(cfg_timeout(wt)), "node", cli, "test",
                            "--config", os.path.join(AQUI, "e2e-playwright.config.cjs")] + extra, env)

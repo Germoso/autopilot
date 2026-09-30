@@ -44,6 +44,16 @@ QUE HACES, en orden:
 9. Si algo falla, repite una vez para descartar un fallo del ambiente (arranque lento, emulador) y averigua si es de la tarea o ya pasaba en la base: si hace falta, compara con la rama base del repo en una prueba aparte. Un fallo del producto es NO CUMPLE; un problema del ambiente que no puedes resolver es NO VERIFICABLE.
 10. Al terminar: `e2e.sh emulador parar <serial>`, apaga backends, vite y servidores que arrancaste.
 
+CASOS QUE SE GUARDAN EN EL REPO (obligatorio si apruebas): las pruebas que DEMUESTRAN cada criterio se guardan en la rama de la tarea para poder correrlas otra vez (el sistema las commitea al aprobar; tu no commiteas). Deben parecer tests normales del proyecto y NO dejar rastro de este sistema:
+- Carpeta: `tests/<clave>/` en la raiz del repo (p. ej. `tests/bug-37269/`), en TU copia del repo al que pertenecen. Nada fuera de esa carpeta (salvo `tests/services.json`, ver abajo).
+- Nombres que el runner del proyecto NO toma solo (nunca `*.spec.*`, `*.test.*`, `*_test.dart`, `*.e2e-spec.ts`: el `npm test`/`flutter test` del equipo los correria): `*.flow.cjs` (Playwright) / `*_flow.dart` (Flutter integration).
+- `tests/<clave>/cases.json`: lista de casos, uno por archivo: `{"type": "e2e", "file": "tests/<clave>/<archivo>", "project": "web-escritorio|web-movil", (android: "command": "fvm flutter drive --driver=... --target=tests/<clave>/x_flow.dart -d {device}"), "criterion": "<criterio que prueba, textual>", "needs": {"services": ["<repo backend>", "<repo front>"], "platform": "web|android", "accounts": ["E2E_BO_ADMIN"]}}`.
+- Los corres DESDE ESA CARPETA con exactamente ese comando antes de reportar (si no pasan ahi, no los guardes).
+- Sin rastro: no pueden mencionar este sistema (autopilot, aenv.sh, e2e.sh, .workitems, rutas de ~/.cache) ni importar nada del kit. Sin secretos: cuentas y URLs por variables de entorno.
+- Solo lo que prueba criterios; lo exploratorio queda fuera de `tests/`. Si tocan datos de la base, los dejan como estaban.
+- Los casos web solo usan `require("@playwright/test")`, abren `process.env.BASE_URL` (la URL del front que levanta el sistema), leen las cuentas de `process.env.E2E_<ROL>_USER/PASSWORD` y guardan sus capturas con `page.screenshot({ path: `${process.env.SCREENSHOTS_DIR || "test-results"}/<criterio>-web-<nn>-<paso>.png` })` (no uses `E2E_PASOS`: es del kit). Prueba el caso guardado con `e2e.sh web <copia> tests/<clave>/<x>.flow.cjs` (pasandole BASE_URL y las cuentas por entorno).
+- `tests/services.json` en la copia de CADA repo que levantaste: `{"start": "<comando de arranque, sin watch; p. ej. npm run build && node dist/main>", "ready_url": "http://localhost:<puerto>/<ruta que responde>"}`. Se guarda aunque ese repo no tenga casos.
+
 VEREDICTO (una sola de estas tres):
 - APROBADO: cada criterio CUMPLE de punta a punta en cada plataforma que aplica, con capturas.
 - RECHAZADO: al menos un criterio NO CUMPLE (el flujo real falla o muestra algo distinto a lo esperado). Es trabajo para el coder: pasos exactos para reproducirlo y las capturas que lo muestran.
@@ -65,6 +75,7 @@ Criterios:
      ![<que se ve>](<ruta completa de la captura>)
 #### C2 — ...
 Videos: <rutas completas, si hay>
+Tests guardados: <por repo: tests/<clave>/<archivo> — criterio — plataforma; y los tests/services.json que dejaste>, o "ninguno" y por que
 Red bloqueada: <hosts que la app intento y el navegador/emulador bloqueo, o "ninguno">
 Como repetirlo manualmente:
 1. Preparacion: ramas, backend local con que base, como apuntar la app, datos previos.

@@ -9,10 +9,11 @@ Todo el detalle técnico. Para empezar a usarlo, lee primero el [README](../READ
 3. [autopilot.env: todas las variables](#autopilotenv)
 4. [Azure DevOps, adjuntos y el watcher](#uso)
 5. [Trabajo en paralelo, vigilante, producción, QA y E2E](#puestos-en-paralelo)
-6. [Comandos de wi.sh](#comandos-de-wish)
-7. [MCP de Azure DevOps](#mcp-de-azure-devops-opcional)
-8. [Estructura del kit](#qué-incluye)
-9. [Seguridad](#seguridad)
+6. [Casos de prueba guardados y el comando `test`](#casos-de-prueba-guardados-tests)
+7. [Comandos de wi.sh](#comandos-de-wish)
+8. [MCP de Azure DevOps](#mcp-de-azure-devops-opcional)
+9. [Estructura del kit](#qué-incluye)
+10. [Seguridad](#seguridad)
 
 ---
 
@@ -592,6 +593,51 @@ $K/wi.sh <env> e2e-worktree <clave>               # copias E2E para probar tú m
 
 ---
 
+## Casos de prueba guardados (tests/)
+
+Al aprobar, `wi.sh aprobar` (QA) y `wi.sh aprobar-e2e` (E2E) toman `tests/<clave>/` de las copias del
+agente, lo validan y lo commitean en la rama de la tarea (`test: casos de prueba de <clave>`). Si un
+repo del flujo E2E no era de la tarea, le abren la misma rama. Nunca frenan la aprobación: si algo no
+es válido, no se guarda y el aviso queda en `## Resultado`.
+
+**`tests/<clave>/cases.json`** (una entrada por caso):
+
+```json
+[
+  {"type": "qa", "file": "tests/bug-37269/popular.check.ts",
+   "command": "npx jest --rootDir . --testRegex 'tests/bug-37269/.*\\.check\\.(t|j)s$'",
+   "criterion": "El detalle muestra el mismo estado que Editar", "needs": {"db": true}},
+  {"type": "e2e", "file": "tests/bug-37269/detalle-popular.flow.cjs", "project": "web-escritorio",
+   "criterion": "…", "needs": {"services": ["Konectame_BackOffice_BE", "Konectame_BackOffice"],
+   "platform": "web", "accounts": ["E2E_BO_ADMIN"]}}
+]
+```
+
+- `needs.db`: el comando va por `aenv.sh` (con `.env.autopilot`). Sin eso, la copia no tiene ningún
+  `.env` y no se conecta a nada.
+- E2E web: se corre con `e2e.sh web` (navegador sin red externa, video). Recibe `BASE_URL` (la del
+  servicio de su repo), las cuentas `E2E_*` y `SCREENSHOTS_DIR` por variables de entorno.
+- E2E android: `command` con `{device}` (el serial del emulador); se corre con `e2e.sh app`.
+
+**`tests/services.json`** (uno por repo): `{"start": "...", "ready_url": "http://localhost:3001/…",
+"ready_timeout": 300}`. `start` corre con `aenv.sh --e2e`; se espera a que `ready_url` responda.
+
+**Validación al guardar** (si falla, no se guarda):
+- `cases.json` válido y cada `file` dentro de `tests/<clave>/`;
+- nombres que el runner del proyecto no toma: nada de `*.spec.*`, `*.test.*`, `*_test.dart`,
+  `*.e2e-spec.ts` (se usan `*.check.ts|js`, `*_check.dart`, `*.flow.cjs`, `*_flow.dart`), y además
+  `jest --listTests` del repo no debe listarlos;
+- sin rastro del sistema (`autopilot`, `aenv.sh`, `e2e.sh`, `E2E_PASOS`, `.workitems`, `~/.cache/autopilot…`);
+- sin `.env*`, sin enlaces simbólicos, sin valores de `cuentas-e2e.env`.
+
+**Correrlos:** `wi.sh <env> test <clave>|--all [--qa|--e2e] [--ref <rama>]`, o el atajo
+`~/.local/share/autopilot-kit/run-tests` (busca `autopilot.env` en la carpeta actual o la de arriba).
+Una tarea usa su rama (o la base si ya no existe); `--all` usa la rama base de cada repo. Crea copias
+en `~/.cache/autopilot-kit/run/`, instala dependencias, levanta los servicios, corre, apaga y borra
+todo. Reporte en `<workspace>/test-results/<fecha>-<clave|all>.md` con capturas; sale con 1 si algo falla.
+
+---
+
 ## Comandos de wi.sh
 
 `wi.sh` es la única vía para cambiar el board (el watcher y los agentes la usan). Uso:
@@ -628,6 +674,10 @@ uso: wi.sh <env> <comando> [args]
   aprobar-e2e <clave>                    probando-e2e -> done, SOLO si validar-e2e da ok
   rechazar-e2e <clave> <feedback>        probando-e2e -> bug-fix (Feedback de E2E)
   re-e2e     <clave>                     -> e2e otra vez (p. ej. tras resolver un NO CERTIFICABLE)
+  test       <clave>|--all [--qa|--e2e] [--ref <rama>]
+                                         vuelve a correr los casos guardados en los repos
+                                         (tests/<clave>/cases.json); --all = regresion en las ramas base.
+                                         Reporte en <workspace>/test-results/. Alias: run-tests
   add-task   <task|bug> <numero> <prioridad> <titulo> <descripcion> <criterio> [repo]
                                          (en un workspace, repo es obligatorio: la carpeta del repo)
   check                                  avisos de configuracion (ramas base vacias, repos faltantes,
@@ -699,6 +749,7 @@ dotenvs/
 │   ├── vigia.py                # vigilante: procesos colgados/huerfanos, tareas atascadas
 │   ├── e2e.sh / e2e.py         # agente E2E: apps al backend local, emulador sin DNS, navegador con red cortada
 │   ├── e2e-setup.sh            # instala Java, Android SDK + emulador + AVD, Playwright (una vez, sin sudo)
+│   ├── pruebas.py, run-tests   # vuelve a correr los casos guardados en los repos (tests/<clave>/)
 │   ├── e2e-playwright.config.cjs, e2e-pasos.cjs, e2e_driver.dart   # capturas en cada paso (web/Android)
 │   └── ado-mcp.sh              # lanza el MCP de Azure DevOps con tu PAT
 ├── skills/                     # -> carpeta de skills de cada cliente

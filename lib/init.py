@@ -35,7 +35,7 @@ import workitems as wi  # noqa: E402
 
 PREFERIDAS = ["develop", "dev", "main", "master"]
 IGNORAR = [".workitems/", "autopilot.env", "azure-sync.env", "*.secrets.env", ".claude/settings.local.json",
-           ".env.autopilot", ".env.autopilot.e2e", "cuentas-e2e.env"]
+           ".env.autopilot", ".env.autopilot.e2e", "cuentas-e2e.env", "test-results/"]
 RE_AZURE = re.compile(r"dev\.azure\.com/([^/]+)/([^/]+)/_git/|([^/.]+)\.visualstudio\.com/([^/]+)/_git/")
 
 
