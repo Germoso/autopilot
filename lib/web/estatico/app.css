@@ -93,3 +93,12 @@ details summary { cursor: pointer; font-weight: 550; }
 .galeria-entrada { margin-top: 10px; }
 .galeria-entrada > summary { cursor: pointer; color: var(--suave); font-size: 14px; }
 .galeria-entrada .galeria { margin-top: 8px; }
+.visor-nav, .visor-cerrar { position: absolute; border: 0; background: rgba(255,255,255,.14); color: #fff; cursor: pointer; border-radius: 999px; }
+.visor-nav { top: 50%; transform: translateY(-50%); width: 52px; height: 52px; font-size: 34px; line-height: 1; }
+.visor-nav:hover, .visor-cerrar:hover { background: rgba(255,255,255,.28); }
+.visor-nav.anterior { left: 16px; }
+.visor-nav.siguiente { right: 16px; }
+.visor-cerrar { top: 14px; right: 16px; width: 40px; height: 40px; font-size: 18px; }
+.visor-pie { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; color: #fff; font-size: 13px; opacity: .85; padding: 0 16px; word-break: break-all; }
+.visor img { max-height: calc(100% - 60px); }
+@media (max-width: 600px) { .visor-nav { width: 40px; height: 40px; font-size: 26px; } .visor-nav.anterior { left: 6px; } .visor-nav.siguiente { right: 6px; } }
