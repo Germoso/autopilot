@@ -195,6 +195,8 @@ $W "$E" aprobar-e2e <clave>                   # probando-e2e -> done (se niega s
 $W "$E" rechazar-e2e <clave> "<motivos>"      # probando-e2e -> bug-fix
 $W "$E" re-e2e      <clave>                   # -> e2e otra vez (tras resolver un NO CERTIFICABLE)
 $W "$E" e2e-worktree-borrar <clave>           # mata backend, web y emulador que queden ahí
+# Casos guardados en los repos (tests/<clave>/cases.json): volver a correrlos
+$W "$E" test <clave>|--all [--qa|--e2e]        # o $K/run-tests ...; reporte en test-results/
 ```
 
 ## El bucle
@@ -254,7 +256,10 @@ Al pasar a `done` o `stopped`, el worktree del coder se borra solo y se liberan 
 2. Veredicto (el QA solo aprueba lo que **probó**: compilación, tests y cada criterio con una
    ejecución; "por lectura de código" no alcanza):
    - `APROBADO` → `$W "$E" aprobar <clave>` (va a `done`; con `E2E=true` va a la cola `e2e`: lo
-     dice su salida, `ok -> done` u `ok -> e2e`).
+     dice su salida, `ok -> done` u `ok -> e2e`). **Antes**, guarda solo los casos del QA
+     (`tests/<clave>/` de sus copias) en la rama de la tarea con un commit `test: casos de prueba de
+     <clave>`; si no son válidos no los guarda y lo avisa (`AVISO:`), sin frenar la aprobación.
+     Hazlo **antes** de `qa-worktree-borrar` (si no, se pierden).
    - `RECHAZADO` → si `intento >= 3` → `$W "$E" stopped <clave> "<historial de los intentos>"`;
      si no → `$W "$E" rechazar <clave> "<motivos>"` (va a `bug-fix`: el coder lo toma primero).
    - `NO CERTIFICABLE` → `$W "$E" stopped <clave> "NO CERTIFICABLE: <lo que dice FALTA>"`. No es
@@ -271,7 +276,9 @@ Al pasar a `done` o `stopped`, el worktree del coder se borra solo y se liberan 
    Las capturas que cita (y las de esas carpetas) se copian a `adjuntos/<clave>/e2e-intentoN/` y
    quedan **incrustadas en el `.md`**, en el paso que muestran.
 2. Veredicto:
-   - `APROBADO` → `$W "$E" aprobar-e2e <clave>` (va a `done`). **Se niega** si algún criterio del
+   - `APROBADO` → `$W "$E" aprobar-e2e <clave>` (va a `done`). También guarda los casos E2E y los
+     `tests/services.json` de sus copias en la rama (commit `test: ...`); si un repo del flujo no era
+     de la tarea, le abre la rama. **Antes** de `e2e-worktree-borrar`. **Se niega** si algún criterio del
      reporte no dice CUMPLE, no tiene capturas o falta una plataforma esperada: entonces trátalo como
      `NO CERTIFICABLE` con lo que dijo `validar-e2e`. Nunca apruebes por tu cuenta.
    - `RECHAZADO` → si `intento >= 3` → `$W "$E" stopped <clave> "<historial>"`; si no →

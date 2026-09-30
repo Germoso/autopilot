@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# run-tests — vuelve a correr los casos de prueba guardados (atajo de: wi.sh <env> test ...)
+#   run-tests bug-37269            una tarea (QA + E2E)
+#   run-tests --all                regresion: todos los casos en la rama base de cada repo
+#   run-tests bug-37269 --e2e      solo E2E (o --qa)
+# Busca autopilot.env en la carpeta actual o en la de arriba (o usa AUTOPILOT_ENV).
+DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+ENV_FILE="${AUTOPILOT_ENV:-}"
+if [[ -z "$ENV_FILE" ]]; then
+  for d in "$PWD" "$(dirname "$PWD")"; do [[ -f "$d/autopilot.env" ]] && { ENV_FILE="$d/autopilot.env"; break; }; done
+fi
+[[ -z "$ENV_FILE" ]] && { echo "run-tests: no encuentro autopilot.env aqui ni en la carpeta de arriba (o define AUTOPILOT_ENV)" >&2; exit 2; }
+exec python3 "$DIR/pruebas.py" "$ENV_FILE" "$@"

@@ -862,6 +862,126 @@ class Board:
         return {"ok": not problemas, "problemas": problemas, "criterios": criterios,
                 "plataformas_esperadas": sorted(esperadas)}
 
+    # -- casos de prueba que se guardan en el repo
+    # Los casos quedan como tests normales del proyecto: tests/<clave>/ con cases.json. Nada del kit.
+    RASTRO = re.compile(r"autopilot|aenv\.sh|e2e\.sh|E2E_PASOS|E2E_SALIDA|\.workitems|\.cache/autopilot", re.I)
+    # Nombres que los runners del proyecto tomarian solos (npm test, flutter test, test:e2e): prohibidos.
+    RE_NOMBRE_RUNNER = re.compile(r"(\.(spec|test)\.[cm]?[jt]sx?|_test\.dart|\.e2e-spec\.ts)$")
+
+    def validar_casos(self, wt, clave, secretos=()):
+        """Problemas de tests/<clave>/ (y tests/services.json) en la copia `wt`; [] si se puede guardar."""
+        carpeta = os.path.join(wt, "tests", clave)
+        probs = []
+        casos = []
+        if os.path.isdir(carpeta):
+            try:
+                casos = json.load(open(os.path.join(carpeta, "cases.json"), encoding="utf-8"))
+                assert isinstance(casos, list) and casos
+            except (OSError, ValueError, AssertionError):
+                return ["tests/%s/cases.json no existe o no es una lista JSON de casos" % clave]
+        for c in casos:
+            if not isinstance(c, dict) or c.get("type") not in ("qa", "e2e") or not c.get("file"):
+                probs.append("caso invalido en cases.json: %s" % json.dumps(c, ensure_ascii=False)[:120])
+                continue
+            real = os.path.realpath(os.path.join(wt, c["file"]))
+            if not real.startswith(os.path.realpath(carpeta) + os.sep) or not os.path.isfile(real):
+                probs.append("%s no existe dentro de tests/%s/" % (c["file"], clave))
+            if c["type"] == "qa" and not c.get("command"):
+                probs.append("%s: falta command" % c["file"])
+        archivos = [os.path.join(r, f) for r, _, fs in os.walk(carpeta) for f in fs]
+        services = os.path.join(wt, "tests", "services.json")
+        if os.path.isfile(services):
+            archivos.append(services)
+            try:
+                json.load(open(services, encoding="utf-8"))
+            except ValueError:
+                probs.append("tests/services.json no es JSON valido")
+        for f in archivos:
+            rel = os.path.relpath(f, wt)
+            if os.path.islink(f):
+                probs.append("%s es un enlace simbolico" % rel)
+                continue
+            if re.match(r"^\.env", os.path.basename(f)):
+                probs.append("%s: no se guardan archivos .env" % rel)
+            if self.RE_NOMBRE_RUNNER.search(os.path.basename(f)):
+                probs.append("%s: ese nombre lo tomaria el runner del proyecto (npm test / flutter test); usa "
+                             "*.check.ts, *_check.dart, *.flow.cjs o *_flow.dart" % rel)
+            try:
+                txt = open(f, encoding="utf-8").read()
+            except (UnicodeDecodeError, OSError):
+                continue
+            m = self.RASTRO.search(txt)
+            if m:
+                probs.append("%s menciona '%s': los casos no pueden dejar rastro del sistema" % (rel, m.group(0)))
+            if any(s and s in txt for s in secretos):
+                probs.append("%s contiene el valor de una cuenta de prueba: usa variables de entorno" % rel)
+        jest = os.path.join(wt, "node_modules", ".bin", "jest")
+        if os.path.exists(jest):  # que el `npm test` del equipo no los tome
+            r = subprocess.run([jest, "--listTests"], cwd=wt, capture_output=True, text=True, timeout=120)
+            tomados = [l for l in r.stdout.splitlines() if os.path.realpath(l).startswith(os.path.realpath(carpeta))]
+            if tomados:
+                probs.append("jest del proyecto tomaria %s: cambia el nombre" % ", ".join(os.path.relpath(t, wt) for t in tomados))
+        return probs
+
+    def guardar_tests(self, clave, origen):
+        """Al aprobar (QA o E2E): copia tests/<clave>/ de las copias del agente a la rama de la tarea y
+        la commitea. Nunca bloquea la aprobacion: si algo no es valido, no se guarda y queda el aviso."""
+        import e2e as e2e_mod
+        clave = clave.lower()
+        meta = self.leer(clave)[2]
+        repos = self.repos_e2e(clave) if origen == "e2e" else [dict(r, en_tarea=True) for r in self.repos_de_tarea(meta)]
+        path_de = self.e2e_worktree_path if origen == "e2e" else self.qa_worktree_path
+        secretos = [v for v in e2e_mod.cuentas(self.cfg).values() if len(v) >= 4]
+        guardados, avisos = [], []
+        for r in repos:
+            nombre = r["nombre"] or os.path.basename(r["path"])
+            wt = path_de(r, clave)
+            hay_casos = os.path.isdir(os.path.join(wt, "tests", clave))
+            svc = os.path.join(wt, "tests", "services.json")
+            # services.json (como levantar el repo) se guarda aunque el repo no tenga casos, si es nuevo o cambio
+            hay_svc = os.path.isfile(svc) and self.git(wt, "status", "--porcelain", "--", "tests/services.json",
+                                                         check=False).stdout.strip() != ""
+            if not hay_casos and not hay_svc:
+                continue
+            probs = self.validar_casos(wt, clave, secretos)
+            if probs:
+                avisos.append("%s: no se guardaron los casos (%s)" % (nombre, "; ".join(probs)))
+                continue
+            try:
+                if not r.get("en_tarea", True):
+                    self.preparar_rama(clave, "nueva", repo=nombre)
+                dst = self.coder_worktree_path(r, clave)
+                if not os.path.isdir(dst):
+                    self._rama_en(r, clave, "existente")
+                destino = os.path.join(dst, "tests", clave)
+                rutas = []
+                if hay_casos:
+                    if os.path.isdir(destino):
+                        shutil.rmtree(destino)
+                    shutil.copytree(os.path.join(wt, "tests", clave), destino)
+                    rutas.append(os.path.join("tests", clave))
+                if hay_svc:
+                    os.makedirs(os.path.join(dst, "tests"), exist_ok=True)
+                    shutil.copy2(svc, os.path.join(dst, "tests", "services.json"))
+                    rutas.append(os.path.join("tests", "services.json"))
+                self.git(dst, "add", "--", *rutas)
+                if self.git(dst, "diff", "--cached", "--quiet", check=False).returncode == 0:
+                    continue
+                self.git(dst, "commit", "-m", "test: casos de prueba de %s" % clave)
+                casos = json.load(open(os.path.join(destino, "cases.json"), encoding="utf-8")) if hay_casos else []
+                n = {t: sum(1 for c in casos if c.get("type") == t) for t in ("qa", "e2e")}
+                guardados.append({"repo": nombre, "commit": self.git(dst, "rev-parse", "--short", "HEAD").stdout.strip(),
+                                  "qa": n["qa"], "e2e": n["e2e"]})
+            except Error as e:
+                avisos.append("%s: no se pudieron guardar los casos (%s)" % (nombre, str(e).strip().splitlines()[0][:200]))
+        if guardados or avisos:
+            linea = "Tests guardados (%s): %s%s" % (origen.upper(), "; ".join(
+                "%s @ %s (%d qa, %d e2e)" % (g["repo"], g["commit"], g["qa"], g["e2e"]) for g in guardados) or "ninguno",
+                "".join("\n- ⚠️ " + a for a in avisos))
+            self.modificar(clave, secs_append={"Resultado": linea})
+            self.log("Tests guardados", "sistema", "nota", clave, clave, "-", linea.replace("\n", " "))
+        return {"guardados": guardados, "avisos": avisos}
+
     def avisos_e2e(self):
         cfg = self.cfg["e2e"]
         out = []
@@ -1179,6 +1299,10 @@ USO = """uso: wi.sh <env> <comando> [args]
   aprobar-e2e <clave>                    probando-e2e -> done, SOLO si validar-e2e da ok
   rechazar-e2e <clave> <feedback>        probando-e2e -> bug-fix (Feedback de E2E)
   re-e2e     <clave>                     -> e2e otra vez (p. ej. tras resolver un NO CERTIFICABLE)
+  test       <clave>|--all [--qa|--e2e] [--ref <rama>]
+                                         vuelve a correr los casos guardados en los repos
+                                         (tests/<clave>/cases.json); --all = regresion en las ramas base.
+                                         Reporte en <workspace>/test-results/. Alias: run-tests
   add-task   <task|bug> <numero> <prioridad> <titulo> <descripcion> <criterio> [repo]
                                          (en un workspace, repo es obligatorio: la carpeta del repo)
   check                                  avisos de configuracion (ramas base vacias, repos faltantes,
@@ -1240,6 +1364,9 @@ def main(argv):
         res = [entorno.validar(x) for x in objetivo]
         print(json.dumps(res if len(res) > 1 else res[0], ensure_ascii=False, indent=2))
         return 0 if all(x["estado"] == "ok" for x in res) else 3
+    if cmd == "test":
+        import pruebas
+        return pruebas.main([env] + a)
     if cmd == "check":
         for a_ in b.avisos():
             print("AVISO: " + a_)
@@ -1284,18 +1411,25 @@ def main(argv):
         need(2); b.modificar(a[0], "validando", meta_set={"intento": str(int(a[1]))})
     elif cmd == "aprobar":
         need(1)
+        g = b.guardar_tests(a[0], "qa")
         n = intento_actual(a[0])
         destino = "e2e" if b.cfg["e2e"]["activo"] else "done"
         b.modificar(a[0], destino, secs_append={
             "Feedback de QA": "### Intento %d — APROBADO (%s)\n\nCertificado sin observaciones.%s"
                               % (n, ahora(), " Pasa a pruebas E2E." if destino == "e2e" else "")})
-        print("ok -> %s" % destino)
+        print("ok -> %s%s" % (destino, "".join("\ntests guardados: %s @ %s" % (x["repo"], x["commit"])
+                                               for x in g["guardados"]) + "".join("\nAVISO: " + x for x in g["avisos"])))
         return 0
     elif cmd == "aprobar-e2e":
         need(1)
         v = b.validar_e2e(a[0])
         if not v["ok"]:
             raise Error("no se puede aprobar en E2E: %s" % "; ".join(v["problemas"]))
+        g = b.guardar_tests(a[0], "e2e")
+        for x in g["guardados"]:
+            print("tests guardados: %s @ %s" % (x["repo"], x["commit"]))
+        for x in g["avisos"]:
+            print("AVISO: " + x)
         b.modificar(a[0], "done", secs_append={
             "Feedback de E2E": "### Intento %d — APROBADO E2E (%s)\n\nProbado de punta a punta: %s."
                                % (intento_actual(a[0]), ahora(), ", ".join(

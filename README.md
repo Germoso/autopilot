@@ -212,6 +212,39 @@ anotado en el reporte). Las pruebas crean datos en esa base (usuarios, órdenes�
 
 ---
 
+## Volver a correr las pruebas
+
+Cuando el QA o el E2E **aprueban** una tarea, las pruebas que demuestran cada criterio quedan
+guardadas **en la rama de la tarea**, como tests normales del proyecto, y viajan en el PR:
+
+```
+tests/
+├── bug-37269/
+│   ├── cases.json               qué casos hay y cómo se corre cada uno
+│   ├── popular.check.ts         caso del QA
+│   └── detalle-popular.flow.cjs caso E2E (navegador)
+└── services.json                cómo levantar este repo para los casos E2E
+```
+
+- **No dejan rastro del sistema** (nada dice "autopilot" ni usa el kit) y **no cambian nada del
+  proyecto**: tienen nombres que `npm test` / `flutter test` no toman solos. Si un caso no cumple
+  eso, no se guarda y queda el aviso en la tarea.
+- Se guardan con un commit aparte: `test: casos de prueba de bug-37269`.
+
+Para correrlos otra vez, desde la carpeta del proyecto:
+
+```sh
+K=~/.local/share/autopilot-kit
+$K/run-tests bug-37269          # los de una tarea (QA + E2E), en su rama
+$K/run-tests bug-37269 --e2e    # solo E2E (o --qa)
+$K/run-tests --all              # regresión: todos los guardados, en la rama base de cada repo
+```
+
+Levanta lo que haga falta (backend y BackOffice en local, contra la base de QA), corre los casos,
+apaga todo y deja un **reporte con capturas** en `test-results/`. Si algo falla, termina con error.
+
+---
+
 ## Problemas comunes
 
 | Veo… | Qué hago |
