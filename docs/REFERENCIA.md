@@ -119,6 +119,12 @@ El feedback de QA **se acumula por intento**: al llegar a `stopped`, el historia
 | `log` | el log de actividad (también se sigue agregando a `log.md`) |
 | `meta` | versión del esquema y marca de migración |
 
+Cada adjunto sabe **qué paso lo produjo** (`origen` + `intento`, sacados de su carpeta:
+`coder-intento0/`, `qa-intento1/`, `e2e-intento1/`, `humano/`; el resto es de la tarea original).
+`wi.sh get <clave> adjuntos` y la app web los muestran agrupados en el orden en que ocurrieron:
+tarea original → subidos por el humano → coder 0 → QA 1 → E2E 1 → coder 1 → QA 2 → … (los fotogramas
+de un video se resumen en una línea).
+
 Los adjuntos siguen siendo archivos (la base guarda su ruta): así los textos los enlazan con
 `![..](../adjuntos/...)` y se ven igual en el `.md`, en la app web y en el visor de imágenes.
 
@@ -855,8 +861,9 @@ Servidor Python sin dependencias (`lib/web/servidor.py`) con la interfaz incluid
 Muestra todos los proyectos donde se usó el kit: cada `wi.sh` registra su `autopilot.env` en
 `~/.config/autopilot-kit/proyectos.json`.
 
-- **Ver:** tablero (columnas vacías ocultas por defecto), detalle con historial por intento y galería
-  de adjuntos, log, reportes de `test-results/`, estado del watcher y de la pausa.
+- **Ver:** tablero (columnas vacías ocultas por defecto), detalle con historial por intento, adjuntos
+  agrupados por paso (con filtro por agente), log, reportes de `test-results/`, estado del watcher y
+  de la pausa.
 - **Gestionar / editar:** cada botón llama a `wi.sh` (mismas validaciones, log y avisos de Telegram).
   Los adjuntos subidos van a `adjuntos/<clave>/humano/`; nunca se aceptan archivos `.env*`.
 - **Correr:** `health-check`, `run-tests` y `azure-sync` como trabajos en segundo plano (uno de cada

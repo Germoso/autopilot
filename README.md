@@ -105,7 +105,9 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
 Muestra todos tus proyectos del autopilot:
 
 - **Tablero** por estado, con búsqueda y filtros; **detalle** de cada tarea con descripción,
-  criterio, capturas y el historial de cada intento (notas del coder, reportes de QA y E2E).
+  criterio, el historial de cada intento (notas del coder, reportes de QA y E2E) y los **adjuntos
+  agrupados por paso**: tarea original, subidos por ti, y coder / QA / E2E de cada intento, con
+  botones para ver solo los de un agente.
 - **Gestionar:** devolver a QA o a E2E, detener, marcar revisada, cambiar prioridad, pausar el autopilot.
 - **Crear y editar** tareas y subirles capturas.
 - **Correr** el health check, las pruebas guardadas y el sync de Azure, viendo la salida.
