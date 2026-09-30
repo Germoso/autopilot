@@ -726,6 +726,39 @@ class Board:
     NOMBRE_TIPO = {"notas_dev": "Notas del desarrollador", "reporte_qa": "Reporte de QA", "feedback_qa": "Feedback de QA",
                    "reporte_e2e": "Reporte E2E", "feedback_e2e": "Feedback de E2E"}
 
+    PASO_ADJUNTO = {"azure": "Tarea original (Azure)", "humano": "Subidos por el humano", "coder": "Coder",
+                    "qa": "QA", "e2e": "E2E"}
+
+    @classmethod
+    def grupo_adjunto(cls, a):
+        """(orden, nombre) del paso que produjo el adjunto: tarea original, humano, y despues cada paso
+        en el orden en que ocurrio (coder intento 0 -> QA 1 -> E2E 1 -> coder 1 -> QA 2 ...)."""
+        origen = a.get("origen") or "azure"
+        if origen in ("coder", "qa", "e2e"):
+            n = a.get("intento") or 0
+            ronda = n + 1 if origen == "coder" else n   # el coder trabaja con el intento anterior al del QA que lo revisa
+            return (2, ronda, ["coder", "qa", "e2e"].index(origen)), "%s · intento %s" % (cls.PASO_ADJUNTO[origen], n)
+        return ((0 if origen == "azure" else 1), 0, 0), cls.PASO_ADJUNTO.get(origen, origen)
+
+    @classmethod
+    def lista_adjuntos(cls, adj):
+        """Adjuntos agrupados por paso. Los fotogramas de un video se resumen en una linea."""
+        grupos = {}
+        for a in adj:
+            grupos.setdefault(cls.grupo_adjunto(a), []).append(a)
+        out = []
+        for (_, nombre), lista in sorted(grupos.items()):
+            out += ["", "### %s" % nombre]
+            frames = {}
+            for a in lista:
+                m = re.search(r"^(.*\.frames)/", a["ruta"])
+                if m:
+                    frames[m.group(1)] = frames.get(m.group(1), 0) + 1
+                else:
+                    out.append("- %s" % a["ruta"])
+            out += ["- %s/ (%d fotogramas del video)" % (d, n) for d, n in sorted(frames.items())]
+        return "\n".join(out).strip() or "_(ninguno)_"
+
     def get(self, clave, parte="resumen", intento=None, ultimo=False, como_json=False):
         clave = clave.strip().lower()
         estado, path, meta, titulo, secs = self.leer(clave)
@@ -745,8 +778,7 @@ class Board:
                    meta.get("repo", "-"), (" + " + meta["repos_extra"]) if meta.get("repos_extra") else "")]
         bloque = lambda es: "\n\n".join("### %s — %s\n\n%s" % (self.NOMBRE_TIPO[e["tipo"]], e["titulo"] or "-",
                                                                     e["texto"]) for e in es) or "_(nada)_"
-        lista_adj = "\n".join("- %s (%s%s)" % (a["ruta"], a["origen"] or "-",
-                                               ", intento %s" % a["intento"] if a["intento"] else "") for a in adj) or "_(ninguno)_"
+        lista_adj = self.lista_adjuntos(adj)
         if parte == "resumen":
             out = cab + ["", "## Descripción", "", secs.get("Descripción", "-"),
                          "", "## Criterio de aceptación", "", secs.get("Criterio de aceptación", "-"),

@@ -86,3 +86,5 @@ details summary { cursor: pointer; font-weight: 550; }
   .estado-autopilot { margin-left: 0; width: 100%; }
 }
 .tabla td:first-child { white-space: nowrap; }
+.grupo-adjuntos { border-top: 1px solid var(--borde); padding: 8px 0; }
+.grupo-adjuntos > summary { margin-bottom: 8px; }
