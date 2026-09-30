@@ -54,10 +54,17 @@ La base de datos **tiene que decir "qa" en su nombre**. Si no, el autopilot no e
 ## Usarlo (día a día)
 
 ```
-/autopilot      arranca: toma las tareas y las trabaja
+/autopilot-plan   convierte una idea o un documento en tareas (te pregunta hasta tenerlo claro)
+/autopilot        arranca: toma las tareas y las trabaja
 ```
 
-Las tareas entran al tablero por la app web (*Nueva tarea*), con `wi.sh autopilot.env add-task ...` o
+**De una idea a tareas:** `/autopilot-plan` y le pasas la idea o la ruta de un documento (PRD, notas,
+mockups). Primero lee el código y hace un brainstorming contigo, con preguntas, hasta que no quede nada
+ambiguo; después propone las tareas (con criterios de aceptación que el QA puede verificar y el orden entre
+ellas) y, cuando las apruebas, las crea en `new/`. El plan queda en `.workitems/planes/`. Si una tarea
+depende de otra, el autopilot no la empieza hasta que mergees la otra y la marques como revisada.
+
+Las tareas también entran al tablero por la app web (*Nueva tarea*), con `wi.sh autopilot.env add-task ...` o
 poniendo un `.md` en `.workitems/new/`. Cómo llegan es cosa tuya: si vienen de un tracker, una
 integración las carga por esos mismos caminos (hay una de ejemplo para Azure DevOps en
 [integraciones/azure](integraciones/azure/README.md)).

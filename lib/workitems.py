@@ -51,7 +51,7 @@ SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Repos modif
 PUESTOS = {"coder": "in-progress", "qa": "validando", "e2e": "probando-e2e"}
 IMAGEN = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 VIDEO = {".mp4", ".mov", ".webm", ".avi", ".mkv", ".m4v", ".3gp"}
-CAMPOS = ["id", "tipo", "prioridad", "intento", "rama", "repo", "repos_extra", "origen", "sesion", "espera",
+CAMPOS = ["id", "tipo", "prioridad", "intento", "rama", "repo", "repos_extra", "origen", "depende", "sesion", "espera",
           "actualizado"]
 
 # Identificador de la tarea: lo da quien la crea (numero o texto). Sin "-": separa la clave del slug.
@@ -713,6 +713,7 @@ class Board:
             "feedback_e2e": secs.get("Feedback de E2E", ""),
             "sesion": meta.get("sesion") or None,
             "espera": meta.get("espera") or None,
+            "depende": self.lista_depende(meta.get("depende")),
             "origen": meta.get("origen", ""),
             "actualizado": meta.get("actualizado", ""),
             **self.adjuntos(clave),
@@ -940,7 +941,7 @@ class Board:
                         % (t, (secs.get("Motivo de stopped", "") or "-")[:900], clave, clave), alerta=True)
 
     def crear(self, tipo, numero, prioridad, titulo, descripcion, criterio, repo="", origen="manual",
-              adjuntos=""):
+              adjuntos="", depende=""):
         tipo = tipo.lower()
         if tipo not in TIPOS:
             raise Error("tipo invalido '%s'. Usa task o bug" % tipo)
@@ -951,12 +952,15 @@ class Board:
             raise Error("prioridad invalida '%s'. Usa %s" % (prioridad, "|".join(PRIO)))
         if self.cfg["workspace"]:
             self.repo_de(repo)  # valida: en un workspace cada tarea debe decir a que repo va
+        deps = self._validar_depende("%s-%s" % (tipo, numero), depende)
         with self.lock():
             if numero in self.numeros():
                 raise Error("ya existe un workitem con id %s en el board" % numero)
             clave = "%s-%s" % (tipo, numero)
             meta = {"id": numero, "tipo": tipo, "prioridad": prioridad, "intento": "0",
                     "rama": clave, "repo": repo or "-", "origen": origen, "actualizado": ahora()}
+            if deps:
+                meta["depende"] = ",".join(deps)
             secs = {"Descripción": descripcion or "-",
                     "Criterio de aceptación": criterio or "_Sin criterio._",
                     "Adjuntos": adjuntos or ("_Ninguno. Podés dejar imágenes en adjuntos/%s/._" % clave)}
@@ -964,6 +968,51 @@ class Board:
             path = self._escribir_vista(clave, "new", meta, titulo, secs)
         self.adjuntos(clave)
         return path
+
+    # -- dependencias entre tareas
+    @staticmethod
+    def lista_depende(valor):
+        return [c.strip().lower() for c in re.split(r"[,\s]+", valor or "") if c.strip() and c.strip() != "-"]
+
+    def _validar_depende(self, clave, valor):
+        """Claves de las que depende `clave`: tienen que existir en el board y no formar un ciclo."""
+        deps = self.lista_depende(valor)
+        existentes = {c for _, c, _ in self.archivos()}
+        grafo = {t["id"]: t["depende"] for t in self.todas()} if deps else {}
+        for d in deps:
+            if not es_clave(d):
+                raise Error("depende: clave invalida '%s'" % d)
+            if d == clave:
+                raise Error("depende: una tarea no puede depender de si misma")
+            if d not in existentes:
+                raise Error("depende: no existe la tarea %s en el board (creala antes)" % d)
+        pila, vistos = list(deps), set()
+        while pila:  # ciclo: alguna dependencia (directa o no) depende de esta tarea
+            c = pila.pop()
+            if c == clave:
+                raise Error("depende: se formaria un ciclo con %s" % clave)
+            if c not in vistos:
+                vistos.add(c)
+                pila += grafo.get(c, [])
+        return list(dict.fromkeys(deps))
+
+    def depende(self, clave, valor):
+        """Fija (o con '-' quita) las tareas de las que depende `clave`. El coder no la toma hasta que
+        todas esten en reviewed: la rama nace de la base, y ahi solo esta lo que el humano ya mergeo."""
+        clave = clave.lower()
+        self.leer(clave)
+        deps = self._validar_depende(clave, valor)
+        with self.lock():
+            estado, meta, titulo, secs = self.db.obtener(clave)
+            if deps:
+                meta["depende"] = ",".join(deps)
+            else:
+                meta.pop("depende", None)
+            meta["actualizado"] = ahora()
+            self.db.guardar(clave, estado, meta, titulo, secs)
+            self._escribir_vista(clave, estado, meta, titulo, secs)
+        self.log("Dependencias: %s" % (", ".join(deps) or "ninguna"), "humano", "nota", clave, clave)
+        return {"tarea": clave, "depende": deps}
 
     def log(self, evento, origen, tipo, tarea="-", rama="-", commit="-", detalle="-"):
         if not os.path.isdir(self.dir):
@@ -1013,7 +1062,10 @@ class Board:
         ts = self.todas()
         estado_de = {t["id"]: t["estado"] for t in ts}
         # Una tarea "en espera" (choco con archivos de otra) no se ofrece hasta que la otra termine.
-        libre = lambda t: not t.get("espera") or estado_de.get(t["espera"]) in (None,) + CERRADAS
+        # Una tarea con dependencias no se ofrece hasta que todas esten en reviewed (mergeadas en la base).
+        pendientes = lambda t: [d for d in t.get("depende") or [] if estado_de.get(d) != "reviewed"]
+        libre = lambda t: (not t.get("espera") or estado_de.get(t["espera"]) in (None,) + CERRADAS) \
+            and not pendientes(t)
         orden = lambda t: (PRIO.get(t["prioridad"], 9), orden_id(t["numero"]))
         by = lambda s: sorted([t for t in ts if t["estado"] == s], key=orden)
         bugfix, qa, nuevas, e2e = by("bug-fix"), by("qa"), by("new"), by("e2e")
@@ -1035,7 +1087,9 @@ class Board:
                 acciones.append({"puesto": "e2e", "accion": "probar-e2e", "tarea": t})
         return {"acciones": acciones, "terminadas": terminadas, "ocupados": ocupados,
                 "capacidad": cap, "parallel": self.cfg["paralelo"],
-                "en_espera": [{"id": t["id"], "espera": t["espera"]} for t in bugfix + nuevas if not libre(t)],
+                "en_espera": [{"id": t["id"], "espera": t["espera"],
+                               "depende_de": {d: estado_de.get(d, "no existe") for d in pendientes(t)}}
+                              for t in bugfix + nuevas if not libre(t)],
                 "huerfanas_recuperadas": huerfanas, "stopped": [t["id"] for t in by("stopped")],
                 "workspace": self.cfg["workspace"], "avisos": self.avisos(),
                 "e2e": self.cfg["e2e"]["activo"], "pausa": pausa,
@@ -1864,7 +1918,12 @@ USO = """uso: wi.sh <env> <comando> [args]
                                          (tests/<clave>/cases.json); --all = regresion en las ramas base.
                                          Reporte en <workspace>/test-results/. Alias: run-tests
   add-task   <task|bug> <id> <prioridad> <titulo> <descripcion> <criterio> [repo]
+             [--depende <clave>[,<clave>...]] [--origen <texto>]
                                          (en un workspace, repo es obligatorio: la carpeta del repo)
+                                         descripcion/criterio: @<archivo> lee el texto de ese archivo
+  depende    <clave> <clave>[,<clave>...]|-
+                                         la tarea no se toma hasta que esas esten en reviewed
+                                         (mergeadas en la base); '-' quita las dependencias
   check                                  avisos de configuracion (ramas base vacias, repos faltantes,
                                          herramientas, .env.autopilot)
   entorno    <repo|clave>                valida el .env.autopilot (local/QA) sin mostrar valores
@@ -2090,9 +2149,26 @@ def main(argv):
         b.modificar(a[0], "qa", meta_set={"intento": "0"}, secs_append={
             "Feedback de QA": "### Re-QA manual (%s)\n\nContador de intentos reiniciado." % ahora()})
     elif cmd == "add-task":
+        opts, pos, i = {}, [], 0
+        while i < len(a):
+            if a[i] in ("--depende", "--origen") and i + 1 < len(a):
+                opts[a[i][2:]] = a[i + 1]
+                i += 2
+            else:
+                pos.append(a[i])
+                i += 1
+        a = pos
         need(6)
-        print(b.crear(a[0], a[1], a[2], a[3], a[4], a[5], a[6] if len(a) > 6 else ""))
+
+        def texto(v):  # @archivo: textos largos en Markdown sin pelear con las comillas del shell
+            if v.startswith("@") and os.path.isfile(v[1:]):
+                return open(v[1:], encoding="utf-8").read().strip()
+            return v
+        print(b.crear(a[0], a[1], a[2], a[3], texto(a[4]), texto(a[5]), a[6] if len(a) > 6 else "",
+                      origen=opts.get("origen") or "manual", depende=opts.get("depende", "")))
         return 0
+    elif cmd == "depende":
+        need(2); print(json.dumps(b.depende(a[0], a[1]), ensure_ascii=False)); return 0
     elif cmd == "log":
         need(3)
         a += ["-"] * (7 - len(a))
