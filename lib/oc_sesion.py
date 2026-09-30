@@ -16,10 +16,15 @@ Las sesiones se ven en la lista de sesiones de OpenCode: se pueden abrir y mirar
 Mismo costo en tokens que un subagente. Habla con el servicio con `opencode api` (que ya sabe
 autenticarse); no guarda credenciales.
 
+NUNCA ESPERAN A UN HUMANO: cada sesion nace con permiso solo para lo suyo (su copia de trabajo, el
+kit, /tmp) y todo otro directorio externo se DENIEGA en vez de preguntar. Si igual queda un pedido
+pendiente (un tipo de permiso nuevo), el watcher lo rechaza solo (workitems.Board.plan) y avisa.
+
 uso:
   oc_sesion.py lanzar <agente> <carpeta> <titulo> <archivo_encargo|-> [--adjunto <ruta>]...
   oc_sesion.py estado <ses_id>
   oc_sesion.py resultado <ses_id>
+  oc_sesion.py permisos <ses_id>          pedidos de permiso pendientes (JSON)
 """
 import json
 import os
@@ -41,16 +46,42 @@ def api(metodo, ruta, cuerpo=None, timeout=60):
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=os.path.expanduser("~"))
     if r.returncode != 0:
         raise Error("opencode api %s %s: %s" % (metodo, ruta, (r.stderr or r.stdout).strip()[:300]))
+    if not r.stdout.strip():
+        return {}  # 204 No Content (p. ej. responder un permiso)
     try:
         return json.loads(r.stdout)
     except json.JSONDecodeError:
         raise Error("opencode api %s %s no devolvio JSON: %s" % (metodo, ruta, r.stdout[:200]))
 
 
+# Agente -> rol (agents/*.md) -> carpetas de trabajo propias bajo ~/.cache/autopilot-kit/.
+ROL = {"coder": "coder", "qa-reviewer": "qa", "e2e-tester": "e2e"}
+COPIAS = {"coder": ["coder"], "qa": ["qa"], "e2e": ["e2e", "run"]}
+
+
+def directorios_permitidos(rol):
+    """Directorios fuera del proyecto que el puesto puede usar sin preguntar (el resto se deniega)."""
+    cache = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    datos = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return ([os.path.join(cache, "autopilot-kit", c) for c in COPIAS.get(rol, [])] +
+            [os.path.join(datos, "autopilot-kit"), os.path.join(datos, "autopilot-e2e"), "/tmp"])
+
+
+def reglas(agente):
+    """Permission.Ruleset de la sesion. Gana la ultima regla que coincide: primero el deny general."""
+    out = [{"action": "external_directory", "resource": "*", "effect": "deny"},
+           {"action": "doom_loop", "resource": "*", "effect": "deny"}]
+    for d in directorios_permitidos(ROL.get(agente, agente)):
+        out += [{"action": "external_directory", "resource": d, "effect": "allow"},
+                {"action": "external_directory", "resource": d + "/*", "effect": "allow"}]
+    return out
+
+
 def lanzar(agente, carpeta, titulo, encargo, adjuntos=()):
     carpeta = os.path.abspath(carpeta)
     ses = api("POST", "/api/session", {"agent": agente, "title": titulo,
-                                        "location": {"directory": carpeta}})["data"]["id"]
+                                        "location": {"directory": carpeta},
+                                        "permissions": reglas(agente)})["data"]["id"]
     files = [{"uri": "file://" + os.path.abspath(p), "name": os.path.basename(p)}
              for p in adjuntos if os.path.isfile(p)]
     api("POST", "/api/session/%s/prompt" % ses, {"text": encargo, "files": files})
@@ -71,6 +102,19 @@ def estado(ses):
         # El servicio responde pero la sesion no existe (borrada): el puesto no puede quedar tomado.
         return {"activa": False, "outcome": "no-encontrada"}
     return {"activa": False, "outcome": info.get("outcome")}
+
+
+def permisos_pendientes(ses):
+    """Pedidos de permiso que la sesion esta esperando ([] si no hay o no se puede consultar)."""
+    try:
+        return api("GET", "/api/session/%s/permission" % ses, timeout=20).get("data") or []
+    except (Error, subprocess.TimeoutExpired):
+        return []
+
+
+def rechazar(ses, pedido, mensaje):
+    api("POST", "/api/session/%s/permission/%s/reply" % (ses, pedido),
+        {"decision": "reject", "message": mensaje}, timeout=20)
 
 
 def resultado(ses):
@@ -99,6 +143,8 @@ def main(a):
             print(json.dumps(estado(a[1]), ensure_ascii=False))
         elif a[:1] == ["resultado"] and len(a) == 2:
             print(resultado(a[1]))
+        elif a[:1] == ["permisos"] and len(a) == 2:
+            print(json.dumps(permisos_pendientes(a[1]), ensure_ascii=False))
         else:
             print(__doc__, file=sys.stderr)
             return 1

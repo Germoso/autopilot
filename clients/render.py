@@ -27,6 +27,9 @@ import time
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 KIT_SRC = os.path.dirname(AQUI)
+# oc_sesion.py: en el repo esta en lib/; instalado, junto a este archivo.
+sys.path[:0] = [AQUI, os.path.join(KIT_SRC, "lib")]
+import oc_sesion  # noqa: E402
 MARCA = "# generado por autopilot-kit (install.sh). No editar: se regenera."
 
 # Comandos de git prohibidos por rol. Mismo criterio que lib/git-guard.sh.
@@ -98,6 +101,12 @@ def front_opencode(meta):
         out += ["  edit:", '    "*": allow']
     # Nadie escribe .env* (salvo .env.example): los ambientes los define el humano. Va al final: gana.
     out += ['    "**/.env*": deny', '    "**/cuentas-e2e.env": deny'] + (['    "**/.env.example": allow'] if role == "coder" else [])
+    # Nunca preguntar (nadie mira la sesion): fuera del proyecto solo lo suyo, el resto se deniega.
+    # Mismas reglas que oc_sesion.reglas(), que ademas las fija en cada sesion que lanza el autopilot.
+    out += ["  external_directory:", '    "*": deny']
+    for d in oc_sesion.directorios_permitidos(role):
+        out += ["    %s: allow" % q(d), "    %s: allow" % q(d + "/**")]
+    out += ["  doom_loop: deny"]
     out += ["  bash:", '    "*": allow']
     # OpenCode evalua en orden y gana la ultima regla que coincide: primero allow, despues deny.
     for c in DENY[role]:

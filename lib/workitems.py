@@ -1039,7 +1039,7 @@ class Board:
         agente -> stopped. En los relanzamientos NO se recupera nada: el otro puesto sigue trabajando.
         """
         import oc_sesion
-        huerfanas, terminadas = [], []
+        huerfanas, terminadas, rechazados = [], [], []
         ocupados = {p: [] for p in PUESTOS}
         for t in self.todas():
             puesto = next((p for p, e in PUESTOS.items() if e == t["estado"]), None)
@@ -1047,6 +1047,8 @@ class Board:
                 continue
             ses = t.get("sesion")
             viva = oc_sesion.estado(ses) if ses else None   # None: sin sesion registrada (Claude Code)
+            if ses and viva and viva["activa"]:
+                rechazados += self._rechazar_permisos(oc_sesion, t, puesto, ses)
             if ses and viva and viva["activa"] is False:
                 terminadas.append({"puesto": puesto, "tarea": t, "sesion": ses, "outcome": viva.get("outcome")})
             elif recuperar and not (ses and viva and viva["activa"]):
@@ -1093,7 +1095,30 @@ class Board:
                 "huerfanas_recuperadas": huerfanas, "stopped": [t["id"] for t in by("stopped")],
                 "workspace": self.cfg["workspace"], "avisos": self.avisos(),
                 "e2e": self.cfg["e2e"]["activo"], "pausa": pausa,
+                "permisos_rechazados": rechazados,
                 "cola": {"bugfix": len(bugfix), "qa": len(qa), "new": len(nuevas), "e2e": len(e2e)}}
+
+    def _rechazar_permisos(self, oc_sesion, t, puesto, ses):
+        """Una sesion del autopilot nunca espera a un humano: si quedo un pedido de permiso pendiente
+        (algo que las reglas de oc_sesion no cubren), se rechaza con un mensaje para el agente y se avisa."""
+        out = []
+        for p in oc_sesion.permisos_pendientes(ses):
+            accion, recursos = p.get("action", "?"), p.get("resources") or []
+            msg = ("El autopilot no permite '%s' sobre %s: nadie puede aprobarlo. Trabaja solo en tu copia "
+                   "de trabajo. Si no puedes seguir sin eso, termina y explicalo en tu resultado."
+                   % (accion, ", ".join(recursos) or "-"))
+            try:
+                oc_sesion.rechazar(ses, p["id"], msg)
+            except Exception as err:  # noqa: BLE001 - se reintenta en la proxima vuelta
+                print("AVISO: no se pudo rechazar el permiso %s: %s" % (p.get("id"), err), file=sys.stderr)
+                continue
+            detalle = "%s: %s" % (accion, ", ".join(recursos)[:300])
+            self.log("Permiso rechazado automaticamente", "watcher", "nota", t["id"], t["rama"], "-",
+                     "%s (%s) pidio %s" % (puesto, ses, detalle))
+            self.avisar("⛔ %s (%s) pidio permiso para %s. Se rechazo solo: el autopilot no espera respuestas."
+                        % (t["id"], puesto, detalle), alerta=True)
+            out.append({"tarea": t["id"], "puesto": puesto, "accion": accion, "recursos": recursos})
+        return out
 
     # -- worktree del QA
     def qa_worktree(self, clave):

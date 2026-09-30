@@ -377,7 +377,11 @@ probando una tercera.
 - **OpenCode:** cada tarea corre como **su propia sesión** de OpenCode, lanzada por la API del
   servicio local (`oc_sesion.py`). Las ves en tu lista de sesiones y podés mirarlas en vivo. El
   watcher avisa cuando una termina. Si cerrás OpenCode, esas sesiones siguen; al volver,
-  `/autopilot` las retoma.
+  `/autopilot` las retoma. **Nunca te piden permiso:** cada sesión (y cada agente de OpenCode) puede
+  usar sin preguntar su copia de trabajo (`~/.cache/autopilot-kit/<puesto>/`), el kit y `/tmp`; cualquier
+  otro directorio externo se **deniega** al instante. Si igual queda un pedido pendiente, el watcher lo
+  rechaza solo en su siguiente vuelta, le dice al agente que siga sin eso, lo anota en el log de la
+  tarea y avisa por Telegram (`⛔`).
 - **El QA trabaja en su propia copia del repo** (`git worktree` en `~/.cache/autopilot-kit/qa/`,
   en la punta de la rama de la tarea): puede compilar y correr tests o la app sin pisar al coder.
   Se borra al dar el veredicto.
