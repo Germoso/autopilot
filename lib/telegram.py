@@ -14,6 +14,8 @@ Entrada: el watcher llama `poll` en cada vuelta. Solo acepta mensajes de TELEGRA
   /reqa /re-e2e /stop <clave> <motivo> /reviewed <clave>  actuar sobre tareas (via wi.sh)
   /pausa /seguir                                          dejar de tomar tareas nuevas / volver
   texto libre                                             al orquestador (evento `mensajes` del watcher)
+Los comandos sin argumento (/estado /cola /health /pausa /seguir) se muestran tambien como
+un menu de botones (reply keyboard) junto con /ayuda, que manda la documentacion completa.
 
 uso: telegram.py <autopilot.env> send "<texto>" [--alert]    manda un aviso (respeta TELEGRAM)
      telegram.py <autopilot.env> test                         mensaje de prueba (aunque TELEGRAM=false)
@@ -51,7 +53,13 @@ AYUDA = ("Comandos:\n"
          "/stop <clave> <motivo> — detener una tarea\n"
          "/reviewed <clave> — marcar como revisada (desde done)\n"
          "/pausa — no tomar tareas nuevas · /seguir — volver a tomarlas\n"
-         "Texto libre: se lo paso al orquestador (si /autopilot esta corriendo).")
+         "Texto libre: se lo paso al orquestador (si /autopilot esta corriendo).\n"
+         "Los comandos sin argumento (/estado /cola /health /pausa /seguir) estan "
+         "tambien como botones sobre el campo de texto; /ayuda los vuelve a mostrar.")
+TECLADO = {"keyboard": [[{"text": "/estado"}, {"text": "/cola"}, {"text": "/health"}],
+                        [{"text": "/pausa"}, {"text": "/seguir"}, {"text": "/ayuda"}]],
+           "resize_keyboard": True, "one_time_keyboard": False,
+           "input_field_placeholder": "Comando o mensaje libre"}
 
 
 # ----------------------------------------------------------------- credenciales y API
@@ -146,11 +154,17 @@ def _enviar_ahora(texto):
     return False
 
 
-def responder(cfg, texto):
-    """Respuesta inmediata a un mensaje (sin dedup ni filtro de alertas, pero con secretos filtrados)."""
+def responder(cfg, texto, con_teclado=False):
+    """Respuesta inmediata a un mensaje (sin dedup ni filtro de alertas, pero con secretos filtrados).
+
+    con_teclado=True adjunta el menu de botones (TECLADO) al mensaje.
+    """
     token, chat = credenciales()
-    return api(token, "sendMessage", {"chat_id": chat, "text": limpiar(cfg, texto)[:3900],
-                                      "disable_web_page_preview": "true"}).get("ok", False)
+    params = {"chat_id": chat, "text": limpiar(cfg, texto)[:3900],
+              "disable_web_page_preview": "true"}
+    if con_teclado:
+        params["reply_markup"] = json.dumps(TECLADO)
+    return api(token, "sendMessage", params).get("ok", False)
 
 
 # ----------------------------------------------------------------- entrada
@@ -190,10 +204,10 @@ def poll(env_path):
             continue
         if texto.startswith("/"):
             try:
-                resp = comando(cfg, env_path, texto)
+                respuesta, con_teclado = comando(cfg, env_path, texto)
             except Exception as e:
-                resp = "❌ %s" % e
-            responder(cfg, resp)
+                respuesta, con_teclado = "❌ %s" % e, False
+            responder(cfg, respuesta, con_teclado=con_teclado)
         else:
             libres.append({"texto": texto, "fecha": m.get("date")})
             responder(cfg, "📨 Recibido. Se lo paso al orquestador; te respondo por aqui.")
@@ -214,7 +228,7 @@ def comando(cfg, env_path, texto):
     b = wi.Board(cfg)
     clave = args[0].lower() if args else ""
     if cmd in ("/start", "/ayuda", "/help"):
-        return AYUDA
+        return AYUDA, True
     if cmd == "/estado":
         p = b.plan()
         oc = p["ocupados"]
@@ -225,15 +239,16 @@ def comando(cfg, env_path, texto):
         lineas.append("stopped: %s" % (", ".join(p["stopped"]) or "ninguna"))
         if os.path.exists(os.path.join(b.dir, ".pausa")):
             lineas.append("⏸️ en pausa: no toma tareas nuevas (/seguir)")
-        return "📊 Estado\n" + "\n".join(lineas)
+        return "📊 Estado\n" + "\n".join(lineas), False
     if cmd == "/cola":
         por = {}
         for t in b.todas():
             por.setdefault(t["estado"], []).append(t["id"])
-        return "📋 Cola\n" + "\n".join("%s: %s" % (e, ", ".join(v)) for e, v in por.items() if e != "reviewed") or "vacia"
+        return ("📋 Cola\n" + "\n".join("%s: %s" % (e, ", ".join(v)) for e, v in por.items() if e != "reviewed")
+                or "vacia"), False
     if cmd == "/tarea":
         if not clave:
-            return "uso: /tarea <clave>"
+            return "uso: /tarea <clave>", False
         estado, _, meta, titulo, secs = b.leer(clave)
         ultimo = lambda s: (re.split(r"(?m)^### ", secs.get(s, ""))[-1].strip()[:500]) if secs.get(s) else ""
         out = ["📄 %s — %s" % (clave, titulo), "estado: %s · intento %s" % (estado, meta.get("intento", "0"))]
@@ -241,7 +256,7 @@ def comando(cfg, env_path, texto):
             if secs.get(sec, "").strip():
                 out.append("%s:\n%s" % (sec, ultimo(sec)))
                 break
-        return "\n".join(out)
+        return "\n".join(out), False
     if cmd == "/health":
         import salud
         items = salud.Salud(env_path).correr()
@@ -250,27 +265,28 @@ def comando(cfg, env_path, texto):
         out = ["🩺 Health check: %s" % ("❌ %d bloquean" % e if e else "✅ listo")]
         out += ["%s %s%s" % ("❌" if i["nivel"] == "error" else "⚠️", i["mensaje"][:200],
                              ("\n   → " + i["solucion"][:150]) if i["solucion"] else "") for i in malos[:10]]
-        return "\n".join(out)
+        return "\n".join(out), False
     if cmd == "/pausa":
         open(os.path.join(b.dir, ".pausa"), "w").write(time.strftime("%Y-%m-%d %H:%M"))
         b.log("Pausa pedida por Telegram", "telegram", "nota")
-        return "⏸️ Pausado: no se toman tareas nuevas. Lo que esta en curso termina. /seguir para volver."
+        return ("⏸️ Pausado: no se toman tareas nuevas. Lo que esta en curso termina. /seguir para volver.",
+                False)
     if cmd == "/seguir":
         try:
             os.remove(os.path.join(b.dir, ".pausa"))
         except OSError:
             pass
         b.log("Pausa quitada por Telegram", "telegram", "nota")
-        return "▶️ Seguimos: se vuelven a tomar tareas."
+        return "▶️ Seguimos: se vuelven a tomar tareas.", False
     acciones = {"/reqa": "reqa", "/re-e2e": "re-e2e", "/reviewed": "reviewed", "/stop": "stopped"}
     if cmd in acciones:
         if not clave:
-            return "uso: %s <clave>%s" % (cmd, " <motivo>" if cmd == "/stop" else "")
+            return ("uso: %s <clave>%s" % (cmd, " <motivo>" if cmd == "/stop" else ""), False)
         extra = [" ".join(args[1:]) or "Detenida desde Telegram"] if cmd == "/stop" else []
         ok, out = wi_cmd(env_path, acciones[cmd], clave, *extra)
         b.log("Telegram: %s" % texto[:80], "telegram", "nota", clave, clave)
-        return ("✅ %s %s" % (cmd, clave)) if ok else ("❌ %s" % out.replace("ERROR: ", "")[:500])
-    return "No conozco %s.\n\n%s" % (cmd, AYUDA)
+        return ((("✅ %s %s" % (cmd, clave)) if ok else ("❌ %s" % out.replace("ERROR: ", "")[:500])), False)
+    return "No conozco %s.\n\n%s" % (cmd, AYUDA), True
 
 
 # ----------------------------------------------------------------- setup y check
@@ -305,7 +321,8 @@ def setup(env_path):
     with os.fdopen(fd, "w") as f:
         f.write("TELEGRAM_BOT_TOKEN=%s\nTELEGRAM_CHAT_ID=%s\n" % (token, chat))
     api(token, "getUpdates", {"offset": off, "timeout": 0})   # descarta el /start
-    api(token, "sendMessage", {"chat_id": chat, "text": "✅ Autopilot conectado. Te aviso por aqui.\n\n" + AYUDA})
+    api(token, "sendMessage", {"chat_id": chat, "text": "✅ Autopilot conectado. Te aviso por aqui.\n\n" + AYUDA,
+                               "reply_markup": json.dumps(TECLADO)})
     print("✅ Listo: @%s conectado a tu chat. Credenciales en %s (600). Activa TELEGRAM=true en autopilot.env."
           % (usuario, CREDENCIALES))
     return 0

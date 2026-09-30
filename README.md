@@ -358,6 +358,10 @@ de `run-tests`, y cuando el autopilot arranca o se detiene. Nunca contraseñas n
 
 Solo responde a **tu** chat; los mensajes de cualquier otro se ignoran.
 
+Los comandos sin argumento (`/estado`, `/cola`, `/health`, `/pausa`, `/seguir`) también se muestran
+como un **menú de botones** fijo sobre el campo de texto (junto a `/ayuda`, que vuelve a mandar esta
+tabla); los que llevan clave o motivo se siguen escribiendo a mano.
+
 ---
 
 ## Problemas comunes

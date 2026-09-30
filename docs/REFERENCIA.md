@@ -636,6 +636,10 @@ con `wi.sh <env> telegram-setup`. `wi.sh <env> notify-test` manda una prueba; `w
   (`/estado`, `/cola`, `/tarea`, `/health`, `/reqa`, `/re-e2e`, `/stop`, `/reviewed`, `/pausa`,
   `/seguir`, `/ayuda`) se resuelven sin IA, por `wi.sh`. El texto libre se devuelve como `mensajes` y
   el orquestador responde con `telegram.sh send`.
+- **Menú de botones:** `/start`, `/ayuda` y los comandos desconocidos mandan, además de la
+  documentación, un reply keyboard (`TECLADO`) con los comandos sin argumento (`/estado`, `/cola`,
+  `/health`, `/pausa`, `/seguir`, `/ayuda`); tocar un botón envía ese comando como texto normal. El
+  menú persiste sobre el campo de texto hasta que se reemplace o se cierre desde Telegram.
 - **Pausa:** `/pausa` crea `.workitems/.pausa`; mientras exista, `plan()` no ofrece acciones nuevas
   (`"pausa": true`).
 - **Health check:** credenciales, permisos del archivo, token válido (`getMe`) y que ningún otro
