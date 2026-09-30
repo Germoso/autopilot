@@ -253,6 +253,10 @@ Casos E2E de apps Flutter en Android: `tests/<tarea>/<nombre>_flow.dart` (un `in
 En el repo **solo** queda ese archivo: lo que Flutter necesita para correrlo (`integration_test` en
 `pubspec.yaml`, el driver) lo agrega `run-tests` en su copia temporal.
 
+Si el QA o el E2E **no aprueban**, sus pruebas no se pierden: se guardan como **borrador** en
+`.workitems/adjuntos/<tarea>/borradores/` (fuera del repo) y en la siguiente corrida el agente parte de
+ellas en vez de escribirlas desde cero (ahorra tokens). Ver qué hay: `wi.sh autopilot.env borrador <tarea>`.
+
 **Pruebas de humo** (no son de una tarea, p. ej. "el cliente puede iniciar sesión"): en
 `tests/smoke/`, guardadas en una rama **`smoke-tests`** de cada repo que tú mergeas. Se guardan con
 `wi.sh autopilot.env smoke-save <copia>` y se corren con `run-tests smoke`.

@@ -671,6 +671,22 @@ del kit en `test_driver/`, apunta la app al backend local, arranca el emulador y
 `binding.takeScreenshot`. Si un plugin nativo no responde en la prueba, el caso simula su canal con
 `setMockMethodCallHandler`.
 
+## Borradores de pruebas (QA y E2E)
+
+Para no reescribir pruebas en cada corrida. Al borrar sus copias (`qa-worktree-borrar`,
+`e2e-worktree-borrar`), si la tarea **no** quedó aprobada por ese puesto, se guardan las pruebas
+**nuevas** (no versionadas) de cada copia en `.workitems/adjuntos/<clave>/borradores/<qa|e2e>/<repo>/…`
+con `borrador.json` (intento, fecha, estado, archivos). Cuentan como pruebas: lo que está en `tests/`,
+`.e2e/`, `integration_test/`, `test_driver/` o se llama `*.spec.*`, `*.test.*`, `*.check.*`, `*_test.dart`,
+`*_flow.dart`, `*.flow.cjs`, `__qa*`. Nunca `node_modules`, `build`, capturas, `.env*`, archivos > 1 MB
+(tope 10 MB). Solo el último borrador por puesto; si una corrida no dejó pruebas, se conserva el anterior.
+Al aprobar (QA: la tarea quedó en `e2e`/`probando-e2e`/`done`; E2E: en `done`) el borrador de ese puesto
+se borra, porque sus pruebas ya están en la rama.
+
+`qa-worktree` / `e2e-worktree` los restauran en las copias nuevas sin pisar lo que ya trae la rama y lo
+informan (`"borrador": {"de_intento", "restaurados", "ya_existian"}`); el orquestador lo pasa en el
+encargo y el agente parte de ahí. `wi.sh <env> borrador <clave> [qa|e2e]` muestra qué hay.
+
 ## Casos de prueba guardados (tests/)
 
 Al aprobar, `wi.sh aprobar` (QA) y `wi.sh aprobar-e2e` (E2E) toman `tests/<clave>/` de las copias del
@@ -777,7 +793,10 @@ uso: wi.sh <env> <comando> [args]
   reporte-qa <clave> <texto|-> [--imagenes <dir>]...   reporte del QA (- = stdin)
                                          Las imagenes mencionadas en el texto (y las de --imagenes)
                                          se copian a adjuntos/<clave>/ y quedan como ![..](..) en el .md
-  qa-worktree        <clave>             copia de trabajo aislada para el QA (en la punta de la rama)
+  qa-worktree        <clave>             copia de trabajo aislada para el QA (en la punta de la rama). Si
+                                         hay borrador de pruebas de una corrida anterior, lo pone en la copia
+  borrador   <clave> [qa|e2e]            borrador de pruebas guardado (JSON): los tests de un QA/E2E que no
+                                         aprobo se guardan al borrar sus copias y se reusan en la proxima
   coder-worktree-borrar <clave>          quita los worktrees del coder y libera sus reservas
   reservar   <clave> <archivo>...        reserva archivos para la tarea (ruta en su worktree o relativa
                                          al repo principal); falla si otra tarea activa los tiene
