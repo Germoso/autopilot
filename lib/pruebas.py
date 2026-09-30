@@ -230,10 +230,16 @@ class Corrida:
         import salud
         s = salud.Salud(self.env_path, self.clave or "all", self.plataforma)
         items = s.correr()
+        for i in items:  # un problema de Telegram (solo avisos) no impide correr las pruebas
+            if i["area"] == "telegram" and i["nivel"] == "error":
+                i["nivel"] = "aviso"
         if any(i["nivel"] == "error" for i in items):
             print("Health check antes de correr:\n")
             salud.imprimir(items)
             print("\nNo se corrio nada. Resuelve lo de arriba (o usa --skip-check bajo tu responsabilidad).")
+            self.b.avisar("🚨 run-tests %s no corrio: el health check encontro problemas:\n%s" % (
+                self.clave or "--all", "\n".join("❌ %s → %s" % (i["mensaje"][:160], i["solucion"][:120])
+                                                  for i in items if i["nivel"] == "error")[:1500]), alerta=True)
             return 1
         return None
 
@@ -301,6 +307,9 @@ class Corrida:
                 md += ["", "```", r["detalle"].strip()[-2500:], "```"]
         path = self.salida + ".md"
         open(path, "w", encoding="utf-8").write("\n".join(md) + "\n")
+        self.b.avisar("🧪 Pruebas %s: %d de %d pasan%s\nReporte: %s" % (
+            self.clave or "(regresion)", len(self.resultados) - len(fallos), len(self.resultados),
+            "".join("\n❌ %s %s" % (r["clave"], r["archivo"]) for r in fallos[:8]), path), alerta=bool(fallos))
         print("\n%-12s %-4s %-28s %-50s %s" % ("TAREA", "TIPO", "REPO", "CASO", "RESULTADO"))
         for r in self.resultados:
             print("%-12s %-4s %-28s %-50s %s" % (r["clave"], r["tipo"], r["repo"][:28], r["archivo"][-50:],

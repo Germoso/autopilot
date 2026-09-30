@@ -234,6 +234,12 @@ def revisar(env, simular=False):
         for a in out["atascadas"]:
             b.log("Vigia: tarea sin actividad", "vigia", "nota", a["tarea"], a["tarea"], "-",
                   "%s: %s min sin archivos, commits ni CPU" % (a["puesto"], a["minutos_sin_actividad"]))
+            b.avisar("🚨 %s lleva %s min sin actividad en %s (posible atasco). El orquestador lo revisa; "
+                     "si no se mueve: /stop %s <motivo>" % (a["tarea"], int(a["minutos_sin_actividad"]), a["puesto"],
+                                                           a["tarea"]), alerta=True, dedup=True)
+        for c in out["colgados"]:
+            b.avisar("⚠️ Vigia: termino un proceso colgado de %s (%s, %s min sin CPU). El agente sigue."
+                     % (c["tarea"], c["puesto"], c["minutos_sin_cpu"]), dedup=True)
     return out
 
 

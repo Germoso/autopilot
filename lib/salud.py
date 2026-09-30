@@ -267,6 +267,18 @@ class Salud:
             self.add("ok" if "ok" in r.stdout else "error", "deep",
                      "Chromium abre" if "ok" in r.stdout else "Chromium no abre: %s" % r.stderr.strip()[-200:])
 
+    def telegram(self):
+        tg = self.cfg.get("telegram", {})
+        if not tg.get("activo"):
+            self.add("ok", "telegram", "TELEGRAM=false (sin avisos por Telegram)")
+            return
+        import telegram as tgm
+        for nivel, msg, sol in tgm.check(self.cfg):
+            self.add(nivel, "telegram", msg, sol)
+        if self.deep and not any(i["area"] == "telegram" and i["nivel"] == "error" for i in self.items):
+            tgm.enviar(self.cfg, "🩺 health-check --deep: prueba de Telegram", forzar=True)
+            self.add("ok", "telegram", "mensaje de prueba enviado a tu chat")
+
     def correr(self):
         self.herramientas()
         self.casos()          # primero: define que repos usan los casos elegidos
@@ -274,6 +286,7 @@ class Salud:
         self.ambientes()
         self.apps()
         self.produccion()
+        self.telegram()
         if self.deep:
             self.profundo()
         return self.items

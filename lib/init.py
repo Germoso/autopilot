@@ -109,7 +109,10 @@ def env_autopilot(det, bases):
           "", "# Vigilante (lo corre el watcher cada WATCHDOG_INTERVAL s, sin tokens): mata procesos huerfanos",
           "# y los colgados HUNG_MINUTES sin usar CPU; avisa de tareas sin actividad STALE_MINUTES.",
           "# COMMAND_TIMEOUT: tiempo maximo (s) de lo que corre por aenv.sh.",
-          "WATCHDOG=true", "WATCHDOG_INTERVAL=60", "HUNG_MINUTES=10", "STALE_MINUTES=45", "COMMAND_TIMEOUT=900"]
+          "WATCHDOG=true", "WATCHDOG_INTERVAL=60", "HUNG_MINUTES=10", "STALE_MINUTES=45", "COMMAND_TIMEOUT=900",
+          "", "# Telegram: avisos (y comandos /estado, /reqa, /pausa... desde el chat). Bot propio del autopilot:",
+          "# wi.sh autopilot.env telegram-setup. ALERTS_ONLY=true: solo lo que necesita tu intervencion.",
+          "TELEGRAM=false", "TELEGRAM_ALERTS_ONLY=false"]
     return "\n".join(L) + "\n" + bloque_e2e(det)
 
 
@@ -233,6 +236,12 @@ def init(carpeta, bases, sin_azure=False):
         hecho.append("autopilot.env ya existia (solo se actualizan las ramas base indicadas)")
         for k, v in bases.items():
             set_linea(ap, "REPO.%s" % k if k else "BASE_BRANCH", v)
+        if not re.search(r"(?m)^\s*TELEGRAM\s*=", open(ap, encoding="utf-8").read()):
+            with open(ap, "a", encoding="utf-8") as f:
+                f.write("\n# Telegram: avisos (y comandos /estado, /reqa, /pausa... desde el chat). Bot propio del autopilot:\n"
+                        "# wi.sh autopilot.env telegram-setup. ALERTS_ONLY=true: solo lo que necesita tu intervencion.\n"
+                        "TELEGRAM=false\nTELEGRAM_ALERTS_ONLY=false\n")
+            hecho.append("autopilot.env: agregado TELEGRAM=false (avisos por Telegram, apagados)")
         if not re.search(r"(?m)^\s*E2E\s*=", open(ap, encoding="utf-8").read()):
             with open(ap, "a", encoding="utf-8") as f:
                 f.write(bloque_e2e(det))

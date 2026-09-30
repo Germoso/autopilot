@@ -80,6 +80,7 @@ def cargar_config(env_path=None):
       E2E_PLATFORMS.<front>=web,android       en que plataformas se prueba cada frontend
       E2E_API.<front-flutter>=<archivo>|<regex de la linea>|<reemplazo con {API}>
                                               como apuntar la app al backend LOCAL en la copia E2E
+      TELEGRAM=true|false (avisos y comandos por Telegram), TELEGRAM_ALERTS_ONLY=true|false
       E2E_API.<front-web>=env:VAR1,VAR2       variables de URL del front web que aenv.sh --e2e apunta al
                                               backend LOCAL (conserva ruta; https->http, wss->ws)
     """
@@ -123,6 +124,7 @@ def cargar_config(env_path=None):
             e2e_api[k[8:]] = ({"archivo": partes[0].strip(), "regex": partes[1], "reemplazo": "|".join(partes[2:])}
                               if len(partes) >= 3 and partes[0].strip() else {"invalido": v})
     valor_e2e = vals.get("E2E", "false").strip().lower()
+    valor_tg = vals.get("TELEGRAM", "false").strip().lower()
     return {"workspace": bool(ws), "raiz": raiz, "dir": wdir, "repos": repos,
             "paralelo": paralelo, "capacidad": capacidad,
             "parallel_invalido": None if valor_parallel in ("true", "false") else vals.get("PARALLEL"),
@@ -137,6 +139,9 @@ def cargar_config(env_path=None):
                     "platforms": {k[14:]: lista(v.lower()) for k, v in vals.items()
                                   if k.startswith("E2E_PLATFORMS.") and k[14:]},
                     "api": e2e_api},
+            "telegram": {"activo": valor_tg == "true",
+                         "invalido": None if valor_tg in ("true", "false") else vals.get("TELEGRAM"),
+                         "solo_alertas": vals.get("TELEGRAM_ALERTS_ONLY", "false").strip().lower() == "true"},
             "env_path": os.path.abspath(env_path) if env_path else None}
 
 
@@ -337,6 +342,13 @@ class Board:
             out.append("PARALLEL=%s no es valido: usa true o false. Se usa false (1 coder + 1 QA)"
                        % self.cfg["parallel_invalido"])
         out += self.avisos_e2e()
+        tg = self.cfg.get("telegram", {})
+        if tg.get("invalido") is not None:
+            out.append("TELEGRAM=%s no es valido: usa true o false" % tg["invalido"])
+        if tg.get("activo"):
+            import telegram
+            if not all(telegram.credenciales()):
+                out.append("TELEGRAM=true pero no hay credenciales del bot: wi.sh <env> telegram-setup (en tu terminal)")
         for n, r in sorted(self.cfg["repos"].items()):
             etiqueta = "REPO.%s" % n if n else "BASE_BRANCH"
             if not r["base"]:
@@ -597,7 +609,44 @@ class Board:
                 pass
         if estado_nuevo in CERRADAS:
             self._cerrar_coder(clave.lower(), estado_nuevo)
+        if estado_nuevo and estado_nuevo != estado:
+            self._avisar_estado(clave.lower(), estado_nuevo, titulo, meta, secs, set(secs_append or {}))
         return path
+
+    def avisar(self, texto, alerta=False, dedup=False):
+        """Aviso por Telegram (si TELEGRAM=true). Nunca falla ni bloquea."""
+        try:
+            import telegram
+            telegram.enviar(self.cfg, texto, alerta, dedup=dedup)
+        except Exception:
+            pass
+
+    def _avisar_estado(self, clave, estado, titulo, meta, secs, escritas=()):
+        def ultimo(s):  # ultimo bloque "### ..." de la seccion, sin su encabezado
+            b = re.split(r"(?m)^### ", secs.get(s, "").strip())[-1].strip() if secs.get(s, "").strip() else ""
+            return b.split("\n", 1)[1].strip() if "\n" in b and "RECHAZADO" in b.split("\n", 1)[0] else b
+        n = meta.get("intento", "0")
+        t = "%s — %s" % (clave, titulo)
+        if estado == "in-progress":
+            self.avisar("🧑‍💻 El coder empezó %s%s" % (t, " (corrige el intento %s)" % n if n != "0" else ""))
+        elif estado == "qa":
+            self.avisar("📦 %s terminada por el coder: a QA" % t)
+        elif estado == "validando":
+            self.avisar("🔍 QA certificando %s (intento %s)" % (t, n))
+        elif estado == "e2e":
+            self.avisar("🧾 %s aprobada por QA: en cola de pruebas E2E" % t)
+        elif estado == "probando-e2e":
+            self.avisar("📱 E2E probando %s" % t)
+        elif estado == "bug-fix":
+            quien = "E2E" if "Feedback de E2E" in escritas else "QA"
+            fb = ultimo("Feedback de %s" % quien)
+            self.avisar("↩️ %s rechazada por %s (intento %s), vuelve al coder:\n%s" % (t, quien, n, fb[:600]))
+        elif estado == "done":
+            self.avisar("✅ %s lista y certificada: revisala y mergea.\n%s" % (t, (secs.get("Resultado", "") or "")[:500]),
+                        alerta=True)
+        elif estado == "stopped":
+            self.avisar("🚨 %s detenida, necesita tu intervencion:\n%s\n\nCuando lo resuelvas: /reqa %s (o /tarea %s)"
+                        % (t, (secs.get("Motivo de stopped", "") or "-")[:900], clave, clave), alerta=True)
 
     def crear(self, tipo, numero, prioridad, titulo, descripcion, criterio, repo="", origen="manual",
               adjuntos=""):
@@ -680,16 +729,17 @@ class Board:
         cap = self.cfg["capacidad"]
 
         acciones = []
-        huecos = cap["coder"] - len(ocupados["coder"])
+        pausa = os.path.exists(os.path.join(self.dir, ".pausa"))   # /pausa desde Telegram
+        huecos = 0 if pausa else cap["coder"] - len(ocupados["coder"])
         for t in [t for t in bugfix if libre(t)] + [t for t in nuevas if libre(t)]:
             if huecos <= 0:
                 break
             acciones.append({"puesto": "coder", "tarea": t,
                              "accion": "desarrollar-bugfix" if t["estado"] == "bug-fix" else "desarrollar"})
             huecos -= 1
-        for t in qa[:max(0, cap["qa"] - len(ocupados["qa"]))]:
+        for t in ([] if pausa else qa[:max(0, cap["qa"] - len(ocupados["qa"]))]):
             acciones.append({"puesto": "qa", "accion": "certificar", "tarea": t})
-        if self.cfg["e2e"]["activo"]:  # con E2E=false la cola e2e no se atiende (y avisos() lo dice)
+        if self.cfg["e2e"]["activo"] and not pausa:  # con E2E=false la cola e2e no se atiende (y avisos() lo dice)
             for t in e2e[:max(0, cap["e2e"] - len(ocupados["e2e"]))]:
                 acciones.append({"puesto": "e2e", "accion": "probar-e2e", "tarea": t})
         return {"acciones": acciones, "terminadas": terminadas, "ocupados": ocupados,
@@ -697,7 +747,7 @@ class Board:
                 "en_espera": [{"id": t["id"], "espera": t["espera"]} for t in bugfix + nuevas if not libre(t)],
                 "huerfanas_recuperadas": huerfanas, "stopped": [t["id"] for t in by("stopped")],
                 "workspace": self.cfg["workspace"], "avisos": self.avisos(),
-                "e2e": self.cfg["e2e"]["activo"],
+                "e2e": self.cfg["e2e"]["activo"], "pausa": pausa,
                 "cola": {"bugfix": len(bugfix), "qa": len(qa), "new": len(nuevas), "e2e": len(e2e)}}
 
     # -- worktree del QA
@@ -1269,6 +1319,7 @@ class Board:
             meta["espera"] = otra
             meta["actualizado"] = ahora()
             escribir_atomico(dst, serializar(meta, titulo, secs))
+        self.avisar("⏸️ %s en espera: comparte archivos con %s; se retoma cuando esa termine" % (clave, otra))
         self.log("Tarea en espera", "sistema", "nota", clave, clave, "-",
                  "Choca con archivos de %s: vuelve a %s hasta que %s termine" % (otra, destino, otra))
         return {"tarea": clave, "estado": destino, "espera": otra}
@@ -1348,6 +1399,9 @@ USO = """uso: wi.sh <env> <comando> [args]
   aprobar-e2e <clave>                    probando-e2e -> done, SOLO si validar-e2e da ok
   rechazar-e2e <clave> <feedback>        probando-e2e -> bug-fix (Feedback de E2E)
   re-e2e     <clave>                     -> e2e otra vez (p. ej. tras resolver un NO CERTIFICABLE)
+  telegram-setup                         conecta el bot del autopilot a tu chat (interactivo, en tu terminal)
+  notify-test                            manda un mensaje de prueba por Telegram
+  notify     <texto> [--alert]           manda un aviso por Telegram (respeta TELEGRAM=true)
   smoke-save <copia>                     guarda tests/smoke/ de una copia de trabajo en la rama smoke-tests
                                          del repo (pruebas de humo: no son de una tarea)
   health     [<clave>|smoke|--all] [--web|--android] [--deep]
@@ -1417,6 +1471,9 @@ def main(argv):
         res = [entorno.validar(x) for x in objetivo]
         print(json.dumps(res if len(res) > 1 else res[0], ensure_ascii=False, indent=2))
         return 0 if all(x["estado"] == "ok" for x in res) else 3
+    if cmd in ("telegram-setup", "notify-test", "notify"):
+        import telegram
+        return telegram.main([env, {"telegram-setup": "setup", "notify-test": "test", "notify": "send"}[cmd]] + a)
     if cmd == "health":
         import salud
         return salud.main([env] + a)

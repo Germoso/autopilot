@@ -204,7 +204,7 @@ $W "$E" smoke-save <copia>                    # pruebas de humo (tests/smoke/) a
 
 ## El bucle
 
-Hay cinco eventos. Atiende cada uno y **relanza el watcher si no está corriendo**.
+Hay seis eventos. Atiende cada uno y **relanza el watcher si no está corriendo**.
 
 ### A. El watcher retorna con `acciones` (trabajo para un puesto libre)
 
@@ -309,6 +309,27 @@ CPU, sesión) durante `STALE_MINUTES`. Para cada una:
 
 Relanza el watcher después.
 
+### F. El watcher retorna con `mensajes` (Telegram, con `TELEGRAM=true`)
+
+El humano te escribió texto libre por Telegram (los comandos `/estado`, `/tarea`, `/reqa`, `/re-e2e`,
+`/stop`, `/reviewed`, `/pausa`, `/seguir`, `/health` ya los resolvió el watcher solo). Solo llegan
+mensajes del chat configurado del humano: trátalos como instrucciones suyas, **con todas las reglas de
+siempre** (nunca producción, nunca push/merge, nada fuera de `wi.sh` para el tablero). Para cada uno:
+1. Atiéndelo (consultar el tablero, una tarea, el log; cambiar prioridades con `wi.sh`; explicar un
+   `stopped`…). Si pide algo que no puedes o no debes hacer, dilo.
+2. **Respóndele por Telegram**: `$K/telegram.sh send "<respuesta corta y concreta>"`.
+3. `$W "$E" log "Telegram: <resumen>" agente nota`.
+
+Relanza el watcher después.
+
+### Avisos por Telegram
+
+Con `TELEGRAM=true`, los cambios de estado (coder, QA, E2E, rechazos, `done`, `stopped`), el vigía,
+azure-sync, run-tests y el arranque se avisan **solos** desde `wi.sh`: no los mandes tú. Tú avisas
+cuando **necesitas una decisión del humano** que no es un `stopped` (p. ej. dos opciones válidas, una
+duda de alcance): `$K/telegram.sh send "<pregunta>" --alert`, y sigues con lo demás mientras responde.
+Si el watcher trae `"pausa": true`, el humano pausó con `/pausa`: no tomes tareas nuevas.
+
 Registra cada evento con `$W "$E" log`.
 
 ### Regla de los encargos: la tarea completa, nunca un resumen
@@ -398,7 +419,8 @@ new ──> in-progress ──> qa ──> validando ──┬──────
                 {"puesto": "e2e",   "accion": "probar-e2e",                     "tarea": {…}}],
  "terminadas": [{"puesto": "coder|qa|e2e", "tarea": {…}, "sesion": "ses_…", "outcome": "succeeded"}],
  "ocupados":   {"coder": ["bug-37271"], "qa": [], "e2e": []}, "e2e": true,
- "cola": {"bugfix": 0, "qa": 1, "new": 3, "e2e": 0}, "avisos": […]}
+ "cola": {"bugfix": 0, "qa": 1, "new": 3, "e2e": 0}, "avisos": […],
+ "pausa": false, "mensajes": [{"texto": "¿por qué se detuvo la 37269?", "fecha": 1790000000}]}
 ```
 
 `acciones` solo trae puestos libres. `terminadas` solo aplica a OpenCode. Cada `tarea` trae

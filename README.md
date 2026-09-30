@@ -143,6 +143,7 @@ Todo está en **`autopilot.env`**, en la carpeta de tu proyecto. Lo más común:
 | Más de un coder y un QA a la vez | `PARALLEL=true`, y `MAX_CODERS` / `MAX_QA` |
 | Activar las pruebas E2E | `E2E=true` (ver abajo) |
 | Que un comando pueda tardar más | `COMMAND_TIMEOUT=900` (segundos) |
+| Recibir avisos y responder por Telegram | `TELEGRAM=true` (ver *Avisos por Telegram*) |
 
 Con 8 GB de RAM y Flutter, lo razonable es **1 coder + 1 QA** (`PARALLEL=false`, el valor por
 defecto). Todas las variables: [docs/REFERENCIA.md](docs/REFERENCIA.md#autopilotenv).
@@ -270,6 +271,45 @@ $K/run-tests --all              # regresión: todos los guardados, en la rama ba
 
 Levanta lo que haga falta (backend y BackOffice en local, contra la base de QA), corre los casos,
 apaga todo y deja un **reporte con capturas** en `test-results/`. Si algo falla, termina con error.
+
+---
+
+## Avisos por Telegram
+
+El autopilot te va contando por Telegram qué hace, te avisa con 🚨 cuando **necesita tu intervención**
+(tarea detenida, tarea lista para revisar y mergear, tarea atascada, pruebas que fallan) y **le puedes
+responder desde el chat**.
+
+**Configurarlo (una vez, en tu terminal):**
+
+1. En Telegram, habla con **@BotFather** → `/newbot` y crea un bot **solo para el autopilot**. No uses
+   el del plugin de Claude Code: Telegram deja que un solo programa lea los mensajes de cada bot.
+2. Conecta ese bot con tu chat:
+   ```sh
+   ~/.local/share/autopilot-kit/wi.sh autopilot.env telegram-setup
+   ```
+   Te pide el token (no se muestra), te pide mandarle `/start` al bot, y guarda todo en
+   `~/.config/autopilot-kit/telegram.env` (solo tú puedes leerlo).
+3. En `autopilot.env`: `TELEGRAM=true`. Si solo quieres lo urgente: `TELEGRAM_ALERTS_ONLY=true`.
+4. `health-check` debe mostrar `✅ telegram`.
+
+**Qué te llega:** coder empezó / terminó, QA y E2E certificando, rechazos con el motivo, ✅ lista para
+mergear, 🚨 detenida (con el motivo y cómo resolverla), 🚨 atascada, tareas nuevas de Azure, resultado
+de `run-tests`, y cuando el autopilot arranca o se detiene. Nunca contraseñas ni valores de los `.env`.
+
+**Qué le puedes escribir:**
+
+| Mensaje | Qué hace |
+|---|---|
+| `/estado` · `/cola` | Qué hace cada agente y qué hay en cola |
+| `/tarea bug-37269` | Estado, motivo y última nota de una tarea |
+| `/reqa bug-37269` · `/re-e2e bug-37269` | Devolverla a QA o a E2E (p. ej. después de resolver un `stopped`) |
+| `/stop bug-37269 <motivo>` · `/reviewed bug-37269` | Detenerla · marcarla como revisada |
+| `/pausa` · `/seguir` | Dejar de tomar tareas nuevas (lo que está en curso termina) · volver |
+| `/health` | Health check resumido |
+| Cualquier otro texto | Se lo pasa al orquestador, que te responde por el chat (solo con `/autopilot` corriendo) |
+
+Solo responde a **tu** chat; los mensajes de cualquier otro se ignoran.
 
 ---
 
