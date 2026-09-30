@@ -470,11 +470,7 @@ def do_refrescar(claves):
     No cambia el estado ni toca notas, reporte, feedback ni resultado. Sin claves: todas las de Azure."""
     hechas, errores = [], []
     for t in BOARD.todas():
-        origen = ""
-        try:
-            origen = wi.parsear(open(t["archivo"], encoding="utf-8").read())[0].get("origen", "")
-        except OSError:
-            pass
+        origen = t.get("origen") or ""
         if not origen.startswith("azure:") or (claves and t["id"] not in claves and t["numero"] not in claves):
             continue
         proyecto = origen.split(":", 1)[1]
