@@ -97,7 +97,7 @@ Cada work item importado trae sus adjuntos a `.workitems/adjuntos/<clave>/`:
   Sin ffmpeg se guarda el video y queda la nota; después: `azure-sync.py --config ... --fotogramas`.
 - Límite de 50 MB por archivo. Un adjunto que falla no frena la importación: queda anotado.
 
-El autopilot le pasa las imágenes y fotogramas al coder y al QA (`tarea.adjuntos`).
+El autopilot le pasa las imágenes y fotogramas al coder, al QA y al agente E2E (`tarea.adjuntos`).
 
 ## Criterio de filtro
 

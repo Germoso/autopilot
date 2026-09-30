@@ -171,7 +171,7 @@ $W "$E" entorno     <clave|repo>              # .env.autopilot de sus repos: ok/
 $W "$E" in-progress <clave>
 $W "$E" qa          <clave>
 $W "$E" certificar  <clave> <intento_nuevo>   # qa -> validando
-$W "$E" aprobar     <clave>                   # validando -> done
+$W "$E" aprobar     <clave>                   # validando -> done (con E2E=true: -> e2e)
 $W "$E" rechazar    <clave> "<motivos>"       # validando -> bug-fix
 $W "$E" new         <clave>
 $W "$E" reviewed    <clave>                   # SOLO el humano: done -> reviewed
@@ -338,10 +338,11 @@ ruta completa de cada captura en el paso que muestra.
 
 ### Imágenes en el `.md`
 
-`notas-dev` y `reporte-qa` convierten toda ruta de imagen que aparezca en el texto (y las de
-`--imagenes <carpeta>`) en `![nombre](../adjuntos/<clave>/...)`: las que están fuera del board se
-copian a `adjuntos/<clave>/coder-intentoN/` o `qa-intentoN/`. Así el humano ve en la tarea las
-capturas del bug, las del coder y las del QA. Pásales siempre el texto tal cual, con las rutas completas.
+`notas-dev`, `reporte-qa` y `reporte-e2e` convierten toda ruta de imagen que aparezca en el texto (y
+las de `--imagenes <carpeta>`) en `![nombre](../adjuntos/<clave>/...)`: las que están fuera del board
+se copian a `adjuntos/<clave>/coder-intentoN/`, `qa-intentoN/` o `e2e-intentoN/`. Los videos que
+mencionen (`.mp4`, `.webm`...) también se copian y quedan enlazados. Así el humano ve en la tarea las
+capturas del bug, las del coder, las del QA y las de cada paso del E2E. Pásales siempre el texto tal cual, con las rutas completas.
 
 ### Adjuntos (capturas y videos)
 
@@ -383,11 +384,13 @@ new ──> in-progress ──> qa ──> validando ──┬──────
                 {"puesto": "qa",    "accion": "certificar",                     "tarea": {…}},
                 {"puesto": "e2e",   "accion": "probar-e2e",                     "tarea": {…}}],
  "terminadas": [{"puesto": "coder|qa|e2e", "tarea": {…}, "sesion": "ses_…", "outcome": "succeeded"}],
- "ocupados":   {"coder": "bug-37271", "qa": null}, "cola": {…}, "avisos": […]}
+ "ocupados":   {"coder": ["bug-37271"], "qa": [], "e2e": []}, "e2e": true,
+ "cola": {"bugfix": 0, "qa": 1, "new": 3, "e2e": 0}, "avisos": […]}
 ```
 
 `acciones` solo trae puestos libres. `terminadas` solo aplica a OpenCode. Cada `tarea` trae
-`repo_path` (`<REPO>`), `base` (`<BASE>`), `adjuntos`, `notas_dev`, `reporte_qa`, `feedback`.
+`repo_path` (`<REPO>`), `base` (`<BASE>`), `adjuntos`, `notas_dev`, `reporte_qa`, `feedback`,
+`reporte_e2e`, `feedback_e2e`, `repos_modificados`. `"e2e": true` = la etapa E2E está activa.
 Prioridad del coder: `bug-fix` > `new` (por prioridad, luego número).
 
 ## El ciclo de certificación
@@ -395,6 +398,10 @@ Prioridad del coder: `bug-fix` > `new` (por prioridad, luego número).
 `qa` → (evento A) `validando` + worktree → (evento C) `done`, o `bug-fix` con el feedback →
 el coder corrige **solo** el feedback en la misma rama → `qa` otra vez. Hasta 3 intentos; al
 tercer rechazo, `stopped` con el historial.
+
+Con `E2E=true`, el `APROBADO` del QA va a `e2e` → (evento A) `probando-e2e` + copias E2E →
+(evento D) `done`, o `bug-fix` con el `Feedback de E2E` → el coder corrige → `qa` → `e2e` otra vez.
+El contador de intentos es uno solo (lo sube el QA): los rechazos de QA y de E2E suman juntos.
 
 ## Los agentes
 
@@ -430,7 +437,7 @@ el orquestador.
 ## Log de actividad
 
 `log.md` es una tabla a la que solo se agregan filas: `Hora`, `Origen`
-(`watcher`|`agente`|`sistema`), `Tipo` (`deteccion`|`delegacion`|`QA`|`Stopped`|`recuperacion`|`error`|`nota`),
+(`watcher`|`agente`|`sistema`), `Tipo` (`deteccion`|`delegacion`|`QA`|`E2E`|`Stopped`|`recuperacion`|`error`|`nota`),
 `Tarea`, `Rama`, `Commit`, `Evento`, `Detalle`.
 
 ## Lo que NUNCA debes hacer
