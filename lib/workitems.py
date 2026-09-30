@@ -29,6 +29,7 @@ cambiaria el tablero. install.sh --init lo agrega al .gitignore.
 """
 import datetime
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -306,12 +307,16 @@ def parsear(texto):
     return meta, titulo, secciones
 
 
-def serializar(meta, titulo, secciones):
+AVISO_VISTA = ("<!-- Vista generada por el autopilot desde .workitems/autopilot.db. Para cambiar la tarea usa la "
+               "app web o wi.sh; si editas o mueves este archivo, el cambio se importa. -->")
+
+
+def serializar(meta, titulo, secciones, vista=False):
     out = ["---"]
     for k in CAMPOS + [k for k in meta if k not in CAMPOS]:
         if k in meta:
             out.append("%s: %s" % (k, meta[k]))
-    out += ["---", "# %s" % titulo, ""]
+    out += ["---", "# %s" % titulo, ""] + ([AVISO_VISTA, ""] if vista else [])
     for h in SECCIONES + [h for h in secciones if h not in SECCIONES]:
         out += ["## %s" % h, "", secciones.get(h, "").strip(), ""]
     return "\n".join(out).rstrip() + "\n"
@@ -322,6 +327,104 @@ class Board:
     def __init__(self, cfg):
         self.cfg = cfg
         self.dir = cfg["dir"]
+        self._db = None
+        self._sync_ok = False
+
+    # -- base de datos (.workitems/autopilot.db)
+    @property
+    def db(self):
+        """El tablero vive en SQLite. La primera vez migra los .md de siempre (con respaldo)."""
+        if self._db is None:
+            import almacen
+            self._db = almacen.Almacen(self.dir)
+            if self._db.meta_get("migrado") is None:
+                self._migrar()
+        return self._db
+
+    def _migrar(self):
+        db = self._db
+        mds = []
+        for e in ESTADOS:
+            d = os.path.join(self.dir, e)
+            for n in (sorted(os.listdir(d)) if os.path.isdir(d) else []):
+                m = RE_ARCHIVO.match(n)
+                if m:
+                    mds.append((e, "%s-%s" % (m.group(1), m.group(2)), os.path.join(d, n)))
+        log_md = os.path.join(self.dir, "log.md")
+        if mds or os.path.exists(log_md):
+            resp = os.path.join(self.dir, ".respaldo-md-%s" % datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+            for e, _, path in mds:
+                os.makedirs(os.path.join(resp, e), exist_ok=True)
+                shutil.copy2(path, os.path.join(resp, e, os.path.basename(path)))
+            if os.path.exists(log_md):
+                shutil.copy2(log_md, os.path.join(resp, "log.md"))
+            db.meta_set("respaldo_md", resp)
+        for e, clave, path in mds:
+            texto = open(path, encoding="utf-8").read()
+            meta, titulo, secs = parsear(texto)
+            db.guardar(clave, e, meta, titulo, secs)
+            db.set_vista(clave, os.path.relpath(path, self.dir), hashlib.sha256(texto.encode()).hexdigest())
+        if os.path.exists(log_md):
+            for l in open(log_md, encoding="utf-8"):
+                cols = [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", l.strip())[1:-1]]
+                if len(cols) == 8 and cols[0] not in ("Hora", "---") and not set(cols[0]) <= set("-"):
+                    db.log(*cols)
+        for _, clave, _ in mds:
+            self.adjuntos(clave)   # registra los archivos que ya hay en adjuntos/<clave>/
+        db.meta_set("migrado", ahora())
+
+    def _vista_path(self, clave, estado, titulo):
+        return os.path.join(self.dir, estado, "%s-%s.md" % (clave, slugify(titulo)))
+
+    def _escribir_vista(self, clave, estado, meta, titulo, secs):
+        """Regenera el .md de lectura en la carpeta de su estado (y quita el anterior si cambio)."""
+        fila = self.db.fila(clave)
+        vieja = os.path.join(self.dir, fila["vista"]) if fila and fila["vista"] else None
+        path = self._vista_path(clave, estado, titulo)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        texto = serializar(meta, titulo, secs, vista=True)
+        escribir_atomico(path, texto)
+        if vieja and os.path.realpath(vieja) != os.path.realpath(path) and os.path.exists(vieja):
+            os.remove(vieja)
+        self.db.set_vista(clave, os.path.relpath(path, self.dir), hashlib.sha256(texto.encode()).hexdigest())
+        return path
+
+    def _sincronizar(self):
+        """Lo que el humano hizo a mano en los .md: crear uno en una carpeta, moverlo a otra carpeta de
+        estado o editarlo. Se importa a la base (como siempre funciono el tablero de carpetas)."""
+        if self._sync_ok or not os.path.isdir(self.dir):
+            return
+        self._sync_ok = True
+        filas = {r["clave"]: r for r in self.db.q("SELECT clave, estado, vista, vista_sha FROM tareas")}
+        for e in ESTADOS:
+            d = os.path.join(self.dir, e)
+            for n in (sorted(os.listdir(d)) if os.path.isdir(d) else []):
+                m = RE_ARCHIVO.match(n)
+                if not m:
+                    continue
+                clave, path = "%s-%s" % (m.group(1), m.group(2)), os.path.join(d, n)
+                texto = open(path, encoding="utf-8").read()
+                sha = hashlib.sha256(texto.encode()).hexdigest()
+                f = filas.get(clave)
+                vista = os.path.join(self.dir, f["vista"]) if f and f["vista"] else None
+                if f is None:
+                    evento = "Tarea creada a mano (.md en %s)" % e
+                elif vista and os.path.realpath(vista) == os.path.realpath(path):
+                    if f["vista_sha"] == sha:
+                        continue
+                    evento = "Tarea editada a mano (.md)"
+                elif e != f["estado"] and not (vista and os.path.exists(vista)):
+                    evento = "Tarea movida a mano: %s -> %s" % (f["estado"], e)
+                else:
+                    continue   # copia sobrante de otra vista: la base manda
+                meta, titulo, secs = parsear(texto)
+                if f is None:
+                    meta.setdefault("id", m.group(2))
+                    meta.setdefault("tipo", m.group(1))
+                    meta.setdefault("rama", clave)
+                self.db.guardar(clave, e, meta, titulo or clave, secs)
+                self.db.set_vista(clave, os.path.relpath(path, self.dir), sha)
+                self.log(evento, "humano", "nota", clave, clave)
 
     # -- repos
     def repo_de(self, nombre):
@@ -455,6 +558,7 @@ class Board:
     def init(self):
         for e in ESTADOS:
             os.makedirs(os.path.join(self.dir, e), exist_ok=True)
+        self.db  # crea (o migra) la base
         log = os.path.join(self.dir, "log.md")
         if not os.path.exists(log):
             escribir_atomico(log, "# Log de actividad\n\n"
@@ -473,16 +577,15 @@ class Board:
 
     # -- lectura
     def archivos(self):
-        """[(estado, clave, path)] de todas las tareas del board."""
+        """[(estado, clave, path del .md de lectura)] de todas las tareas del board."""
+        if not os.path.isdir(self.dir):
+            return []
+        self._sincronizar()
         out = []
-        for e in ESTADOS:
-            d = os.path.join(self.dir, e)
-            if not os.path.isdir(d):
-                continue
-            for n in sorted(os.listdir(d)):
-                m = RE_ARCHIVO.match(n)
-                if m:
-                    out.append((e, "%s-%s" % (m.group(1), m.group(2)), os.path.join(d, n)))
+        for estado, clave in self.db.claves():
+            f = self.db.fila(clave)
+            path = os.path.join(self.dir, f["vista"]) if f["vista"] else self._vista_path(clave, estado, f["titulo"])
+            out.append((estado, clave, path))
         return out
 
     def numeros(self):
@@ -496,17 +599,15 @@ class Board:
         hits = [(e, p) for e, c, p in self.archivos() if c == clave]
         if not hits:
             raise Error("no existe la tarea %s en %s" % (clave, self.dir))
-        if len(hits) > 1:
-            raise Error("la tarea %s esta duplicada: %s" % (clave, ", ".join(p for _, p in hits)))
         return hits[0]
 
     def leer(self, clave):
         estado, path = self.buscar(clave)
-        meta, titulo, secs = parsear(open(path, encoding="utf-8").read())
+        _, meta, titulo, secs = self.db.obtener(clave.strip().lower())
         return estado, path, meta, titulo, secs
 
-    def tarea_json(self, estado, clave, path):
-        meta, titulo, secs = parsear(open(path, encoding="utf-8").read())
+    def tarea_json(self, estado, clave, path, datos=None):
+        _, meta, titulo, secs = datos or self.db.obtener(clave)
         try:
             intento = int(meta.get("intento") or 0)
         except ValueError:
@@ -530,6 +631,8 @@ class Board:
             "feedback_e2e": secs.get("Feedback de E2E", ""),
             "sesion": meta.get("sesion") or None,
             "espera": meta.get("espera") or None,
+            "origen": meta.get("origen", ""),
+            "actualizado": meta.get("actualizado", ""),
             **self.adjuntos(clave),
         }
 
@@ -538,19 +641,24 @@ class Board:
         Tambien sirve para imagenes que el usuario deje a mano en esa carpeta."""
         carpeta = os.path.join(self.dir, "adjuntos", clave)
         imgs, vids = [], []
+        registrados = {a["ruta"] for a in self.db.adjuntos(clave)} if os.path.isdir(carpeta) else set()
         for raiz, dirs, files in os.walk(carpeta):
-            dirs.sort()
+            dirs[:] = sorted(d for d in dirs if d != "borradores")   # los borradores de pruebas no son adjuntos
             for f in sorted(files):
+                p = os.path.join(raiz, f)
                 ext = os.path.splitext(f)[1].lower()
-                (imgs if ext in IMAGEN else vids if ext in VIDEO else []).append(os.path.join(raiz, f))
+                (imgs if ext in IMAGEN else vids if ext in VIDEO else []).append(p)
+                if os.path.relpath(p, self.dir).replace(os.sep, "/") not in registrados:
+                    self.db.registrar_adjunto(clave, p)   # la base sabe que archivos tiene cada tarea
         return {"adjuntos": imgs, "videos": vids}
 
     def todas(self):
         out = []
         for e, c, p in self.archivos():
-            t = self.tarea_json(e, c, p)
+            datos = self.db.obtener(c)
+            t = self.tarea_json(e, c, p, datos)
             try:
-                repos = self.repos_de_tarea(parsear(open(p, encoding="utf-8").read())[0])
+                repos = self.repos_de_tarea(datos[1])
                 t["repo_path"], t["base"] = repos[0]["path"], repos[0]["base"]
                 t["repos"] = []
                 for i, r in enumerate(repos):
@@ -574,21 +682,18 @@ class Board:
         """Mueve (si corresponde) y reescribe una tarea. Primero rename, luego replace."""
         with self.lock():
             estado, path = self.buscar(clave)
+            clave = clave.strip().lower()
             if estado_nuevo and estado_nuevo != estado:
                 if estado_nuevo not in ESTADOS:
                     raise Error("estado invalido: %s" % estado_nuevo)
                 puesto = next((p for p, e in PUESTOS.items() if e == estado_nuevo), None)
-                ocupada = [c for e, c, _ in self.archivos() if e == estado_nuevo and c != clave.lower()]
+                ocupada = [c for e, c in self.db.claves() if e == estado_nuevo and c != clave]
                 if puesto and len(ocupada) >= self.cfg["capacidad"][puesto]:
                     raise Error("el puesto %s esta lleno (%d de %d: %s). Maximo en %s: %d%s"
                                 % (puesto, len(ocupada), self.cfg["capacidad"][puesto], ", ".join(ocupada),
                                    estado_nuevo, self.cfg["capacidad"][puesto],
                                    "" if self.cfg["paralelo"] else " (PARALLEL=false)"))
-                destino = os.path.join(self.dir, estado_nuevo, os.path.basename(path))
-                os.makedirs(os.path.dirname(destino), exist_ok=True)
-                os.rename(path, destino)
-                path = destino
-            meta, titulo, secs = parsear(open(path, encoding="utf-8").read())
+            _, meta, titulo, secs = self.db.obtener(clave)
             if estado_nuevo and estado_nuevo not in PUESTOS.values():
                 meta.pop("sesion", None)  # la sesion de OpenCode es del puesto, no de la tarea
             if estado_nuevo == "in-progress":
@@ -601,7 +706,9 @@ class Board:
                 prev = secs.get(k, "").strip()
                 secs[k] = (prev + "\n\n" + v).strip() if prev else v
             meta["actualizado"] = ahora()
-            escribir_atomico(path, serializar(meta, titulo, secs))
+            final = estado_nuevo or estado
+            self.db.guardar(clave, final, meta, titulo, secs)
+            path = self._escribir_vista(clave, final, meta, titulo, secs)
         if estado_nuevo == "qa":
             try:
                 self._escribir_repos_modificados(clave.lower())
@@ -612,6 +719,70 @@ class Board:
         if estado_nuevo and estado_nuevo != estado:
             self._avisar_estado(clave.lower(), estado_nuevo, titulo, meta, secs, set(secs_append or {}))
         return path
+
+    # -- lectura por partes (para los agentes: solo lo que necesitan)
+    PARTES = {"notas": "notas_dev", "qa": "reporte_qa", "e2e": "reporte_e2e",
+              "feedback": ("feedback_qa", "feedback_e2e"), "feedback-qa": "feedback_qa", "feedback-e2e": "feedback_e2e"}
+    NOMBRE_TIPO = {"notas_dev": "Notas del desarrollador", "reporte_qa": "Reporte de QA", "feedback_qa": "Feedback de QA",
+                   "reporte_e2e": "Reporte E2E", "feedback_e2e": "Feedback de E2E"}
+
+    def get(self, clave, parte="resumen", intento=None, ultimo=False, como_json=False):
+        clave = clave.strip().lower()
+        estado, path, meta, titulo, secs = self.leer(clave)
+        self.adjuntos(clave)   # registra en la base los archivos nuevos de adjuntos/<clave>/
+        adj = [dict(a, ruta=os.path.join(self.dir, a["ruta"])) for a in self.db.adjuntos(clave)]
+        entradas = lambda tipos: [e for e in self.db.entradas(clave, intento=intento, ultimo=ultimo)
+                                  if e["tipo"] in ((tipos,) if isinstance(tipos, str) else tipos)]
+        if como_json:
+            return json.dumps({"clave": clave, "estado": estado, "titulo": titulo, "meta": meta, "archivo_md": path,
+                               "descripcion": secs.get("Descripción", ""), "criterio": secs.get("Criterio de aceptación", ""),
+                               "resultado": secs.get("Resultado", ""), "motivo": secs.get("Motivo de stopped", ""),
+                               "adjuntos": adj, "entradas": self.db.entradas(clave, intento=intento, ultimo=ultimo)},
+                              ensure_ascii=False, indent=2)
+        cab = ["# %s — %s" % (clave, titulo),
+               "estado: %s · prioridad: %s · intento: %s · rama: %s · repo: %s%s" % (
+                   estado, meta.get("prioridad", "-"), meta.get("intento", "0"), meta.get("rama", clave),
+                   meta.get("repo", "-"), (" + " + meta["repos_extra"]) if meta.get("repos_extra") else "")]
+        bloque = lambda es: "\n\n".join("### %s — %s\n\n%s" % (self.NOMBRE_TIPO[e["tipo"]], e["titulo"] or "-",
+                                                                    e["texto"]) for e in es) or "_(nada)_"
+        lista_adj = "\n".join("- %s (%s%s)" % (a["ruta"], a["origen"] or "-",
+                                               ", intento %s" % a["intento"] if a["intento"] else "") for a in adj) or "_(ninguno)_"
+        if parte == "resumen":
+            out = cab + ["", "## Descripción", "", secs.get("Descripción", "-"),
+                         "", "## Criterio de aceptación", "", secs.get("Criterio de aceptación", "-"),
+                         "", "## Adjuntos (archivos)", "", lista_adj]
+            for sec in ("Repos modificados", "Resultado", "Motivo de stopped"):
+                if secs.get(sec, "").strip():
+                    out += ["", "## " + sec, "", secs[sec]]
+            fbs = [e for e in self.db.entradas(clave) if e["tipo"] in ("feedback_qa", "feedback_e2e")]
+            if fbs:   # solo el ultimo feedback (lo que el coder tiene que corregir, o el ultimo veredicto)
+                ultimo_fb = max(fbs, key=lambda e: e["fecha"] or "")
+                out += ["", "## Último feedback", "", bloque([ultimo_fb])]
+            hist = self.db.entradas(clave)
+            if hist:
+                out += ["", "## Historial (pide solo lo que necesites)", "",
+                        "\n".join("- %s · intento %s · %s" % (self.NOMBRE_TIPO[e["tipo"]],
+                                                              e["intento"] if e["intento"] is not None else "-",
+                                                              e["titulo"] or "-") for e in hist),
+                        "", "_Leer uno: wi.sh <env> get %s notas|qa|e2e|feedback [--ultimo | --intento N]_" % clave]
+            return "\n".join(out)
+        if parte == "descripcion":
+            return secs.get("Descripción", "")
+        if parte == "criterio":
+            return secs.get("Criterio de aceptación", "")
+        if parte == "adjuntos":
+            return lista_adj
+        if parte in ("resultado", "motivo"):
+            return secs.get("Resultado" if parte == "resultado" else "Motivo de stopped", "")
+        if parte == "historial":
+            return "\n".join("- %s · intento %s · %s" % (self.NOMBRE_TIPO[e["tipo"]], e["intento"] if e["intento"] is not None else "-",
+                                                          e["titulo"] or "-") for e in self.db.entradas(clave)) or "_(vacio)_"
+        if parte in self.PARTES:
+            return bloque(entradas(self.PARTES[parte]))
+        if parte == "todo":
+            return open(path, encoding="utf-8").read()
+        raise Error("parte desconocida '%s'. Usa: resumen, descripcion, criterio, adjuntos, notas, qa, e2e, "
+                    "feedback, historial, resultado, motivo, todo" % parte)
 
     def avisar(self, texto, alerta=False, dedup=False):
         """Aviso por Telegram (si TELEGRAM=true). Nunca falla ni bloquea."""
@@ -670,27 +841,27 @@ class Board:
             if numero in self.numeros():
                 raise Error("ya existe un workitem con numero %s en el board" % numero)
             clave = "%s-%s" % (tipo, numero)
-            path = os.path.join(self.dir, "new", "%s-%s.md" % (clave, slugify(titulo)))
-            os.makedirs(os.path.dirname(path), exist_ok=True)
             meta = {"id": numero, "tipo": tipo, "prioridad": prioridad, "intento": "0",
                     "rama": clave, "repo": repo or "-", "origen": origen, "actualizado": ahora()}
             secs = {"Descripción": descripcion or "-",
                     "Criterio de aceptación": criterio or "_Sin criterio._",
                     "Adjuntos": adjuntos or ("_Ninguno. Podés dejar imágenes en adjuntos/%s/._" % clave)}
-            escribir_atomico(path, serializar(meta, titulo, secs))
-            return path
+            self.db.guardar(clave, "new", meta, titulo, secs, creado=meta["actualizado"])
+            path = self._escribir_vista(clave, "new", meta, titulo, secs)
+        self.adjuntos(clave)
+        return path
 
     def log(self, evento, origen, tipo, tarea="-", rama="-", commit="-", detalle="-"):
         if not os.path.isdir(self.dir):
             return
         c = lambda v: (str(v or "-")).replace("|", "\\|").replace("\n", " ")[:500]
-        fila = "| %s |\n" % " | ".join(c(x) for x in (ahora(), origen, tipo, tarea, rama, commit, evento, detalle))
-        path = os.path.join(self.dir, "log.md")
+        valores = (ahora(), origen, tipo, tarea, rama, commit, evento, detalle)
+        self.db.log(*[str(v or "-")[:2000] for v in valores])
+        path = os.path.join(self.dir, "log.md")   # vista de lectura del log
         if not os.path.exists(path):
             self.init()
-        with self.lock():
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(fila)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("| %s |\n" % " | ".join(c(x) for x in valores))
 
     # -- watcher
     def plan(self, recuperar=False):
@@ -1411,14 +1582,12 @@ class Board:
         meta = self.leer(clave)[2]
         destino = "bug-fix" if int(meta.get("intento") or 0) > 0 else "new"
         with self.lock():
-            estado, path = self.buscar(clave)
-            dst = os.path.join(self.dir, destino, os.path.basename(path))
-            os.rename(path, dst)
-            meta, titulo, secs = parsear(open(dst, encoding="utf-8").read())
+            _, meta, titulo, secs = self.db.obtener(clave)
             meta.pop("sesion", None)
             meta["espera"] = otra
             meta["actualizado"] = ahora()
-            escribir_atomico(dst, serializar(meta, titulo, secs))
+            self.db.guardar(clave, destino, meta, titulo, secs)
+            self._escribir_vista(clave, destino, meta, titulo, secs)
         self.avisar("⏸️ %s en espera: comparte archivos con %s; se retoma cuando esa termine" % (clave, otra))
         self.log("Tarea en espera", "sistema", "nota", clave, clave, "-",
                  "Choca con archivos de %s: vuelve a %s hasta que %s termine" % (otra, destino, otra))
@@ -1468,6 +1637,23 @@ class Board:
         return info
 
 
+def registrar_proyecto(env):
+    """Anota el proyecto en ~/.config/autopilot-kit/proyectos.json (la app web los lista todos)."""
+    try:
+        conf = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "autopilot-kit")
+        path = os.path.join(conf, "proyectos.json")
+        env = os.path.abspath(env)
+        try:
+            lista = json.load(open(path))
+        except (OSError, ValueError):
+            lista = []
+        if env not in lista and os.path.isfile(env):
+            os.makedirs(conf, exist_ok=True)
+            escribir_atomico(path, json.dumps(sorted(lista + [env]), indent=1))
+    except OSError:
+        pass
+
+
 # ----------------------------------------------------------------- CLI
 USO = """uso: wi.sh <env> <comando> [args]
   init                                   crea las carpetas del board y log.md
@@ -1485,6 +1671,8 @@ USO = """uso: wi.sh <env> <comando> [args]
   motivo     <clave> <texto>
   feedback   <clave> <texto>             agrega al historial de Feedback de QA
   criterio   <clave> <texto>
+  descripcion <clave> <texto>  ·  titulo <clave> <texto>  ·  prioridad <clave> <Critical|High|Medium|Low>
+  adjuntar   <clave> <archivo>...        copia archivos a adjuntos/<clave>/humano/ y los registra
   intentos   <clave> <n>
   certificar <clave> <intento_nuevo>     qa -> validando, fija Intento
   aprobar    <clave>                     validando -> done (con E2E=true: -> e2e, la cola de pruebas E2E)
@@ -1526,6 +1714,13 @@ USO = """uso: wi.sh <env> <comando> [args]
                                          se copian a adjuntos/<clave>/ y quedan como ![..](..) en el .md
   qa-worktree        <clave>             copia de trabajo aislada para el QA (en la punta de la rama). Si
                                          hay borrador de pruebas de una corrida anterior, lo pone en la copia
+  get        <clave> [parte] [--intento N] [--ultimo] [--json]
+                                         lee solo lo que necesitas de una tarea (menos tokens que el .md).
+                                         parte: resumen (defecto: descripcion y criterio completos + adjuntos +
+                                         lo ultimo de cada historial), descripcion, criterio, adjuntos, notas,
+                                         qa, e2e, feedback, historial (indice), resultado, motivo, todo
+  migrate                                pasa el tablero de .md a la base (se hace solo la primera vez; deja
+                                         respaldo de los .md en .workitems/.respaldo-md-<fecha>/)
   borrador   <clave> [qa|e2e]            borrador de pruebas guardado (JSON): los tests de un QA/E2E que no
                                          aprobo se guardan al borrar sus copias y se reusan en la proxima
   coder-worktree-borrar <clave>          quita los worktrees del coder y libera sus reservas
@@ -1547,6 +1742,8 @@ def main(argv):
         return 1
     env, cmd, a = argv[0], argv[1], argv[2:]
     b = Board(cargar_config(env or None))
+    if env:
+        registrar_proyecto(env)
 
     def need(n):
         if len(a) < n:
@@ -1622,6 +1819,34 @@ def main(argv):
         need(2); b.modificar(a[0], secs_append={"Feedback de QA": a[1]})
     elif cmd == "criterio":
         need(2); b.modificar(a[0], secs_set={"Criterio de aceptación": a[1]})
+    elif cmd == "descripcion":
+        need(2); b.modificar(a[0], secs_set={"Descripción": a[1]})
+    elif cmd == "prioridad":
+        need(2)
+        if a[1] not in PRIO:
+            raise Error("prioridad invalida '%s'. Usa %s" % (a[1], "|".join(PRIO)))
+        b.modificar(a[0], meta_set={"prioridad": a[1]})
+    elif cmd == "titulo":
+        need(2)
+        with b.lock():
+            estado, _, meta, _, secs = b.leer(a[0])
+            meta["actualizado"] = ahora()
+            b.db.guardar(a[0].lower(), estado, meta, a[1], secs)
+            b._escribir_vista(a[0].lower(), estado, meta, a[1], secs)
+    elif cmd == "adjuntar":
+        need(2)   # copia archivos a adjuntos/<clave>/humano/ y los registra
+        clave = a[0].lower()
+        b.buscar(clave)
+        dst_dir = os.path.join(b.dir, "adjuntos", clave, "humano")
+        os.makedirs(dst_dir, exist_ok=True)
+        hechos = []
+        for f in a[1:]:
+            nombre = re.sub(r"[^\w.\-]", "_", os.path.basename(f))
+            dst = os.path.join(dst_dir, nombre)
+            shutil.copy2(f, dst)
+            hechos.append(b.db.registrar_adjunto(clave, dst, "humano"))
+        b.log("Adjuntos agregados por el humano", "humano", "nota", clave, clave, "-", ", ".join(hechos))
+        print(json.dumps(hechos)); return 0
     elif cmd == "intentos":
         need(2); b.modificar(a[0], meta_set={"intento": str(int(a[1]))})
     elif cmd == "certificar":
@@ -1714,6 +1939,7 @@ def main(argv):
         sub = "%s-intento%d" % ({"notas-dev": "coder", "reporte-qa": "qa", "reporte-e2e": "e2e"}[cmd], n)
         texto = b.incrustar_imagenes(a[0].lower(), b.enlazar_videos(a[0].lower(), texto, sub), carpetas, sub)
         b.modificar(a[0], secs_append={seccion: "### Intento %d (%s)\n\n%s" % (n, ahora(), texto)})
+        b.adjuntos(a[0].lower())   # las capturas que se copiaron quedan registradas
     elif cmd == "coder-worktree-borrar":
         need(1); print(json.dumps(b.coder_worktree_borrar(a[0]), ensure_ascii=False)); return 0
     elif cmd == "reservar":
@@ -1742,6 +1968,16 @@ def main(argv):
         need(1); print(json.dumps(b.qa_worktree_borrar(a[0]), ensure_ascii=False)); return 0
     elif cmd == "smoke-save":
         need(1); print(json.dumps(b.guardar_smoke(a[0]), ensure_ascii=False)); return 0
+    elif cmd == "get":
+        need(1)
+        parte = next((x for x in a[1:] if not x.startswith("--") and not x.isdigit()), "resumen")
+        n = a[a.index("--intento") + 1] if "--intento" in a and a.index("--intento") + 1 < len(a) else None
+        print(b.get(a[0], parte, int(n) if n else None, "--ultimo" in a, "--json" in a)); return 0
+    elif cmd == "migrate":
+        b.db
+        print(json.dumps({"base": b.db.path, "migrado": b.db.meta_get("migrado"),
+                          "respaldo_md": b.db.meta_get("respaldo_md"), "tareas": len(b.db.claves())},
+                         ensure_ascii=False)); return 0
     elif cmd == "borrador":
         need(1)
         out = {}

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autopilot</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="barra">
+  <a class="marca" href="#/">Autopilot</a>
+  <select id="proyecto" aria-label="Proyecto"></select>
+  <nav>
+    <a href="#/">Tablero</a>
+    <a href="#/nueva">Nueva tarea</a>
+    <a href="#/herramientas">Herramientas</a>
+    <a href="#/pruebas">Pruebas</a>
+    <a href="#/log">Log</a>
+  </nav>
+  <span id="estado-autopilot" class="estado-autopilot"></span>
+</header>
+<main id="vista"><p class="cargando">Cargando…</p></main>
+<div id="aviso" class="aviso" hidden></div>
+<script src="/static/markdown.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

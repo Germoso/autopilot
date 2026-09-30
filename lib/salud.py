@@ -275,6 +275,22 @@ class Salud:
             self.add("ok" if "ok" in r.stdout else "error", "deep",
                      "Chromium abre" if "ok" in r.stdout else "Chromium no abre: %s" % r.stderr.strip()[-200:])
 
+    def base(self):
+        if not os.path.isdir(self.cfg["dir"]):
+            return
+        try:
+            db = self.b.db
+            n = len(db.claves())
+        except Exception as ex:
+            self.add("error", "tablero", "no se puede abrir la base del tablero: %s" % ex, "revisar .workitems/autopilot.db")
+            return
+        falt = db.adjuntos_faltantes()
+        if falt:
+            self.add("aviso", "tablero", "%d adjunto(s) registrados cuyo archivo ya no existe (p. ej. %s)"
+                     % (len(falt), falt[0]["ruta"]), "se borraron a mano de .workitems/adjuntos/")
+        else:
+            self.add("ok", "tablero", "base del tablero ok (%d tareas)" % n)
+
     def telegram(self):
         tg = self.cfg.get("telegram", {})
         if not tg.get("activo"):
@@ -294,6 +310,7 @@ class Salud:
         self.ambientes()
         self.apps()
         self.produccion()
+        self.base()
         self.telegram()
         if self.deep:
             self.profundo()

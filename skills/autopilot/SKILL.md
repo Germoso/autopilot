@@ -36,27 +36,21 @@ Si no existe, este proyecto **no participa** del sistema. No preguntes, no asuma
 
 ```
 .workitems/                     # WORKITEMS_DIR; NO esta en git (va en .gitignore)
-├── new/          bug-140123-login-falla.md
-├── in-progress/
-├── qa/
-├── validando/
-├── e2e/                        # QA aprobó; cola de pruebas E2E (solo con E2E=true)
-├── probando-e2e/
-├── bug-fix/
-├── stopped/
-├── done/
-├── reviewed/                   # done que el humano ya revisó (lo mueve el humano)
-└── log.md                      # log de actividad, solo se agregan filas
+├── autopilot.db                # LA FUENTE DE VERDAD: tareas, historial por intento, adjuntos, log (SQLite)
+├── new/          bug-140123-login-falla.md     # vistas .md de lectura, una por tarea, en la carpeta de su estado
+├── in-progress/ qa/ validando/ e2e/ probando-e2e/ bug-fix/ stopped/ done/ reviewed/
+├── adjuntos/<clave>/           # imagenes, videos y capturas (archivos; la base guarda su ruta)
+└── log.md                      # vista del log
 ```
 
-- **El estado de una tarea es la carpeta donde está.** No hay campo de estado.
+- **La tarea vive en la base.** Los `.md` se regeneran solos en la carpeta de su estado para que el
+  humano los lea; si el humano mueve o edita uno a mano, el cambio se importa. Tú **no los leas** (crecen
+  con cada intento): usa `$W "$E" get <clave> [parte]`, y escribe siempre con `wi.sh`.
 - **Clave de la tarea = `<tipo>-<numero>`** (`task-123`, `bug-140123`). Es también el
   **nombre de su rama**. Es lo que se le pasa a `wi.sh`.
-- Cada archivo tiene frontmatter (`id`, `tipo`, `prioridad`, `intento`, `rama`, `repo`,
-  `origen`, `sesion`, `actualizado`) y las secciones `## Descripción`, `## Criterio de aceptación`,
-  `## Adjuntos`, `## Notas del desarrollador` y `## Reporte de QA` (por intento),
-  `## Feedback de QA`, `## Reporte E2E` (con sus capturas), `## Feedback de E2E`, `## Resultado`,
-  `## Motivo de stopped`.
+- Cada tarea tiene estado, prioridad, intento, rama, repo(s), origen, descripción, criterio, adjuntos,
+  repos modificados, resultado, motivo de stopped y un **historial por intento** (notas del desarrollador,
+  reporte y feedback de QA, reporte y feedback de E2E).
 - El board **no va en git**: si estuviera versionado, al cambiar de rama cambiaría el tablero.
 
 ## Arranque
@@ -342,41 +336,41 @@ Si el watcher trae `"pausa": true`, el humano pausó con `/pausa`: no tomes tare
 
 Registra cada evento con `$W "$E" log`.
 
-### Regla de los encargos: la tarea completa, nunca un resumen
+### Regla de los encargos: la tarea por `wi.sh get`, nunca un resumen tuyo
 
-El `.md` de la tarea (`tarea.archivo`) es la **fuente de verdad**. En todo encargo:
-- incluye **la ruta de ese archivo** y pídele al agente que lo lea **completo** antes de empezar
-  (descripción, criterio con pasos para reproducir y resultado esperado, adjuntos, notas, feedback);
-- si además copias la descripción o el criterio, cópialos **textuales**, sin resumir ni reescribir.
-  Un criterio resumido hace que el coder corrija otra cosa o que el QA certifique contra algo distinto.
+La tarea vive en la base del tablero (`.workitems/autopilot.db`); el `.md` es solo una vista y crece con
+cada intento. Para **ahorrar tokens**, en todo encargo:
+- da la **clave** y el comando para leerla: `$W "$E" get <clave>` (descripción y criterio **completos**,
+  adjuntos con ruta, último feedback e índice del historial) y qué más le conviene pedir
+  (`get <clave> notas --ultimo`, `qa --ultimo`, `e2e --ultimo`, `feedback`…);
+- **no copies** en el encargo descripción, criterio, notas ni reportes: el agente los lee con `get`.
+  Si alguna vez copias el criterio, textual: un criterio resumido hace que el coder corrija otra cosa
+  o que el QA certifique contra algo distinto;
+- tú tampoco necesitas leer el `.md`: `$W "$E" get <clave> [parte]` también te sirve a ti.
 
 ### Encargo del coder (texto que le pasas)
 
-**La ruta del archivo de la tarea** (`tarea.archivo`: léelo completo); clave y título; **la ruta de su worktree** (lo que devolvió `wi.sh rama`: ahí trabaja, nunca en
-`<REPO>`), `<REPO>`, rama y `<BASE>`; descripción y criterio de aceptación;
-la lista **`tarea.adjuntos`** (rutas completas); si es bug-fix, el `Feedback de QA` y, si el rechazo
-vino de E2E, el `Feedback de E2E` (`tarea.feedback_e2e`) y el Reporte E2E con sus capturas, las notas
-anteriores y **todos** los repos de la tarea (`tarea.repos`). En un workspace, además: la ruta de
+Clave y título; el comando `$W "$E" get <clave>` (ahí están descripción, criterio, adjuntos y el último
+feedback; si el rechazo vino de E2E, que pida también `get <clave> e2e --ultimo` para ver las capturas del
+paso que falló); **la ruta de su worktree** (lo que devolvió `wi.sh rama`: ahí trabaja, nunca en
+`<REPO>`), `<REPO>`, rama y `<BASE>`; si es bug-fix, **todos** los repos de la tarea (`tarea.repos`). En un workspace, además: la ruta de
 `$W`, la de `$E` y **la lista de repos del workspace con su rama base** (los `REPO.*` de
 `autopilot.env`), para que pueda seguir en otro repo con `$W "$E" rama <clave> nueva --repo <carpeta>`
 sin detenerse. Pídele que termine con su formato `NOTAS DEL DESARROLLADOR` + `RESULTADO`.
 
 ### Encargo del QA
 
-**La ruta del archivo de la tarea** (`tarea.archivo`: léelo completo); clave y título; rama e
-intento; **cada worktree con su repo y su rama base** (lo que devuelve `qa-worktree`, **incluido su
-`borrador`** si lo trae: las pruebas de la corrida anterior, para que no las reescriba);
-descripción y criterio **textuales**; la lista de **repos modificados** (`tarea.repos_modificados`); las **`Notas del desarrollador`** (`tarea.notas_dev`); `tarea.adjuntos`.
+Clave y título; rama e intento; los comandos `$W "$E" get <clave>` y `get <clave> notas --ultimo`;
+**cada worktree con su repo y su rama base** (lo que devuelve `qa-worktree`, **incluido su `borrador`**
+si lo trae: las pruebas de la corrida anterior, para que no las reescriba).
 Pídele que termine con su formato `REPORTE DE QA` + `VEREDICTO`.
 
 ### Encargo del E2E
 
-**La ruta del archivo de la tarea** (`tarea.archivo`: léelo completo); clave, título, rama e
-intento; **cada copia E2E** tal como la devuelve `e2e-worktree` (repo, ruta, ref, si es de la tarea,
+Clave, título, rama e intento; los comandos `$W "$E" get <clave>`, `get <clave> qa --ultimo` y
+`get <clave> notas --ultimo`; **cada copia E2E** tal como la devuelve `e2e-worktree` (repo, ruta, ref, si es de la tarea,
 `borrador` si lo trae,
-tipo, plataformas, `api`, `entorno_e2e`); criterio de aceptación **textual**; el **Reporte de QA**
-(`tarea.reporte_qa`, sobre todo "Cómo verificarlo manualmente"); las `Notas del desarrollador`;
-`tarea.adjuntos`; la ruta de `$E`; y el resultado de `$K/e2e.sh doctor` y de `$W "$E" check`
+tipo, plataformas, `api`, `entorno_e2e`); la ruta de `$E`; y el resultado de `$K/e2e.sh doctor` y de `$W "$E" check`
 (herramientas y avisos) y la salida de `$K/health-check <clave>` (corrido en la carpeta de `$E`). Si el
 health check marca ❌, no lances al agente y aplica *Bloqueos: ¿coder o humano?*.
 Pídele que termine con su formato `REPORTE E2E` + `VEREDICTO`, citando la
