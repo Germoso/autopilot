@@ -202,6 +202,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.enviar(200, limpiar(cfg, {
                 "tareas": ts, "estados": wi.ESTADOS, "pausa": pausa, "watcher": watcher, "e2e": cfg["e2e"]["activo"],
                 "cadena": cadena.info(p["env"]),
+                "auto_merge": cfg.get("auto_merge", False),
                 "repos": sorted(n or os.path.basename(r["path"]) for n, r in cfg["repos"].items()),
                 "capacidad": cfg["capacidad"], "telegram": cfg.get("telegram", {}).get("activo", False)}))
         m = re.match(r"^tarea/((?:task|bug)-%s)$" % wi.ID, sub)

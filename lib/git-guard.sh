@@ -243,7 +243,8 @@ if m:
         print("BLOQUEADO por el autopilot: " + m, file=sys.stderr)
     else:
         print("BLOQUEADO por el autopilot: %s no esta permitido (modo %s). "
-              "Nunca push ni merge; el merge lo hace el humano." % (m, mode), file=sys.stderr)
+              "Nunca push ni merge; el merge lo hace el humano (o el kit con AUTO_MERGE=true)." % (m, mode),
+              file=sys.stderr)
     sys.exit(2)
 sys.exit(0)
 '

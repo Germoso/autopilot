@@ -183,6 +183,8 @@ $W "$E" aprobar     <clave>                   # validando -> done (con E2E=true:
 $W "$E" rechazar    <clave> "<motivos>"       # validando -> bug-fix
 $W "$E" new         <clave>
 $W "$E" reviewed    <clave>                   # SOLO el humano: done -> reviewed
+$W "$E" merge       <clave>                   # con AUTO_MERGE=true: integra su rama en la base (solo local)
+                                               # y la deja reviewed; con conflicto: stopped, base intacta
 $W "$E" stopped     <clave> "<motivo>"
 $W "$E" resultado   <clave> "<rama | commit | resumen>"
 $W "$E" add-task    <task|bug> <id> <prioridad> "<titulo>" "<descripcion>" "<criterio>" [repo] [--depende <claves>] [--origen <texto>]   # repo obligatorio en workspace; @archivo en descripcion/criterio
@@ -448,8 +450,8 @@ new ──> in-progress ──> qa ──> validando ──┬──────
 | `probando-e2e` | El agente E2E está recorriendo los flujos (web y Android). | `e2e-tester` |
 | `bug-fix` | QA o E2E falló. Hay que corregir. **Se toma antes que cualquier otra cosa.** | `coder` |
 | `stopped` | No se pudo. Requiere humano, con motivo escrito. | — |
-| `done` | **Certificado por QA** (y por E2E si `E2E=true`). No significa mergeado: el merge lo hace el humano. | — |
-| `reviewed` | El humano ya revisó la tarea en `done`. Solo la mueve el humano (`wi.sh reviewed <clave>` o moviendo el archivo). El autopilot no la vuelve a tocar. | humano |
+| `done` | **Certificado por QA** (y por E2E si `E2E=true`). No significa mergeado: el merge lo hace el humano (o el kit, con `AUTO_MERGE=true`, que además la deja `reviewed` sola). | — |
+| `reviewed` | El humano ya revisó la tarea en `done` (solo la mueve el humano: `wi.sh reviewed <clave>` o moviendo el archivo) — salvo `AUTO_MERGE=true`, donde la deja `reviewed` el kit al mergearla automáticamente. | humano |
 
 ## Qué devuelve el watcher
 
