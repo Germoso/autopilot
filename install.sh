@@ -5,10 +5,10 @@
 #  Que instala:
 #    - scripts (board, watcher, guardas de git, app web) en
 #      ~/.local/share/autopilot-kit/   (compartidos por ambos clientes)
-#    - skills autopilot, autopilot-init y autopilot-plan en la carpeta de skills de cada cliente
+#    - skills autopilot, autopilot-init, autopilot-plan y autopilot-web en la carpeta de skills de cada cliente
 #    - agentes coder, qa-reviewer y e2e-tester, generados desde agents/*.md
 #      con los bloqueos de git propios de cada cliente
-#    - (OpenCode) comandos /autopilot-init, /autopilot-plan y /autopilot
+#    - (OpenCode) comandos /autopilot-init, /autopilot-plan, /autopilot y /autopilot-web
 #      (en Claude Code las skills ya son esos comandos)
 #
 #  Como llegan las tareas al board es externo al kit (wi.sh add-task, un .md
@@ -33,7 +33,7 @@ KIT="${XDG_DATA_HOME:-$HOME/.local/share}/autopilot-kit"
 SECRETS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/autopilot-kit"
 OC_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
 CC_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-SKILLS=(autopilot autopilot-init autopilot-plan)
+SKILLS=(autopilot autopilot-init autopilot-plan autopilot-web)
 MARCA=".autopilot-kit"
 RENDER="$KIT_DIR/clients/render.py"
 
@@ -138,6 +138,6 @@ rm -f "$KIT/azure-sync.py"
 
 echo
 echo "==> Listo (${CLIENTES[*]})."
-echo "  Comandos:  /autopilot-init  /autopilot-plan  /autopilot"
+echo "  Comandos:  /autopilot-init  /autopilot-plan  /autopilot  /autopilot-web"
 echo "  Proyecto:  $0 --init /ruta/al/proyecto"
 echo "  Docs:      $KIT_DIR/README.md"

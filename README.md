@@ -115,6 +115,11 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
 ~/.local/share/autopilot-kit/autopilot-web --lan    # también desde el celular u otra PC de tu red
 ```
 
+Desde el cliente puedes usar la skill **`/autopilot-web`**: arranca la web por ti (desacoplada
+del cliente), y si ya está corriendo te dice en qué URL y PID, y pregunta si quieres detenerla
+o rearrancarla en otro modo (`/autopilot-web lan`, `/autopilot-web puerto 9000`,
+`/autopilot-web detener`).
+
 Muestra todos tus proyectos del autopilot:
 
 - **Tablero** por estado, con búsqueda y filtros; **detalle** de cada tarea con descripción,
