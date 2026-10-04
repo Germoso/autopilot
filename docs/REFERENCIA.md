@@ -62,8 +62,9 @@ mi-proyecto/
   el watcher lo ve en segundos. Para editar textos usa la app web o `wi.sh` (`descripcion`,
   `criterio`, `titulo`, `prioridad`).
 - **`reviewed`**: cuando revisas una tarea de `done`, muévela a `reviewed/` (arrastrando el archivo
-  o con `wi.sh <env> reviewed <clave>`). Así `done` queda solo con lo pendiente de revisar. El
-  autopilot nunca mueve tareas a `reviewed` ni las vuelve a tocar.
+  o con `wi.sh <env> reviewed <clave>`). Así `done` queda solo con lo pendiente de revisar. Con
+  `AUTO_MERGE=true` el autopilot la mueve sola (además de mergearla) al aprobar el QA/E2E; sin la
+  variable, el autopilot nunca mueve tareas a `reviewed` ni las vuelve a tocar.
 - **El nombre del archivo es `<tipo>-<id>-<slug>.md`.** `<tipo>-<id>` es la clave de
   la tarea y **el nombre de su rama**. El `<id>` lo da quien crea la tarea: número (`140123`) o
   texto (`login_social`), en minúsculas, dígitos y `_` (sin `-`, que separa la clave del slug).
@@ -288,6 +289,7 @@ Lo crea `/autopilot-init`; se edita a mano. En un workspace va en la carpeta pad
 | `TELEGRAM_ALERTS_ONLY` | `false` | Solo los avisos que necesitan intervención (🚨) |
 | `CADENA_MIN` | `20` | Minutos de cadena detenida esperando al humano antes de avisar por Telegram |
 | `CADENA_REAVISO_MIN` | `240` | Cada cuántos minutos re-avisar mientras la cadena siga detenida |
+| `AUTO_MERGE` | `false` | Con `true`: al aprobar (done) el kit mergea la rama a la base (solo local, sin push) y deja `reviewed`; con conflicto, `stopped` y la base intacta |
 | `E2E` | `false` | Etapa de pruebas E2E después del QA |
 | `E2E_COMMAND_TIMEOUT` | `2400` | Segundos máximos por comando en E2E |
 | `E2E_CLIENTS.<backend>` | — | Qué frontends consumen ese backend (`app1,app2`) |
@@ -771,6 +773,9 @@ uso: wi.sh <env> <comando> [args]
   init                                   crea las carpetas del board y log.md
   in-progress|qa|validando|bugfix|done|new <clave>
   reviewed   <clave>                     done -> reviewed: el humano ya reviso la tarea
+  merge      <clave>                     con AUTO_MERGE=true: mergea su rama a la base (solo local,
+                                         nunca push ni borra ramas) y la deja reviewed; con conflicto
+                                         queda stopped y la base intacta
   stopped    <clave> <motivo>
   rama       <clave> nueva|existente [--repo <carpeta>]
                                          crea/cambia a la rama <clave> desde la base de su repo.

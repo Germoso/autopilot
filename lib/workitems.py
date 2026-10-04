@@ -97,6 +97,7 @@ def cargar_config(env_path=None):
                                               como apuntar la app al backend LOCAL en la copia E2E
       TELEGRAM=true|false (avisos y comandos por Telegram), TELEGRAM_ALERTS_ONLY=true|false
       CADENA_MIN=20, CADENA_REAVISO_MIN=240 (min de cadena detenida antes de avisar y de re-aviso)
+      AUTO_MERGE=true|false: al aprobar (done) el kit mergea la rama a la base (solo local, nunca push)
       E2E_API.<front-web>=env:VAR1,VAR2       variables de URL del front web que aenv.sh --e2e apunta al
                                               backend LOCAL (conserva ruta; https->http, wss->ws)
     """
@@ -141,6 +142,7 @@ def cargar_config(env_path=None):
                               if len(partes) >= 3 and partes[0].strip() else {"invalido": v})
     valor_e2e = vals.get("E2E", "false").strip().lower()
     valor_tg = vals.get("TELEGRAM", "false").strip().lower()
+    valor_am = vals.get("AUTO_MERGE", "false").strip().lower()
     return {"workspace": bool(ws), "raiz": raiz, "dir": wdir, "repos": repos,
             "paralelo": paralelo, "capacidad": capacidad,
             "parallel_invalido": None if valor_parallel in ("true", "false") else vals.get("PARALLEL"),
@@ -159,6 +161,8 @@ def cargar_config(env_path=None):
                          "invalido": None if valor_tg in ("true", "false") else vals.get("TELEGRAM"),
                          "solo_alertas": vals.get("TELEGRAM_ALERTS_ONLY", "false").strip().lower() == "true"},
             "cadena": {"min": entero("CADENA_MIN", 20), "reaviso": entero("CADENA_REAVISO_MIN", 240)},
+            "auto_merge": valor_am == "true",
+            "auto_merge_invalido": None if valor_am in ("true", "false") else vals.get("AUTO_MERGE"),
             "env_path": os.path.abspath(env_path) if env_path else None}
 
 
@@ -539,6 +543,8 @@ class Board:
             import telegram
             if not all(telegram.credenciales()):
                 out.append("TELEGRAM=true pero no hay credenciales del bot: wi.sh <env> telegram-setup (en tu terminal)")
+        if self.cfg.get("auto_merge_invalido") is not None:
+            out.append("AUTO_MERGE=%s no es valido: usa true o false" % self.cfg["auto_merge_invalido"])
         for n, r in sorted(self.cfg["repos"].items()):
             etiqueta = "REPO.%s" % n if n else "BASE_BRANCH"
             if not r["base"]:
@@ -936,8 +942,12 @@ class Board:
             else:
                 self.avisar("↩️ %s rechazada por %s (intento %s), vuelve al coder:\n%s" % (t, quien, n, fb[:600]))
         elif estado == "done":
-            self.avisar("✅ %s lista y certificada: revisala y mergea.\n%s" % (t, (secs.get("Resultado", "") or "")[:500]),
-                        alerta=True)
+            if self.cfg.get("auto_merge"):
+                self.avisar("✅ %s lista y certificada (AUTO_MERGE=true: se mergea sola a la base).\n%s"
+                            % (t, (secs.get("Resultado", "") or "")[:500]), alerta=True)
+            else:
+                self.avisar("✅ %s lista y certificada: revisala y mergea.\n%s"
+                            % (t, (secs.get("Resultado", "") or "")[:500]), alerta=True)
         elif estado == "stopped":
             self.avisar("🚨 %s detenida, necesita tu intervencion:\n%s\n\nCuando lo resuelvas: /reqa %s (o /tarea %s)"
                         % (t, (secs.get("Motivo de stopped", "") or "-")[:900], clave, clave), alerta=True)
@@ -1662,6 +1672,92 @@ class Board:
             raise Error("git %s: %s" % (" ".join(args), (r.stderr or r.stdout).strip()[:300]))
         return r
 
+    # -- AUTO_MERGE: integrar la rama de la tarea en la base (solo local; nunca push ni borrar ramas)
+    def merge(self, clave):
+        """Mergea la rama de la tarea a la base de sus repos y la deja reviewed.
+
+        Solo corre con AUTO_MERGE=true. Si un repo no mergerea limpio (conflicto o cambios
+        sin commitear), NO toca esa base y la tarea queda stopped con el motivo (avisado por
+        Telegram via modificar). Nunca hace push ni borra ramas.
+        """
+        if not self.cfg.get("auto_merge"):
+            raise Error("AUTO_MERGE=false: el merge a la base lo hace el humano (o activa "
+                        "AUTO_MERGE=true en autopilot.env)")
+        clave = clave.strip().lower()
+        estado, _, meta, _, _ = self.leer(clave)
+        if estado not in ("done", "reviewed"):
+            raise Error("solo una tarea en done se mergea (%s esta en %s)" % (clave, estado))
+        rama = meta.get("rama") or clave
+        hechos, falla = [], None
+        for r in self.repos_de_tarea(meta):
+            nombre = r["nombre"] or os.path.basename(r["path"])
+            if not r.get("base"):
+                falla = "%s: no hay rama base definida (BASE_BRANCH o REPO.%s)" % (nombre, nombre)
+                break
+            ok_rama = self.git(r["path"], "rev-parse", "--verify", "--quiet", rama, check=False).returncode == 0
+            if self.git(r["path"], "rev-parse", "--verify", "--quiet", r["base"], check=False).returncode != 0:
+                falla = "%s: no existe la rama base '%s'" % (nombre, r["base"])
+                break
+            if not ok_rama:
+                hechos.append({"repo": nombre, "accion": "sin-rama",
+                               "detalle": "la rama %s no existe; nada que mergear" % rama})
+                continue
+            if self.git(r["path"], "merge-base", "--is-ancestor", rama, r["base"], check=False).returncode == 0:
+                hechos.append({"repo": nombre, "accion": "ya-integrada", "detalle": "%s ya esta en %s" % (rama, r["base"])})
+                continue
+            m = self._merge_en(r["path"], r["base"], rama)
+            hechos.append({"repo": nombre, "accion": "mergeada" if m["ok"] else "conflicto", "detalle": m["detalle"]})
+            if not m["ok"]:
+                falla = "%s: no se pudo mergear %s en %s: %s" % (nombre, rama, r["base"], m["detalle"])
+                break
+        if falla:
+            motivo = "AUTO_MERGE: %s" % falla
+            self.modificar(clave, "stopped", secs_set={"Motivo de stopped": motivo})
+            self.log("Merge automatico fallido (AUTO_MERGE)", "sistema", "nota", clave, rama, "-",
+                     falla.replace("\n", " ")[:500])
+            return {"ok": False, "estado": "stopped", "repos": hechos, "motivo": motivo[:500]}
+        detalle = ", ".join("%s: %s" % (h["repo"], h["accion"]) for h in hechos) or "sin repos"
+        if estado != "reviewed":
+            self.modificar(clave, "reviewed")
+        self.log("Merge automatico a la base (AUTO_MERGE)", "sistema", "nota", clave, rama, "-", detalle)
+        self.avisar("🔗 %s mergeada a la base y marcada reviewed (AUTO_MERGE=true): %s" % (clave, detalle))
+        return {"ok": True, "estado": "reviewed", "repos": hechos}
+
+    def _merge_en(self, repo, base, rama):
+        """Mergea `rama` en `base` sin tocar el checkout del humano si esta en otra rama.
+
+        Si el repo principal esta parado en la base, mergerea ahi (git actualiza su arbol);
+        si no, en un worktree temporal sobre la base. Devuelve {"ok", "detalle"}.
+        """
+        actual = self.git(repo, "branch", "--show-current", check=False).stdout.strip()
+        wt, temporal = repo, False
+        if actual != base:
+            abiertas = self.git(repo, "worktree", "list", "--porcelain", check=False).stdout
+            if ("branch refs/heads/%s" % base) in abiertas:
+                return {"ok": False, "detalle": "la base '%s' esta abierta en otro worktree; cerrala y reintenta" % base}
+            wt = cache_kit("merge", "%s-%s" % (os.path.basename(repo.rstrip("/")), re.sub(r"[^\w.-]", "_", base)))
+            if os.path.isdir(wt):
+                self.git(repo, "worktree", "remove", "--force", wt, check=False)
+            os.makedirs(os.path.dirname(wt), exist_ok=True)
+            r = self.git(repo, "worktree", "add", "-q", wt, base, check=False)
+            if r.returncode != 0:
+                return {"ok": False, "detalle": (r.stderr or r.stdout).strip()[:300]}
+            temporal = True
+        elif self.git(repo, "rev-parse", "-q", "--verify", "MERGE_HEAD", check=False).returncode == 0:
+            return {"ok": False, "detalle": "hay un merge en curso en la base; terminalo y reintenta"}
+        try:
+            r = self.git(wt, "merge", "--no-edit", rama, check=False)
+            if r.returncode != 0:
+                salida = (r.stderr or r.stdout).strip()[:400]
+                # solo abortamos el merge que empezamos nosotros (arriba comprobamos que no habia otro)
+                if self.git(wt, "rev-parse", "-q", "--verify", "MERGE_HEAD", check=False).returncode == 0:
+                    self.git(wt, "merge", "--abort", check=False)
+                return {"ok": False, "detalle": salida}
+            return {"ok": True, "detalle": "merge ok en %s (%s)" % (base, self.git(wt, "rev-parse", "--short", "HEAD").stdout.strip())}
+        finally:
+            if temporal:
+                self.git(repo, "worktree", "remove", "--force", wt, check=False)
+
     @staticmethod
     def coder_worktree_path(repo, clave):
         nombre = repo["nombre"] or os.path.basename(repo["path"])
@@ -1921,6 +2017,9 @@ USO = """uso: wi.sh <env> <comando> [args]
   init                                   crea las carpetas del board y log.md
   in-progress|qa|validando|bugfix|done|new <clave>
   reviewed   <clave>                     done -> reviewed: el humano ya reviso la tarea
+  merge      <clave>                     con AUTO_MERGE=true: mergea su rama a la base (solo local,
+                                         nunca push ni borra ramas) y la deja reviewed; con conflicto
+                                         queda stopped y la base intacta
   stopped    <clave> <motivo>
   rama       <clave> nueva|existente [--repo <carpeta>]
                                          crea/cambia a la rama <clave> desde la base de su repo.
@@ -2069,6 +2168,9 @@ def main(argv):
             raise Error("solo una tarea en done pasa a reviewed (%s esta en %s)" % (a[0], b.buscar(a[0])[0]))
         b.modificar(a[0], "reviewed")
         b.log("Revisada por el humano", "humano", "nota", a[0].lower(), a[0].lower(), "-", "done -> reviewed")
+    elif cmd == "merge":
+        need(1)
+        print(json.dumps(b.merge(a[0]), ensure_ascii=False, indent=2)); return 0
     elif cmd == "new":
         need(1); b.modificar(a[0], "new", secs_set={"Motivo de stopped": ""})
     elif cmd == "stopped":
@@ -2135,6 +2237,13 @@ def main(argv):
                               % (n, ahora(), " Pasa a pruebas E2E." if destino == "e2e" else "")})
         print("ok -> %s%s" % (destino, "".join("\ntests guardados: %s @ %s" % (x["repo"], x["commit"])
                                                for x in g["guardados"]) + "".join("\nAVISO: " + x for x in g["avisos"])))
+        if destino == "done" and b.cfg.get("auto_merge"):
+            try:
+                r = b.merge(a[0])
+                print("auto-merge: -> %s%s" % (r["estado"], "" if r["ok"]
+                                               else " (" + r.get("motivo", "")[:200] + ")"))
+            except Error as e:
+                print("AVISO: no se pudo auto-mergear: %s" % e)
         return 0
     elif cmd == "aprobar-e2e":
         need(1)
@@ -2150,6 +2259,13 @@ def main(argv):
             "Feedback de E2E": "### Intento %d — APROBADO E2E (%s)\n\nProbado de punta a punta: %s."
                                % (intento_actual(a[0]), ahora(), ", ".join(
                                    "%s (%d captura/s)" % (c["criterio"], c["capturas"]) for c in v["criterios"]))})
+        if b.cfg.get("auto_merge"):
+            try:
+                r = b.merge(a[0])
+                print("auto-merge: -> %s%s" % (r["estado"], "" if r["ok"]
+                                               else " (" + r.get("motivo", "")[:200] + ")"))
+            except Error as e:
+                print("AVISO: no se pudo auto-mergear: %s" % e)
     elif cmd == "rechazar-e2e":
         need(2)
         n = intento_actual(a[0])

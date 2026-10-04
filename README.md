@@ -12,7 +12,7 @@ afuera). El autopilot las toma una por una:
 ```
 
 - Funciona con **Claude Code** y **OpenCode**.
-- Cada tarea tiene **su propia rama** (`bug-140123`, `task-login_social`). **Nunca hace push ni merge**: eso lo haces tú.
+- Cada tarea tiene **su propia rama** (`bug-140123`, `task-login_social`). **Nunca hace push**: eso lo haces tú. El merge a la base lo haces tú también (o activás `AUTO_MERGE=true` y el kit lo hace por vos al aprobar, solo local y sin push).
 - **Nunca toca producción.** Solo usa los ambientes de QA que tú le das.
 - Todo queda escrito en un archivo `.md` por tarea: qué hizo el coder, qué probó el QA, capturas.
 
@@ -92,6 +92,12 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
 
   Si te convence, mergea la rama. Después márcala como revisada (botón en la app web, o mueve el
   archivo a `reviewed/`).
+
+  **Opcional — `AUTO_MERGE=true`:** si no querés mergear a mano, activá `AUTO_MERGE=true` en
+  `autopilot.env`: en cuanto el QA (y el E2E, si lo usás) aprueban, **el kit mergea la rama a la base
+  por vos** (solo local: nunca hace push ni borra ramas) y deja la tarea en `reviewed` sola. Si el
+  merge no entra limpio (conflicto, o cambios sin commitear en tu copia), la base queda intacta, la
+  tarea pasa a `stopped` con el motivo y te avisa por Telegram.
 - **Tareas en `stopped`:** el motivo está al final del `.md` (*Motivo de stopped*), con lo que
   recomienda hacer. Cuando lo resuelvas, devuélvela a la cola:
   ```sh

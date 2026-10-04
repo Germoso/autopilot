@@ -106,7 +106,11 @@ def env_autopilot(det, bases):
           "", "# Cadena detenida: avisa por Telegram si el autopilot queda parado esperandote",
           "# (sin puestos ocupados y pendiente que solo el humano destraba). CADENA_MIN: minutos de",
           "# espera antes de avisar; CADENA_REAVISO_MIN: cada cuanto re-avisar mientras siga parado.",
-          "CADENA_MIN=20", "CADENA_REAVISO_MIN=240"]
+          "CADENA_MIN=20", "CADENA_REAVISO_MIN=240",
+          "", "# Auto-merge: con true, al aprobar (QA/E2E) el kit mergea la rama de la tarea a la base",
+          "# (solo local: nunca push ni borra ramas) y deja la tarea en reviewed. Con conflicto la",
+          "# tarea queda stopped, la base intacta y avisa por Telegram.",
+          "AUTO_MERGE=false"]
     return "\n".join(L) + "\n" + bloque_e2e(det)
 
 

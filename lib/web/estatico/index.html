@@ -7,10 +7,11 @@
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
+<a class="skip-link" href="#vista">Saltar al contenido</a>
 <header class="barra">
   <a class="marca" href="#/">Autopilot</a>
   <select id="proyecto" aria-label="Proyecto"></select>
-  <nav>
+  <nav aria-label="Navegación principal">
     <a href="#/">Tablero</a>
     <a href="#/nueva">Nueva tarea</a>
     <a href="#/herramientas">Herramientas</a>
@@ -19,8 +20,8 @@
   </nav>
   <span id="estado-autopilot" class="estado-autopilot"></span>
 </header>
-<main id="vista"><p class="cargando">Cargando…</p></main>
-<div id="aviso" class="aviso" hidden></div>
+<main id="vista" tabindex="-1"><p class="cargando">Cargando…</p></main>
+<div id="aviso" class="aviso" role="status" aria-live="polite" hidden></div>
 <script src="/static/markdown.js"></script>
 <script src="/static/app.js"></script>
 </body>
