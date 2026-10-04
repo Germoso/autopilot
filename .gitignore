@@ -24,3 +24,7 @@ ledger.json
 __pycache__/
 *.pyc
 .workitems/
+
+# Skills instaladas en el proyecto (npx skills add): locales, no se versionan
+.agents/
+skills-lock.json
