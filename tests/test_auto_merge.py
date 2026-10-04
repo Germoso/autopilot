@@ -30,6 +30,9 @@ def sha(repo, ref):
 def proyecto(tmp_path, monkeypatch):
     """Repo git real con rama base main y una rama task-uno; board temporal con la tarea done."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    # Aisla tambien el registro de proyectos: la CLI (registrar_proyecto) escribe en
+    # XDG_CONFIG_HOME/autopilot-kit/proyectos.json y no debe ensuciar el registro real.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     repo = tmp_path / "repo"
     repo.mkdir()
     git(repo, "init", "-q")
