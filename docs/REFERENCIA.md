@@ -862,6 +862,12 @@ Servidor Python sin dependencias (`lib/web/servidor.py`) con la interfaz incluid
 Muestra todos los proyectos donde se usó el kit: cada `wi.sh` registra su `autopilot.env` en
 `~/.config/autopilot-kit/proyectos.json`.
 
+**Desde el cliente:** la skill `/autopilot-web` (`skills/autopilot-web/SKILL.md`) la arranca
+desacoplada (`setsid nohup`, vive sin el cliente), verifica que responde, y si ya hay una
+instancia reporta URL/PID/modo y pregunta antes de detenerla o rearrancarla. Argumentos:
+`lan` (`--lan`), `puerto <n>` (`--port`), `detener` (mata solo un PID del kit y solo si el
+usuario lo pidió).
+
 - **Ver:** tablero (columnas vacías ocultas por defecto), detalle con historial por intento, adjuntos
   agrupados por paso (con filtro por agente), log, reportes de `test-results/`, estado del watcher y
   de la pausa.
@@ -904,7 +910,8 @@ dotenvs/
 ├── skills/                     # -> carpeta de skills de cada cliente
 │   ├── autopilot/SKILL.md      # reglas, maquina de estados, arranque por cliente
 │   ├── autopilot-init/SKILL.md # /autopilot-init
-│   └── autopilot-plan/SKILL.md # /autopilot-plan: idea o documento -> brainstorming -> tareas
+│   ├── autopilot-plan/SKILL.md # /autopilot-plan: idea o documento -> brainstorming -> tareas
+│   └── autopilot-web/SKILL.md  # /autopilot-web: arranca y gestiona la app web
 ├── agents/                     # fuente unica de los subagentes
 │   ├── coder.md
 │   ├── qa-reviewer.md
@@ -921,7 +928,7 @@ dotenvs/
 |---|---|---|
 | Skills | `~/.config/opencode/skills/` | `~/.claude/skills/` |
 | Subagentes | `~/.config/opencode/agents/*.md` | `~/.claude/agents/*.md` |
-| `/autopilot-init`, `/autopilot-plan`, `/autopilot` | comandos en `~/.config/opencode/commands/` | las propias skills |
+| `/autopilot-init`, `/autopilot-plan`, `/autopilot`, `/autopilot-web` | comandos en `~/.config/opencode/commands/` | las propias skills |
 | Bloqueo de push/merge en subagentes | `permission.bash` con `deny` | hook `PreToolUse` → `git-guard.sh` |
 | Bloqueo en el agente principal (por proyecto) | `opencode.json` del proyecto | `.claude/settings.local.json` (deny + hook) |
 | Cómo espera el watcher | primer plano | segundo plano (`run_in_background`): Claude Code te re-invoca al terminar |

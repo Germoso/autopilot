@@ -5,7 +5,7 @@ render.py — Genera la configuracion de cada cliente desde una sola fuente.
 Fuente unica:  agents/*.md  (frontmatter neutro: name, description, role)
 Salida:
   opencode  <cfg>/agents/<name>.md    permisos de bash por patron (permission.bash)
-            <cfg>/commands/<cmd>.md   /autopilot-init, /autopilot-plan y /autopilot
+            <cfg>/commands/<cmd>.md   /autopilot-init, /autopilot-plan, /autopilot y /autopilot-web
   claude    <cfg>/agents/<name>.md    hook PreToolUse -> git-guard.sh <role>
             (sin commands: en Claude Code las skills ya son esos comandos)
 
@@ -61,6 +61,7 @@ COMANDOS = {
     "autopilot-init": "Prepara esta carpeta (repo o workspace de varios repos) para el autopilot: rama base y board",
     "autopilot-plan": "Convierte una idea o un documento en tareas del board: brainstorming hasta tenerlo claro, desglose y alta",
     "autopilot": "Enciende el watcher del sistema autonomo sobre el board de workitems de este proyecto",
+    "autopilot-web": "Arranca y gestiona la app web del autopilot (tablero en el navegador): la levanta desacoplada, detecta si ya corre, la detiene o la rearranca (lan, puerto)",
 }
 
 
