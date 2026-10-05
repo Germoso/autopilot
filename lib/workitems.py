@@ -420,6 +420,7 @@ class Board:
         self.dir = cfg["dir"]
         self._db = None
         self._sync_ok = False
+        self.bases_actualizadas = []   # lo que hizo _base_al_dia en la ultima preparar_rama
 
     # -- base de datos (.workitems/autopilot.db)
     @property
@@ -1999,11 +2000,10 @@ class Board:
             modo = "existente" if existe("refs/heads/%s" % clave) else "nueva"
         os.makedirs(os.path.dirname(wt), exist_ok=True)
         if modo == "nueva":
-            if existe("refs/heads/%s" % base):
-                origen = base
-            elif existe("refs/remotes/origin/%s" % base):
-                origen = "origin/%s" % base
-            else:
+            al_dia = self._base_al_dia(r)          # como un pull: la rama nace de lo ultimo de origin
+            self.bases_actualizadas.append(dict(al_dia, repo=nombre, base=base))
+            origen = al_dia["origen"]
+            if not origen:
                 raise Error("%s: no existe la rama base '%s' (ni local ni origin/%s)" % (nombre, base, base))
             if existe("refs/heads/%s" % clave):
                 propios = self.git(repo, "rev-list", "--count", "%s..%s" % (origen, clave)).stdout.strip()
@@ -2021,6 +2021,59 @@ class Board:
         else:
             raise Error("modo invalido: %s (nueva|existente)" % modo)
         return wt
+
+    def _base_al_dia(self, r):
+        """Trae lo ultimo de origin/<base> antes de crear una rama (lo que haria un `git pull`, sin merges).
+
+        - origin va adelante de la base local (o no hay local): la rama nace de origin/<base> y la base
+          local se adelanta (fast-forward) si se puede sin tocar trabajo del humano;
+        - la base local tiene commits que origin no tiene (p. ej. merges de dependencias sin push): nace
+          de la base local, que ya incluye todo origin;
+        - divergieron, o no hay red/credenciales: nace de la base local y queda un aviso.
+        Nunca hace merge, rebase ni push. Devuelve {"origen", "detalle", "aviso"}."""
+        repo, base = r["path"], r["base"]
+        existe = lambda ref: self.git(repo, "rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
+        aviso = ""
+        if self.git(repo, "remote", "get-url", "origin", check=False).returncode == 0:
+            f = self._git_red(repo, "fetch", "--quiet", "origin",
+                              "+refs/heads/%s:refs/remotes/origin/%s" % (base, base), timeout=90)
+            if f.returncode != 0:
+                import remoto
+                aviso = "no se pudo traer origin/%s (%s): la rama nace de la base local" % (
+                    base, remoto.sin_credenciales((f.stderr or f.stdout).strip())[:200])
+        local, remota = existe("refs/heads/%s" % base), existe("refs/remotes/origin/%s" % base)
+        if not local:
+            return {"origen": "origin/%s" % base if remota else "", "detalle": "desde origin/%s" % base, "aviso": aviso}
+        if not remota or aviso:
+            return {"origen": base, "detalle": "desde la base local %s" % base, "aviso": aviso}
+        cuenta = lambda rango: int(self.git(repo, "rev-list", "--count", rango, check=False).stdout.strip() or 0)
+        atras, adelante = cuenta("%s..origin/%s" % (base, base)), cuenta("origin/%s..%s" % (base, base))
+        if atras and adelante:
+            return {"origen": base, "detalle": "desde la base local %s" % base,
+                    "aviso": "%s local y origin/%s divergieron (%d commits locales sin subir, %d nuevos en origin): "
+                             "la rama nace de la base local; integralos y haz push de la base" % (base, base, adelante, atras)}
+        if not atras:
+            return {"origen": base, "detalle": "%s ya estaba al dia con origin%s" % (
+                base, " (%d commits locales sin subir)" % adelante if adelante else ""), "aviso": ""}
+        return {"origen": "origin/%s" % base, "aviso": "",
+                "detalle": "origin/%s trajo %d commit(s) nuevos; %s" % (base, atras, self._adelantar_base(repo, base))}
+
+    def _adelantar_base(self, repo, base):
+        """Fast-forward de la base local a origin/<base>. Si esta abierta en una copia (la del humano)
+        solo se adelanta con esa copia limpia; si no, se deja y la tarea igual nace de origin."""
+        donde = None
+        for bloque in self.git(repo, "worktree", "list", "--porcelain", check=False).stdout.strip().split("\n\n"):
+            if "branch refs/heads/%s" % base in bloque.split("\n"):
+                donde = bloque.split("\n")[0][len("worktree "):]
+        if not donde:
+            r = self.git(repo, "update-ref", "refs/heads/%s" % base, "origin/%s" % base,
+                         self.git(repo, "rev-parse", base).stdout.strip(), check=False)
+            return "base local adelantada" if r.returncode == 0 else "no se pudo adelantar la base local"
+        if self.git(donde, "status", "--porcelain", "--untracked-files=no", check=False).stdout.strip():
+            return "la base local no se adelanto: %s tiene cambios sin commitear" % donde
+        r = self.git(donde, "merge", "--ff-only", "--quiet", "origin/%s" % base, check=False)
+        return ("base local adelantada en %s" % donde) if r.returncode == 0 else \
+            "la base local no se adelanto en %s: %s" % (donde, (r.stderr or r.stdout).strip()[:150])
 
     def _info_rama(self, r, clave):
         wt = self.coder_worktree_path(r, clave)
@@ -2160,6 +2213,14 @@ class Board:
                  "Choca con archivos de %s: vuelve a %s hasta que %s termine" % (otra, destino, otra))
         return {"tarea": clave, "estado": destino, "espera": otra}
 
+    def _registrar_bases(self, clave):
+        for x in self.bases_actualizadas:
+            self.log("Base actualizada antes de crear la rama", "sistema", "nota", clave, clave, "-",
+                     "%s: %s" % (x["repo"], x["detalle"]))
+            if x["aviso"]:
+                self.log("Aviso al crear la rama", "sistema", "nota", clave, clave, "-", "%s: %s" % (x["repo"], x["aviso"]))
+                self.avisar("⚠️ %s (%s): %s" % (clave, x["repo"], x["aviso"]), dedup=True)
+
     def preparar_rama(self, clave, modo, repo=None):
         """Deja los repos de la tarea parados en su rama <clave>.
 
@@ -2175,6 +2236,7 @@ class Board:
         clave = clave.lower()
         meta = self.leer(clave)[2]
         principal = self.repo_de(meta.get("repo"))
+        self.bases_actualizadas = []
         if repo and repo != principal["nombre"]:
             if not self.cfg["workspace"]:
                 raise Error("--repo solo aplica en un workspace (autopilot.env con REPO.<carpeta>=...)")
@@ -2183,6 +2245,7 @@ class Board:
                             "que lo agregue con /autopilot-init." % (repo, ", ".join(sorted(self.cfg["repos"]))))
             r = self.repo_de(repo)
             self._rama_en(r, clave, "nueva-o-existente")
+            self._registrar_bases(clave)
             extra = [x.strip() for x in (meta.get("repos_extra") or "").split(",") if x.strip()]
             if repo not in extra:
                 self.modificar(clave, meta_set={"repos_extra": ", ".join(extra + [repo])})
@@ -2198,7 +2261,10 @@ class Board:
             self.log("No se pudo preparar la rama", "sistema", "Stopped", clave, clave, "-", str(e))
             raise
         self.modificar(clave, meta_set={"rama": clave})
+        self._registrar_bases(clave)
         info = self._info_rama(principal, clave)
+        if self.bases_actualizadas:
+            info["base_al_dia"] = self.bases_actualizadas
         if len(repos) > 1:
             info["repos"] = [self._info_rama(r, clave) for r in repos]
         return info
@@ -2240,7 +2306,8 @@ USO = """uso: wi.sh <env> <comando> [args]
   git-diff   <clave> <repo> <archivo>    diff de un archivo de la tarea contra la base
   stopped    <clave> <motivo>
   rama       <clave> nueva|existente [--repo <carpeta>]
-                                         crea/cambia a la rama <clave> desde la base de su repo.
+                                         crea/cambia a la rama <clave> desde la base de su repo
+                                         (nueva: antes trae lo ultimo de origin/<base>, sin merges).
                                          --repo (workspace): abre la MISMA rama en otro repo
                                          declarado y lo suma a la tarea (lo usa el coder)
   repos      <clave>                     repos de la tarea (principal + extra) en JSON
