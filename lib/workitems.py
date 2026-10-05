@@ -2046,7 +2046,8 @@ class Board:
         - la base local tiene commits que origin no tiene (p. ej. merges de dependencias sin push): nace
           de la base local, que ya incluye todo origin;
         - divergieron, o no hay red/credenciales: nace de la base local y queda un aviso.
-        Nunca hace merge, rebase ni push. Devuelve {"origen", "detalle", "aviso"}."""
+        Nunca hace merge, rebase ni push. Devuelve {"origen", "accion", "detalle", "aviso"}; accion:
+        actualizada | no-adelantada | al-dia | local-adelante | divergida | sin-red | sin-local."""
         repo, base = r["path"], r["base"]
         existe = lambda ref: self.git(repo, "rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
         aviso = ""
@@ -2059,20 +2060,24 @@ class Board:
                     base, remoto.sin_credenciales((f.stderr or f.stdout).strip())[:200])
         local, remota = existe("refs/heads/%s" % base), existe("refs/remotes/origin/%s" % base)
         if not local:
-            return {"origen": "origin/%s" % base if remota else "", "detalle": "desde origin/%s" % base, "aviso": aviso}
+            return {"origen": "origin/%s" % base if remota else "", "accion": "sin-red" if aviso else "sin-local",
+                    "detalle": "sin base local: se usa origin/%s" % base, "aviso": aviso}
         if not remota or aviso:
-            return {"origen": base, "detalle": "desde la base local %s" % base, "aviso": aviso}
+            return {"origen": base, "accion": "sin-red" if aviso else "al-dia",
+                    "detalle": "desde la base local %s" % base, "aviso": aviso}
         cuenta = lambda rango: int(self.git(repo, "rev-list", "--count", rango, check=False).stdout.strip() or 0)
         atras, adelante = cuenta("%s..origin/%s" % (base, base)), cuenta("origin/%s..%s" % (base, base))
         if atras and adelante:
-            return {"origen": base, "detalle": "desde la base local %s" % base,
+            return {"origen": base, "accion": "divergida", "detalle": "desde la base local %s" % base,
                     "aviso": "%s local y origin/%s divergieron (%d commits locales sin subir, %d nuevos en origin): "
                              "la rama nace de la base local; integralos y haz push de la base" % (base, base, adelante, atras)}
         if not atras:
-            return {"origen": base, "detalle": "%s ya estaba al dia con origin%s" % (
-                base, " (%d commits locales sin subir)" % adelante if adelante else ""), "aviso": ""}
-        return {"origen": "origin/%s" % base, "aviso": "",
-                "detalle": "origin/%s trajo %d commit(s) nuevos; %s" % (base, atras, self._adelantar_base(repo, base))}
+            return {"origen": base, "accion": "local-adelante" if adelante else "al-dia",
+                    "detalle": "%s ya estaba al dia con origin%s" % (
+                        base, " (%d commits locales sin subir)" % adelante if adelante else ""), "aviso": ""}
+        ok, texto = self._adelantar_base(repo, base)
+        return {"origen": "origin/%s" % base, "aviso": "", "accion": "actualizada" if ok else "no-adelantada",
+                "detalle": "origin/%s trajo %d commit(s) nuevos; %s" % (base, atras, texto)}
 
     def _adelantar_base(self, repo, base):
         """Fast-forward de la base local a origin/<base>. Si esta abierta en una copia (la del humano)
@@ -2084,12 +2089,31 @@ class Board:
         if not donde:
             r = self.git(repo, "update-ref", "refs/heads/%s" % base, "origin/%s" % base,
                          self.git(repo, "rev-parse", base).stdout.strip(), check=False)
-            return "base local adelantada" if r.returncode == 0 else "no se pudo adelantar la base local"
+            return (True, "base local adelantada") if r.returncode == 0 else (False, "no se pudo adelantar la base local")
         if self.git(donde, "status", "--porcelain", "--untracked-files=no", check=False).stdout.strip():
-            return "la base local no se adelanto: %s tiene cambios sin commitear" % donde
+            return False, "la base local no se adelanto: %s tiene cambios sin commitear" % donde
         r = self.git(donde, "merge", "--ff-only", "--quiet", "origin/%s" % base, check=False)
-        return ("base local adelantada en %s" % donde) if r.returncode == 0 else \
-            "la base local no se adelanto en %s: %s" % (donde, (r.stderr or r.stdout).strip()[:150])
+        return (True, "base local adelantada en %s" % donde) if r.returncode == 0 else \
+            (False, "la base local no se adelanto en %s: %s" % (donde, (r.stderr or r.stdout).strip()[:150]))
+
+    def pull_bases(self, clave):
+        """Boton "Pull de las bases" del panel Git: trae lo ultimo de origin a la rama base de cada repo
+        de la tarea. Como un `git pull --ff-only`: solo avanza la base si no hay commits locales sin subir
+        y tu copia (si la tiene abierta) esta limpia; nunca hace merge, rebase ni push."""
+        clave = clave.strip().lower()
+        estado, _, meta, _, _ = self.leer(clave)
+        hechos = []
+        for r in self.repos_de_tarea(meta):
+            nombre = r["nombre"] or os.path.basename(r["path"])
+            if not r.get("base"):
+                hechos.append({"repo": nombre, "accion": "error", "detalle": "no hay rama base definida"})
+                continue
+            x = self._base_al_dia(r)
+            hechos.append({"repo": nombre, "accion": x["accion"], "detalle": x["aviso"] or x["detalle"]})
+        ok = all(h["accion"] in ("actualizada", "al-dia", "local-adelante", "sin-local") for h in hechos)
+        self.log("Pull de las bases (app web)", "humano", "nota", clave, "-", "-",
+                 ", ".join("%s: %s" % (h["repo"], h["accion"]) for h in hechos)[:500])
+        return {"ok": ok, "estado": estado, "repos": hechos}
 
     def _info_rama(self, r, clave):
         wt = self.coder_worktree_path(r, clave)
@@ -2316,6 +2340,8 @@ USO = """uso: wi.sh <env> <comando> [args]
   push       <clave> base|rama           SOLO el humano: sube a origin la base o la rama de cada repo de la
                                          tarea (done/reviewed; 'rama': solo los repos que la tarea modifico),
                                          nunca --force
+  pull-bases <clave>                     SOLO el humano: trae lo ultimo de origin a la rama base de cada
+                                         repo de la tarea (fast-forward; nunca merge, rebase ni push)
   pr         <clave>                     SOLO el humano: sube la rama y abre un PR contra la base en cada repo
                                          con commits (GitHub con gh, Azure DevOps con AZURE_DEVOPS_PAT)
   git-estado <clave> [--fetch]           commits, archivos (+/-), integrada y remoto por repo (JSON)
@@ -2479,6 +2505,9 @@ def main(argv):
     elif cmd == "push":
         need(2)
         print(json.dumps(b.push(a[0], a[1]), ensure_ascii=False, indent=2)); return 0
+    elif cmd == "pull-bases":
+        need(1)
+        print(json.dumps(b.pull_bases(a[0]), ensure_ascii=False, indent=2)); return 0
     elif cmd == "pr":
         need(1)
         print(json.dumps(b.crear_pr(a[0]), ensure_ascii=False, indent=2)); return 0

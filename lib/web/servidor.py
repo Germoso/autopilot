@@ -103,7 +103,7 @@ def limpiar(cfg, x):
 
 
 GIT_OPS = {"merge": ["merge", "{clave}", "--humano"], "push-base": ["push", "{clave}", "base"],
-           "push-rama": ["push", "{clave}", "rama"], "pr": ["pr", "{clave}"]}
+           "push-rama": ["push", "{clave}", "rama"], "pr": ["pr", "{clave}"], "pull-base": ["pull-bases", "{clave}"]}
 
 
 def wi_cmd(env, *args):

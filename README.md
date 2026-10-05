@@ -104,6 +104,9 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
     GitHub con `gh`; **Azure DevOps** con el PAT `AZURE_DEVOPS_PAT` (en `azure-sync.secrets.env`
     del proyecto o en `~/.config/autopilot-kit/ado-mcp.secrets.env`, permiso *Code: Read & Write*).
     El link al PR queda en la tarea.
+  - **⬇ Pull de las bases** (en cualquier estado): trae lo último de `origin` a la rama base de cada
+    repo, como un `git pull` pero solo avanzando: si tu base tiene commits sin subir, divergió o tu
+    copia tiene cambios sin commitear, no la toca y te dice por qué. Nunca hace merge ni push.
   - **↻ Actualizar** hace `git fetch` y recalcula.
 
   **¿Hace falta otra vuelta?** (esté en `done`, `reviewed` o `stopped`): en la app web, abre la tarea
