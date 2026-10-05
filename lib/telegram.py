@@ -244,7 +244,7 @@ def comando(cfg, env_path, texto):
         por = {}
         for t in b.todas():
             por.setdefault(t["estado"], []).append(t["id"])
-        return ("📋 Cola\n" + "\n".join("%s: %s" % (e, ", ".join(v)) for e, v in por.items() if e != "reviewed")
+        return ("📋 Cola\n" + "\n".join("%s: %s" % (e, ", ".join(v)) for e, v in por.items() if e not in ("reviewed", "ignored"))
                 or "vacia"), False
     if cmd == "/tarea":
         if not clave:

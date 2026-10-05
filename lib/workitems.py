@@ -39,9 +39,12 @@ import subprocess
 import sys
 import unicodedata
 
-ESTADOS = ["new", "in-progress", "qa", "validando", "e2e", "probando-e2e", "bug-fix", "stopped", "done", "reviewed"]
+ESTADOS = ["new", "in-progress", "qa", "validando", "e2e", "probando-e2e", "bug-fix", "stopped", "done", "reviewed",
+           "ignored"]
+# ignored: una tarea detenida que el humano decidio ignorar. Nada la toma ni la cuenta (plan, cadena,
+# vigia, Telegram); sigue en el board (Azure no la reimporta) y se puede restaurar a stopped.
 # Tareas que ya no estan activas. `reviewed` = done que el humano ya reviso (lo mueve el humano).
-CERRADAS = ("done", "stopped", "reviewed")
+CERRADAS = ("done", "stopped", "reviewed", "ignored")
 PRIO = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 TIPOS = ("task", "bug")
 SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Repos modificados", "Notas del desarrollador",
@@ -812,7 +815,7 @@ class Board:
                 self._escribir_repos_modificados(clave.lower())
             except Error:
                 pass
-        if estado_nuevo in CERRADAS:
+        if estado_nuevo in CERRADAS and estado_nuevo != "ignored":   # ignorar no borra nada (ya paso por stopped)
             self._cerrar_coder(clave.lower(), estado_nuevo)
         if estado_nuevo and estado_nuevo != estado:
             self._avisar_estado(clave.lower(), estado_nuevo, titulo, meta, secs, set(secs_append or {}))
@@ -2347,6 +2350,9 @@ USO = """uso: wi.sh <env> <comando> [args]
   git-estado <clave> [--fetch]           commits, archivos (+/-), integrada y remoto por repo (JSON)
   git-diff   <clave> <repo> <archivo>    diff de un archivo de la tarea contra la base
   stopped    <clave> <motivo>
+  ignorar    <clave> [motivo]            SOLO el humano: stopped -> ignored. El sistema la ignora (no se toma,
+                                         no cuenta en la cadena, el vigia ni Telegram); no borra nada
+  restaurar  <clave>                     SOLO el humano: ignored -> stopped
   rama       <clave> nueva|existente [--repo <carpeta>]
                                          crea/cambia a la rama <clave> desde la base de su repo
                                          (nueva: antes trae lo ultimo de origin/<base>, sin merges).
@@ -2521,6 +2527,23 @@ def main(argv):
         need(1); b.modificar(a[0], "new", secs_set={"Motivo de stopped": ""})
     elif cmd == "stopped":
         need(2); b.modificar(a[0], "stopped", secs_set={"Motivo de stopped": a[1]})
+    elif cmd == "ignorar":
+        # SOLO el humano: una detenida que ya no interesa. Deja de existir para el sistema (no se toma, no
+        # cuenta en la cadena ni en Telegram) sin borrar nada: rama, worktree e historial quedan.
+        need(1)
+        estado = b.buscar(a[0])[0]
+        if estado != "stopped":
+            raise Error("solo se ignora una tarea detenida (%s esta en %s)" % (a[0], estado))
+        motivo = " ".join(a[1:]).strip()
+        b.modificar(a[0], "ignored", secs_set={"Ignorada": "%s%s" % (ahora(), (": " + motivo) if motivo else "")})
+        b.log("Ignorada por el humano", "humano", "nota", a[0].lower(), a[0].lower(), "-", motivo or "stopped -> ignored")
+    elif cmd == "restaurar":
+        need(1)
+        estado = b.buscar(a[0])[0]
+        if estado != "ignored":
+            raise Error("solo se restaura una tarea ignorada (%s esta en %s)" % (a[0], estado))
+        b.modificar(a[0], "stopped", secs_set={"Ignorada": ""})
+        b.log("Restaurada por el humano", "humano", "nota", a[0].lower(), a[0].lower(), "-", "ignored -> stopped")
     elif cmd == "rama":
         need(2)
         repo = a[a.index("--repo") + 1] if "--repo" in a and a.index("--repo") + 1 < len(a) else None
