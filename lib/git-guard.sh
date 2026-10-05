@@ -80,7 +80,7 @@ def wi_humano(argv):
     if not argv or not (os.path.basename(argv[0]) in ("wi.sh", "workitems.py") or argv[0] in ("$W", "${W}")):
         return None
     sub = argv[2] if len(argv) > 2 else ""
-    if sub in ("push", "pr") or (sub == "merge" and "--humano" in argv):
+    if sub in ("push", "pr", "pull-bases") or (sub == "merge" and "--humano" in argv):
         return "wi.sh %s (solo el humano, desde la app web)" % sub
     return None
 

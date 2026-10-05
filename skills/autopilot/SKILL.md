@@ -543,5 +543,5 @@ además prohíbe push/merge al agente principal.
   tarea revisada al coder, a QA o a E2E. Cuando una tarea llega así, el `Último feedback` empieza con
   `FEEDBACK DEL HUMANO` (o `CAMBIOS PEDIDOS`, el nombre viejo): inclúyelo tal cual en el encargo del
   puesto que la toma.
-- Usar `merge --humano`, `push` o `pr`: son los botones del panel Git de la app web, solo del humano.
+- Usar `merge --humano`, `push`, `pull-bases` o `pr`: son los botones del panel Git de la app web, solo del humano.
 - Inventar que hiciste algo que no hiciste.
