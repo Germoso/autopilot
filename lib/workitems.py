@@ -414,6 +414,12 @@ def serializar(meta, titulo, secciones, vista=False):
 
 
 # ----------------------------------------------------------------- board
+
+def es_feedback_humano(titulo):
+    """Encabezado de un bloque de feedback que escribio el humano con "Feedback y devolver" (o el
+    "Pedir cambios" de antes)."""
+    return "FEEDBACK DEL HUMANO" in titulo or "CAMBIOS PEDIDOS" in titulo
+
 class Board:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -923,15 +929,15 @@ class Board:
         n = meta.get("intento", "0")
         t = "%s — %s" % (clave, titulo)
 
-        def pedido(seccion):  # el humano mando la tarea a este puesto con "Pedir cambios": su texto, o None
+        def pedido(seccion):  # el humano devolvio la tarea a este puesto con su feedback: el texto, o None
             if seccion not in escritas:
                 return None
             b = re.split(r"(?m)^### ", secs.get(seccion, "").strip())[-1]
-            return b.split("\n", 1)[1].strip() if "CAMBIOS PEDIDOS" in b.split("\n", 1)[0] and "\n" in b else None
+            return b.split("\n", 1)[1].strip() if es_feedback_humano(b.split("\n", 1)[0]) and "\n" in b else None
         if estado == "qa" and pedido("Feedback de QA") is not None:
-            self.avisar("✏️ Pediste a QA que revise %s:\n%s" % (t, pedido("Feedback de QA")[:600]))
+            self.avisar("💬 Le diste feedback a QA en %s; vuelve a certificar:\n%s" % (t, pedido("Feedback de QA")[:600]))
         elif estado == "e2e" and pedido("Feedback de E2E") is not None:
-            self.avisar("✏️ Pediste a E2E que pruebe %s:\n%s" % (t, pedido("Feedback de E2E")[:600]))
+            self.avisar("💬 Le diste feedback a E2E en %s; vuelve a probar:\n%s" % (t, pedido("Feedback de E2E")[:600]))
         elif estado == "in-progress":
             self.avisar("🧑‍💻 El coder empezó %s%s" % (t, " (corrige el intento %s)" % n if n != "0" else ""))
         elif estado == "qa":
@@ -946,9 +952,9 @@ class Board:
             quien = "E2E" if "Feedback de E2E" in escritas else "QA"
             bloque = re.split(r"(?m)^### ", secs.get("Feedback de %s" % quien, "").strip())[-1]
             fb = ultimo("Feedback de %s" % quien)
-            if "CAMBIOS PEDIDOS" in bloque.split("\n", 1)[0]:
+            if es_feedback_humano(bloque.split("\n", 1)[0]):
                 cuerpo = bloque.split("\n", 1)[1].strip() if "\n" in bloque else ""
-                self.avisar("✏️ Pediste cambios en %s, vuelve al coder:\n%s" % (t, cuerpo[:600]))
+                self.avisar("💬 Le diste feedback al coder en %s; vuelve a corregir:\n%s" % (t, cuerpo[:600]))
             elif "BLOQUEO PREEXISTENTE" in bloque.split("\n", 1)[0]:
                 cuerpo = bloque.split("\n", 1)[1].strip() if "\n" in bloque else ""
                 self.avisar("🔧 %s vuelve al coder para corregir algo que impedia probar (no necesita tu "
@@ -2336,8 +2342,8 @@ USO = """uso: wi.sh <env> <comando> [args]
                                          arregla en codigo impide compilar/probar; no cuenta como intento
   reqa       <clave>                     -> qa, Intento a 0 (conserva el historial)
   pedir-cambios <clave> <texto> [--a coder|qa|e2e]
-                                         SOLO el humano: done/reviewed/stopped -> bug-fix (coder, defecto),
-                                         qa o e2e con su pedido (en el feedback de ese puesto y en el
+                                         SOLO el humano ("Feedback y devolver"): done/reviewed/stopped ->
+                                         bug-fix (coder, defecto), qa o e2e con su feedback (en el de ese puesto y en el
                                          Criterio de aceptacion); Intento a 0 salvo e2e
   probar-e2e <clave>                     e2e -> probando-e2e (ocupa el puesto e2e)
   e2e-worktree <clave>                   copias para el E2E: repos de la tarea (su rama) + los que
@@ -2620,7 +2626,7 @@ def main(argv):
         b.modificar(a[0], "qa", meta_set={"intento": "0"}, secs_append={
             "Feedback de QA": "### Re-QA manual (%s)\n\nContador de intentos reiniciado." % ahora()})
     elif cmd == "pedir-cambios":
-        # El humano reviso la tarea (done, reviewed o stopped) y pide algo a un puesto:
+        # Boton "Feedback y devolver": el humano reviso la tarea (done, reviewed o stopped) y la devuelve a un puesto:
         #   coder -> bug-fix (corrige en la misma rama), qa -> cola de QA (vuelve a certificar),
         #   e2e   -> cola de E2E (vuelve a probar de punta a punta).
         # El pedido va al feedback de ese puesto (lo ven como "Ultimo feedback" en `get`) y se suma al
@@ -2631,21 +2637,22 @@ def main(argv):
         if destino not in ("coder", "qa", "e2e"):
             raise Error("--a debe ser coder, qa o e2e")
         if not texto:
-            raise Error("falta el texto con lo que quieres")
+            raise Error("falta el texto con tu feedback")
         if destino == "e2e" and not b.cfg["e2e"]["activo"]:
             raise Error("la etapa E2E no esta activa (E2E=true en autopilot.env)")
         estado = b.buscar(a[0])[0]
         if estado not in ("done", "reviewed", "stopped"):
-            raise Error("solo se piden cambios a una tarea en done, reviewed o stopped (%s esta en %s)" % (a[0], estado))
+            raise Error("solo se da feedback y se devuelve una tarea en done, reviewed o stopped (%s esta en %s)"
+                        % (a[0], estado))
         fecha = ahora()
         nuevo, seccion, meta_set = {"coder": ("bug-fix", "Feedback de QA", {"intento": "0"}),
                                     "qa": ("qa", "Feedback de QA", {"intento": "0"}),
                                     "e2e": ("e2e", "Feedback de E2E", {})}[destino]
-        para = {"coder": "", "qa": ", para QA", "e2e": ", para E2E"}[destino]
+        para = {"coder": " para el coder", "qa": " para QA", "e2e": " para E2E"}[destino]
         b.modificar(a[0], nuevo, meta_set=meta_set, secs_set={"Motivo de stopped": ""}, secs_append={
-            seccion: "### CAMBIOS PEDIDOS en la revisión humana%s (%s)\n\n%s" % (para, fecha, texto),
-            "Criterio de aceptación": "**Pedido en la revisión humana%s (%s):**\n\n%s" % (para, fecha, texto)})
-        b.log("Cambios pedidos por el humano (%s)" % destino, "humano", "nota", a[0].lower(), a[0].lower(), "-",
+            seccion: "### FEEDBACK DEL HUMANO%s (%s)\n\n%s" % (para, fecha, texto),
+            "Criterio de aceptación": "**Feedback de la revisión humana%s (%s):**\n\n%s" % (para, fecha, texto)})
+        b.log("Feedback del humano, devuelta a %s" % destino, "humano", "nota", a[0].lower(), a[0].lower(), "-",
               "%s -> %s" % (estado, nuevo))
     elif cmd == "add-task":
         opts, pos, i = {}, [], 0

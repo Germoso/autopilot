@@ -106,9 +106,9 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
     El link al PR queda en la tarea.
   - **↻ Actualizar** hace `git fetch` y recalcula.
 
-  **¿Quieres que cambie algo?** (esté en `done`, `reviewed` o `stopped`): en la app web, abre la tarea
-  y pulsa **✏️ Pedir cambios**. Elige **a quién** y escribe lo que quieres (y, si quieres, adjunta
-  capturas):
+  **¿Hace falta otra vuelta?** (esté en `done`, `reviewed` o `stopped`): en la app web, abre la tarea
+  y pulsa **💬 Feedback y devolver**. Elige **a quién se la devuelves** y escribe tu feedback (y, si
+  quieres, adjunta capturas):
   - **Coder**: qué está mal, qué esperas y dónde. Vuelve al coder **en la misma rama** y pasa otra
     vez por QA (y E2E).
   - **QA**: qué tiene que verificar o cómo probarlo (datos, pasos, casos). Vuelve a la cola de QA,
@@ -116,7 +116,7 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
   - **E2E** (con `E2E=true`): qué flujo probar de punta a punta, con qué datos o en qué plataforma.
     Vuelve a la cola de E2E.
 
-  Tu pedido queda como último feedback de ese puesto y se suma al criterio de aceptación, así QA y
+  Tu feedback queda como el último de ese puesto y se suma al criterio de aceptación, así QA y
   E2E lo certifican. El contador de intentos vuelve a 0 (salvo E2E, que no cuenta intentos). Si ya la
   habías mergeado y el coder cambia algo, después mergea la rama de nuevo.
 
@@ -159,7 +159,7 @@ Muestra todos tus proyectos del autopilot:
   criterio, el historial de cada intento (notas del coder, reportes de QA y E2E) y los **adjuntos
   agrupados por paso**: tarea original, subidos por ti, y coder / QA / E2E de cada intento, con
   botones para ver solo los de un agente.
-- **Gestionar:** panel Git (diff, mergear a la base, push, crear PR en GitHub o Azure DevOps), pedir cambios al coder en una tarea revisada, devolver a QA o a E2E, detener, marcar revisada, cambiar prioridad, pausar el autopilot.
+- **Gestionar:** panel Git (diff, mergear a la base, push, crear PR en GitHub o Azure DevOps), dar feedback y devolver una tarea revisada al coder, a QA o a E2E, devolver a QA o a E2E, detener, marcar revisada, cambiar prioridad, pausar el autopilot.
 - **Crear y editar** tareas y subirles capturas.
 - **Correr** el health check y las pruebas guardadas, viendo la salida.
 - El **log** de actividad y los reportes de `run-tests`.

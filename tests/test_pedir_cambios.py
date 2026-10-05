@@ -1,5 +1,5 @@
-"""Pruebas de `pedir-cambios`: el humano revisa una tarea (done o reviewed) y la devuelve al coder
-con lo que quiere cambiar, desde la app web.
+"""Pruebas de `pedir-cambios` (boton "Feedback y devolver" de la app web): el humano revisa una tarea
+y la devuelve al coder, a QA o a E2E con su feedback.
 """
 import os
 import subprocess
@@ -39,7 +39,7 @@ def test_vuelve_al_coder_con_el_pedido(board, desde):
     estado, _, meta, _, secs = b.leer("task-uno")
     assert estado == "bug-fix"
     assert meta["intento"] == "0"
-    assert "CAMBIOS PEDIDOS" in secs["Feedback de QA"] and "El botón debe decir Guardar" in secs["Feedback de QA"]
+    assert "FEEDBACK DEL HUMANO para el coder" in secs["Feedback de QA"] and "El botón debe decir Guardar" in secs["Feedback de QA"]
     # El QA certifica contra el criterio: el pedido tiene que estar ahi, sin perder el original.
     assert secs["Criterio de aceptación"].startswith("criterio original")
     assert "El botón debe decir Guardar" in secs["Criterio de aceptación"]
@@ -67,7 +67,7 @@ def test_aviso_de_telegram(board, monkeypatch):
     monkeypatch.setattr(b, "avisar", lambda texto, *a, **k: avisos.append(texto))
     b.modificar("task-uno", "bug-fix", secs_append={
         "Feedback de QA": "### CAMBIOS PEDIDOS en la revisión humana (hoy)\n\nOtro color"})
-    assert avisos and avisos[-1].startswith("✏️") and "Otro color" in avisos[-1]
+    assert avisos and avisos[-1].startswith("💬 Le diste feedback al coder") and "Otro color" in avisos[-1]
 
 
 # ----------------------------------------------------------------- a QA y a E2E
@@ -76,7 +76,7 @@ def test_a_qa_vuelve_a_certificar(board):
     assert r.returncode == 0, r.stderr
     estado, _, meta, _, secs = board["b"].leer("task-uno")
     assert estado == "qa" and meta["intento"] == "0"
-    assert "CAMBIOS PEDIDOS en la revisión humana, para QA" in secs["Feedback de QA"]
+    assert "FEEDBACK DEL HUMANO para QA" in secs["Feedback de QA"]
     assert "usuario sin permisos" in secs["Criterio de aceptación"]
     assert "usuario sin permisos" in board["b"].get("task-uno").split("## Último feedback", 1)[1]
 
@@ -106,11 +106,19 @@ def test_desde_stopped_y_destino_invalido(board):
     assert estado == "qa" and not secs.get("Motivo de stopped", "").strip()
 
 
-@pytest.mark.parametrize("estado,seccion,inicio", [("qa", "Feedback de QA", "✏️ Pediste a QA"),
-                                                    ("e2e", "Feedback de E2E", "✏️ Pediste a E2E")])
+@pytest.mark.parametrize("estado,seccion,inicio", [("qa", "Feedback de QA", "💬 Le diste feedback a QA"),
+                                                    ("e2e", "Feedback de E2E", "💬 Le diste feedback a E2E")])
 def test_aviso_de_telegram_a_qa_y_e2e(board, monkeypatch, estado, seccion, inicio):
     b = board["b"]
     avisos = []
     monkeypatch.setattr(b, "avisar", lambda texto, *a, **k: avisos.append(texto))
-    b.modificar("task-uno", estado, secs_append={seccion: "### CAMBIOS PEDIDOS en la revisión humana, para X (hoy)\n\nMira esto"})
+    b.modificar("task-uno", estado, secs_append={seccion: "### FEEDBACK DEL HUMANO para X (hoy)\n\nMira esto"})
     assert avisos and avisos[-1].startswith(inicio) and "Mira esto" in avisos[-1]
+
+
+def test_bloques_viejos_de_pedir_cambios_se_siguen_reconociendo(board, monkeypatch):
+    b = board["b"]
+    avisos = []
+    monkeypatch.setattr(b, "avisar", lambda texto, *a, **k: avisos.append(texto))
+    b.modificar("task-uno", "qa", secs_append={"Feedback de QA": "### CAMBIOS PEDIDOS en la revisión humana, para QA (ayer)\n\nViejo"})
+    assert avisos and avisos[-1].startswith("💬 Le diste feedback a QA") and "Viejo" in avisos[-1]
