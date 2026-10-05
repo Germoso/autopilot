@@ -152,6 +152,15 @@ el resto (`notas --ultimo`, `qa --ultimo`, `historial`...) en vez de leer el `.m
   `BASE_BRANCH=<rama>` en un repo, o `REPO.<carpeta>=<rama>` por repo en un workspace.
   Si está vacía o la rama no existe (ni local ni en `origin`), la tarea pasa a `stopped`:
   no se inventa otra base.
+- **Siempre desde lo último de `origin`:** antes de crear la rama, el kit hace `git fetch` de la base
+  (lo que haría un `pull`, pero sin merges; los agentes no hacen `pull`, lo bloquea git-guard).
+  - `origin/<base>` va adelante → la rama nace de `origin/<base>` y tu base local se adelanta
+    (fast-forward) si tu copia está limpia; con cambios sin commitear no se toca.
+  - Tu base local tiene commits que `origin` no tiene (p. ej. dependencias mergeadas sin push) → nace
+    de la base local, que ya incluye todo `origin`.
+  - Divergieron, o no hay red/credenciales → nace de la base local, queda en el log de la tarea y avisa
+    por Telegram. La tarea no se detiene.
+  - Un bug-fix sigue en su rama existente: no se vuelve a traer la base.
 - **Workspace:** la rama se crea **dentro del repo de la tarea** (`repo:` en su frontmatter).
   Una tarea sin repo, o con un repo que no está en `autopilot.env`, pasa a `stopped`.
 - Cada tarea se trabaja en su **propia copia del repo** (`git worktree`): tu copia principal no se
@@ -791,7 +800,8 @@ uso: wi.sh <env> <comando> [args]
   git-diff   <clave> <repo> <archivo>    diff de un archivo de la tarea contra la base
   stopped    <clave> <motivo>
   rama       <clave> nueva|existente [--repo <carpeta>]
-                                         crea/cambia a la rama <clave> desde la base de su repo.
+                                         crea/cambia a la rama <clave> desde la base de su repo
+                                         (nueva: antes trae lo ultimo de origin/<base>, sin merges).
                                          --repo (workspace): abre la MISMA rama en otro repo
                                          declarado y lo suma a la tarea (lo usa el coder)
   repos      <clave>                     repos de la tarea (principal + extra) en JSON

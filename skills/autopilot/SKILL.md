@@ -147,8 +147,10 @@ servicio; al volver, `--inicio` las respeta (no las marca huérfanas) y el watch
   motivo.
 - **La rama se prepara SOLO con `wi.sh rama`**, que valida todo y, si algo falla, pasa la tarea
   a `stopped` con el motivo:
-  - `wi.sh rama <clave> nueva` → crea `<clave>` desde `<BASE>`. Si la rama ya existe, si
-    la rama base está vacía o no existe, **no inventa nada**: `stopped`.
+  - `wi.sh rama <clave> nueva` → crea `<clave>` desde `<BASE>`, **después de traer lo último de
+    `origin/<BASE>`** (fetch + fast-forward, sin merges: tú nunca haces `pull`). Si la rama ya existe, si
+    la rama base está vacía o no existe, **no inventa nada**: `stopped`. Si no pudo traer `origin` o la
+    base divergió, la rama nace de la base local y la salida trae `base_al_dia[].aviso` (ya avisado).
   - `wi.sh rama <clave> existente` → vuelve a la rama de la tarea en **todos** sus repos (bug-fix).
   - `wi.sh rama <clave> nueva --repo <carpeta>` → la usa el **coder** para sumar otro repo. Si
     falla, la tarea **no** pasa a stopped: el error vuelve al coder.
