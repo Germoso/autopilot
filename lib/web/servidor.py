@@ -40,7 +40,7 @@ import cadena  # noqa: E402
 CONF = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "autopilot-kit")
 ESTATICOS = os.path.join(WEB, "estatico")
 TRABAJOS = {}          # id -> {proyecto, que, proceso, salida, inicio, fin, rc}
-ACCIONES = {"reqa": "reqa", "re-e2e": "re-e2e", "stop": "stopped", "reviewed": "reviewed", "new": "new",
+ACCIONES = {"reqa": "reqa", "re-e2e": "re-e2e", "stop": "stopped", "reviewed": "reviewed", "new": "new", "cambios": "pedir-cambios",
             "prioridad": "prioridad", "criterio": "criterio", "descripcion": "descripcion", "titulo": "titulo"}
 
 
@@ -289,7 +289,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if accion not in ACCIONES or not wi.es_clave(clave):
             return self.error(400, "accion o tarea invalida")
         args = [ACCIONES[accion], clave]
-        if accion in ("stop", "prioridad", "criterio", "descripcion", "titulo"):
+        if accion in ("stop", "prioridad", "criterio", "descripcion", "titulo", "cambios"):
             texto = str(d.get("texto", "")).strip()
             if not texto:
                 return self.error(400, "falta el texto")
