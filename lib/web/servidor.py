@@ -266,7 +266,49 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if tipo == "image/svg+xml":   # un SVG puede traer scripts: se sirve como descarga
             return self.enviar(200, open(path, "rb").read(), tipo, {"Content-Disposition": "attachment",
                                                                     "Content-Security-Policy": "script-src 'none'"})
-        self.enviar(200, open(path, "rb").read(), tipo)
+        self.enviar_archivo(path, tipo)
+
+    def enviar_archivo(self, path, tipo):
+        """Sirve un archivo en trozos y acepta Range (206): sin eso Safari (iPhone/iPad) no reproduce
+        videos y ningun navegador puede adelantar o retroceder."""
+        total = os.path.getsize(path)
+        ini, fin, codigo = 0, total - 1, 200
+        m = re.match(r"^bytes=(\d*)-(\d*)$", (self.headers.get("Range") or "").strip())
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                ini = int(m.group(1))
+                fin = min(int(m.group(2)), total - 1) if m.group(2) else total - 1
+            else:                                   # bytes=-N: los ultimos N
+                ini = max(0, total - int(m.group(2)))
+            if ini > fin or ini >= total:
+                self.send_response(416)
+                self.send_header("Content-Range", "bytes */%d" % total)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            codigo = 206
+        self.send_response(codigo)
+        self.send_header("Content-Type", tipo)
+        self.send_header("Content-Length", str(fin - ini + 1))
+        self.send_header("Accept-Ranges", "bytes")
+        if codigo == 206:
+            self.send_header("Content-Range", "bytes %d-%d/%d" % (ini, fin, total))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        try:
+            with open(path, "rb") as f:
+                f.seek(ini)
+                falta = fin - ini + 1
+                while falta > 0:
+                    trozo = f.read(min(1 << 16, falta))
+                    if not trozo:
+                        break
+                    self.wfile.write(trozo)
+                    falta -= len(trozo)
+        except (BrokenPipeError, ConnectionResetError):
+            pass   # el navegador corto (adelanto el video o cerro el visor): normal
 
     # -- POST
     def do_POST(self):

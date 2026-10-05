@@ -122,3 +122,9 @@ details summary { cursor: pointer; font-weight: 550; }
 .diff .hunk { color: var(--acento); background: var(--acento-suave); } .diff .meta { color: var(--suave); }
 .git-acciones { margin-top: 10px; }
 .git-resultado { margin-top: 10px; padding: 8px 12px; border: 1px solid var(--borde); border-radius: 8px; font-size: 14px; overflow-wrap: anywhere; }
+
+/* video en la galeria: miniatura con ▶ que se abre en el visor */
+.video-mini { position: relative; }
+.video-mini video { display: block; }
+.video-mini .play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;
+  font-size: 34px; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
