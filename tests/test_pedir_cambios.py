@@ -48,10 +48,10 @@ def test_vuelve_al_coder_con_el_pedido(board, desde):
     assert "El botón debe decir Guardar" in resumen.split("## Último feedback", 1)[1]
 
 
-def test_solo_desde_done_o_reviewed(board):
+def test_solo_desde_done_reviewed_o_stopped(board):
     board["b"].modificar("task-uno", "qa")
     r = cli(board, "pedir-cambios", "task-uno", "algo")
-    assert r.returncode != 0 and "done o reviewed" in r.stderr
+    assert r.returncode != 0 and "done, reviewed o stopped" in r.stderr
     assert board["b"].leer("task-uno")[0] == "qa"
 
 
@@ -68,3 +68,49 @@ def test_aviso_de_telegram(board, monkeypatch):
     b.modificar("task-uno", "bug-fix", secs_append={
         "Feedback de QA": "### CAMBIOS PEDIDOS en la revisión humana (hoy)\n\nOtro color"})
     assert avisos and avisos[-1].startswith("✏️") and "Otro color" in avisos[-1]
+
+
+# ----------------------------------------------------------------- a QA y a E2E
+def test_a_qa_vuelve_a_certificar(board):
+    r = cli(board, "pedir-cambios", "task-uno", "Verifica también con un usuario sin permisos", "--a", "qa")
+    assert r.returncode == 0, r.stderr
+    estado, _, meta, _, secs = board["b"].leer("task-uno")
+    assert estado == "qa" and meta["intento"] == "0"
+    assert "CAMBIOS PEDIDOS en la revisión humana, para QA" in secs["Feedback de QA"]
+    assert "usuario sin permisos" in secs["Criterio de aceptación"]
+    assert "usuario sin permisos" in board["b"].get("task-uno").split("## Último feedback", 1)[1]
+
+
+def test_a_e2e_necesita_e2e_activo(board):
+    r = cli(board, "pedir-cambios", "task-uno", "Prueba en Android", "--a", "e2e")
+    assert r.returncode != 0 and "E2E" in r.stderr
+    assert board["b"].leer("task-uno")[0] == "done"
+
+
+def test_a_e2e_vuelve_a_probar(board):
+    board["env"].write_text(board["env"].read_text() + "E2E=true\n")
+    board["b"] = wi.Board(wi.cargar_config(str(board["env"])))
+    r = cli(board, "pedir-cambios", "task-uno", "Prueba el flujo completo en Android", "--a", "e2e")
+    assert r.returncode == 0, r.stderr
+    estado, _, meta, _, secs = board["b"].leer("task-uno")
+    assert estado == "e2e" and meta["intento"] == "2"          # E2E no cuenta intentos (como re-e2e)
+    assert "para E2E" in secs["Feedback de E2E"] and "Android" in secs["Criterio de aceptación"]
+
+
+def test_desde_stopped_y_destino_invalido(board):
+    board["b"].modificar("task-uno", "stopped", secs_set={"Motivo de stopped": "NO CERTIFICABLE"})
+    assert cli(board, "pedir-cambios", "task-uno", "x", "--a", "otro").returncode != 0
+    r = cli(board, "pedir-cambios", "task-uno", "Usa la cuenta de pruebas 2", "--a", "qa")
+    assert r.returncode == 0, r.stderr
+    estado, _, _, _, secs = board["b"].leer("task-uno")
+    assert estado == "qa" and not secs.get("Motivo de stopped", "").strip()
+
+
+@pytest.mark.parametrize("estado,seccion,inicio", [("qa", "Feedback de QA", "✏️ Pediste a QA"),
+                                                    ("e2e", "Feedback de E2E", "✏️ Pediste a E2E")])
+def test_aviso_de_telegram_a_qa_y_e2e(board, monkeypatch, estado, seccion, inicio):
+    b = board["b"]
+    avisos = []
+    monkeypatch.setattr(b, "avisar", lambda texto, *a, **k: avisos.append(texto))
+    b.modificar("task-uno", estado, secs_append={seccion: "### CAMBIOS PEDIDOS en la revisión humana, para X (hoy)\n\nMira esto"})
+    assert avisos and avisos[-1].startswith(inicio) and "Mira esto" in avisos[-1]

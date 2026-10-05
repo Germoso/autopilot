@@ -106,11 +106,19 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
     El link al PR queda en la tarea.
   - **↻ Actualizar** hace `git fetch` y recalcula.
 
-  **¿Quieres que cambie algo?** (esté en `done` o ya en `reviewed`): en la app web, abre la tarea y
-  pulsa **✏️ Pedir cambios**. Escribe qué está mal, qué esperas y dónde (y, si quieres, adjunta
-  capturas). La tarea vuelve al coder **en la misma rama**, con tu pedido como feedback y sumado al
-  criterio de aceptación, y pasa otra vez por QA (y E2E): vuelve a `done` cuando esté. El contador
-  de intentos vuelve a 0. Si ya la habías mergeado, después mergea la rama de nuevo.
+  **¿Quieres que cambie algo?** (esté en `done`, `reviewed` o `stopped`): en la app web, abre la tarea
+  y pulsa **✏️ Pedir cambios**. Elige **a quién** y escribe lo que quieres (y, si quieres, adjunta
+  capturas):
+  - **Coder**: qué está mal, qué esperas y dónde. Vuelve al coder **en la misma rama** y pasa otra
+    vez por QA (y E2E).
+  - **QA**: qué tiene que verificar o cómo probarlo (datos, pasos, casos). Vuelve a la cola de QA,
+    que la certifica otra vez con tus indicaciones; si algo no cumple, va al coder.
+  - **E2E** (con `E2E=true`): qué flujo probar de punta a punta, con qué datos o en qué plataforma.
+    Vuelve a la cola de E2E.
+
+  Tu pedido queda como último feedback de ese puesto y se suma al criterio de aceptación, así QA y
+  E2E lo certifican. El contador de intentos vuelve a 0 (salvo E2E, que no cuenta intentos). Si ya la
+  habías mergeado y el coder cambia algo, después mergea la rama de nuevo.
 
   **Opcional — `AUTO_MERGE=true`:** si no querés mergear a mano, activá `AUTO_MERGE=true` en
   `autopilot.env`: en cuanto el QA (y el E2E, si lo usás) aprueban, **el kit mergea la rama a la base

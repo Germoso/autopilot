@@ -65,11 +65,18 @@ mi-proyecto/
   o con `wi.sh <env> reviewed <clave>`). Así `done` queda solo con lo pendiente de revisar. Con
   `AUTO_MERGE=true` el autopilot la mueve sola (además de mergearla) al aprobar el QA/E2E; sin la
   variable, el autopilot nunca mueve tareas a `reviewed` ni las vuelve a tocar.
-- **Pedir cambios** (`done` o `reviewed` → `bug-fix`): botón **✏️ Pedir cambios** de la app web (por
-  dentro, `wi.sh <env> pedir-cambios <clave> "<texto>"`). El texto queda como `### CAMBIOS PEDIDOS en la
-  revisión humana` en `## Feedback de QA` (el coder lo ve como *Último feedback* en `get`) y se suma al
-  `## Criterio de aceptación` para que QA y E2E lo certifiquen. Intento a 0; misma rama; aviso ✏️ por
-  Telegram.
+- **Pedir cambios** (`done`, `reviewed` o `stopped` → coder, QA o E2E): botón **✏️ Pedir cambios** de
+  la app web, que pregunta a quién (por dentro, `wi.sh <env> pedir-cambios <clave> "<texto>" --a
+  coder|qa|e2e`).
+  | Destino | Pasa a | Feedback | Intento |
+  |---|---|---|---|
+  | coder (defecto) | `bug-fix` (misma rama) | `## Feedback de QA` | a 0 |
+  | qa | `qa` (vuelve a certificar) | `## Feedback de QA` | a 0 |
+  | e2e (`E2E=true`) | `e2e` (vuelve a probar) | `## Feedback de E2E` | no cambia |
+
+  El texto queda como `### CAMBIOS PEDIDOS en la revisión humana[, para QA|E2E]`: el agente lo ve como
+  *Último feedback* en `get` y sus instrucciones le dicen que lo trate como un criterio prioritario.
+  También se suma al `## Criterio de aceptación`. Aviso ✏️ por Telegram.
 - **El nombre del archivo es `<tipo>-<id>-<slug>.md`.** `<tipo>-<id>` es la clave de
   la tarea y **el nombre de su rama**. El `<id>` lo da quien crea la tarea: número (`140123`) o
   texto (`login_social`), en minúsculas, dígitos y `_` (sin `-`, que separa la clave del slug).
@@ -826,8 +833,10 @@ uso: wi.sh <env> <comando> [args]
   rechazar   <clave> <feedback> [--bloqueo]   validando -> bug-fix. --bloqueo: algo preexistente que se
                                          arregla en codigo impide compilar/probar; no cuenta como intento
   reqa       <clave>                     -> qa, Intento a 0 (conserva el historial)
-  pedir-cambios <clave> <texto>          SOLO el humano: done/reviewed -> bug-fix con lo que quiere cambiar
-                                         (Feedback de QA y Criterio de aceptacion), Intento a 0
+  pedir-cambios <clave> <texto> [--a coder|qa|e2e]
+                                         SOLO el humano: done/reviewed/stopped -> bug-fix (coder, defecto),
+                                         qa o e2e con su pedido (en el feedback de ese puesto y en el
+                                         Criterio de aceptacion); Intento a 0 salvo e2e
   probar-e2e <clave>                     e2e -> probando-e2e (ocupa el puesto e2e)
   e2e-worktree <clave>                   copias para el E2E: repos de la tarea (su rama) + los que
                                          hacen falta para el flujo real (E2E_CLIENTS, en su base)

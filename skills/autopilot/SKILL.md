@@ -539,6 +539,8 @@ además prohíbe push/merge al agente principal.
 - Marcar `stopped` sin escribir el motivo.
 - Editar o mover los `.md` del board sin `wi.sh`.
 - Mover tareas a `reviewed`: eso lo hace solo el humano, después de revisar las de `done`.
-- Usar `pedir-cambios`: es el botón del humano en la app web para devolver al coder una tarea revisada.
+- Usar `pedir-cambios`: es el botón del humano en la app web para devolver una tarea revisada al coder,
+  a QA o a E2E. Cuando una tarea llega así, el `Último feedback` empieza con `CAMBIOS PEDIDOS en la
+  revisión humana`: inclúyelo tal cual en el encargo del puesto que la toma.
 - Usar `merge --humano`, `push` o `pr`: son los botones del panel Git de la app web, solo del humano.
 - Inventar que hiciste algo que no hiciste.

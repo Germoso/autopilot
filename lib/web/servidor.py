@@ -347,6 +347,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not texto:
                 return self.error(400, "falta el texto")
             args.append(texto)
+        if accion == "cambios":
+            destino = d.get("destino") or "coder"
+            if destino not in ("coder", "qa", "e2e"):
+                return self.error(400, "destino invalido")
+            args += ["--a", destino]
         ok, out = wi_cmd(p["env"], *args)
         if ok:
             wi_cmd(p["env"], "log", "App web: %s" % accion, "humano", "nota", clave, clave)
