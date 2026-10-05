@@ -537,4 +537,5 @@ además prohíbe push/merge al agente principal.
 - Marcar `stopped` sin escribir el motivo.
 - Editar o mover los `.md` del board sin `wi.sh`.
 - Mover tareas a `reviewed`: eso lo hace solo el humano, después de revisar las de `done`.
+- Usar `pedir-cambios`: es el botón del humano en la app web para devolver al coder una tarea revisada.
 - Inventar que hiciste algo que no hiciste.

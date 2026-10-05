@@ -93,6 +93,12 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
   Si te convence, mergea la rama. Después márcala como revisada (botón en la app web, o mueve el
   archivo a `reviewed/`).
 
+  **¿Quieres que cambie algo?** (esté en `done` o ya en `reviewed`): en la app web, abre la tarea y
+  pulsa **✏️ Pedir cambios**. Escribe qué está mal, qué esperas y dónde (y, si quieres, adjunta
+  capturas). La tarea vuelve al coder **en la misma rama**, con tu pedido como feedback y sumado al
+  criterio de aceptación, y pasa otra vez por QA (y E2E): vuelve a `done` cuando esté. El contador
+  de intentos vuelve a 0. Si ya la habías mergeado, después mergea la rama de nuevo.
+
   **Opcional — `AUTO_MERGE=true`:** si no querés mergear a mano, activá `AUTO_MERGE=true` en
   `autopilot.env`: en cuanto el QA (y el E2E, si lo usás) aprueban, **el kit mergea la rama a la base
   por vos** (solo local: nunca hace push ni borra ramas) y deja la tarea en `reviewed` sola. Si el
@@ -132,7 +138,7 @@ Muestra todos tus proyectos del autopilot:
   criterio, el historial de cada intento (notas del coder, reportes de QA y E2E) y los **adjuntos
   agrupados por paso**: tarea original, subidos por ti, y coder / QA / E2E de cada intento, con
   botones para ver solo los de un agente.
-- **Gestionar:** devolver a QA o a E2E, detener, marcar revisada, cambiar prioridad, pausar el autopilot.
+- **Gestionar:** pedir cambios al coder en una tarea revisada, devolver a QA o a E2E, detener, marcar revisada, cambiar prioridad, pausar el autopilot.
 - **Crear y editar** tareas y subirles capturas.
 - **Correr** el health check y las pruebas guardadas, viendo la salida.
 - El **log** de actividad y los reportes de `run-tests`.

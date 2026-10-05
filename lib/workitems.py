@@ -935,7 +935,10 @@ class Board:
             quien = "E2E" if "Feedback de E2E" in escritas else "QA"
             bloque = re.split(r"(?m)^### ", secs.get("Feedback de %s" % quien, "").strip())[-1]
             fb = ultimo("Feedback de %s" % quien)
-            if "BLOQUEO PREEXISTENTE" in bloque.split("\n", 1)[0]:
+            if "CAMBIOS PEDIDOS" in bloque.split("\n", 1)[0]:
+                cuerpo = bloque.split("\n", 1)[1].strip() if "\n" in bloque else ""
+                self.avisar("✏️ Pediste cambios en %s, vuelve al coder:\n%s" % (t, cuerpo[:600]))
+            elif "BLOQUEO PREEXISTENTE" in bloque.split("\n", 1)[0]:
                 cuerpo = bloque.split("\n", 1)[1].strip() if "\n" in bloque else ""
                 self.avisar("🔧 %s vuelve al coder para corregir algo que impedia probar (no necesita tu "
                             "intervencion, no cuenta como intento):\n%s" % (t, cuerpo[:600]))
@@ -2040,6 +2043,8 @@ USO = """uso: wi.sh <env> <comando> [args]
   rechazar   <clave> <feedback> [--bloqueo]   validando -> bug-fix. --bloqueo: algo preexistente que se
                                          arregla en codigo impide compilar/probar; no cuenta como intento
   reqa       <clave>                     -> qa, Intento a 0 (conserva el historial)
+  pedir-cambios <clave> <texto>          SOLO el humano: done/reviewed -> bug-fix con lo que quiere cambiar
+                                         (Feedback de QA y Criterio de aceptacion), Intento a 0
   probar-e2e <clave>                     e2e -> probando-e2e (ocupa el puesto e2e)
   e2e-worktree <clave>                   copias para el E2E: repos de la tarea (su rama) + los que
                                          hacen falta para el flujo real (E2E_CLIENTS, en su base)
@@ -2308,6 +2313,22 @@ def main(argv):
         need(1)
         b.modificar(a[0], "qa", meta_set={"intento": "0"}, secs_append={
             "Feedback de QA": "### Re-QA manual (%s)\n\nContador de intentos reiniciado." % ahora()})
+    elif cmd == "pedir-cambios":
+        # El humano reviso la tarea (done o reviewed) y quiere otro cambio: vuelve al coder con su pedido,
+        # que tambien se suma al criterio para que QA (y E2E) lo certifiquen. Contador a 0, como reqa.
+        need(2)
+        texto = a[1].strip()
+        if not texto:
+            raise Error("falta el texto con los cambios que quieres")
+        estado = b.buscar(a[0])[0]
+        if estado not in ("done", "reviewed"):
+            raise Error("solo se piden cambios a una tarea en done o reviewed (%s esta en %s)" % (a[0], estado))
+        fecha = ahora()
+        b.modificar(a[0], "bug-fix", meta_set={"intento": "0"}, secs_set={"Motivo de stopped": ""}, secs_append={
+            "Feedback de QA": "### CAMBIOS PEDIDOS en la revisión humana (%s)\n\n%s" % (fecha, texto),
+            "Criterio de aceptación": "**Cambios pedidos en la revisión humana (%s):**\n\n%s" % (fecha, texto)})
+        b.log("Cambios pedidos por el humano", "humano", "nota", a[0].lower(), a[0].lower(), "-",
+              "%s -> bug-fix" % estado)
     elif cmd == "add-task":
         opts, pos, i = {}, [], 0
         while i < len(a):
