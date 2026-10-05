@@ -1792,6 +1792,17 @@ class Board:
         return {"existe": existe, "base_ref": base if local else "origin/%s" % base, "base_local": local,
                 "rama": existe("refs/heads/%s" % rama), "base_ok": local or (bool(base) and existe("refs/remotes/origin/%s" % base))}
 
+    def _rama_modificada(self, r, g, rama):
+        """La tarea cambio algo en este repo: su rama tiene commits que faltan en la base local o en
+        origin/<base> (asi cuenta tambien una rama ya mergeada en local pero sin push de la base)."""
+        base = r.get("base")
+        if not (g["rama"] and base):
+            return False
+        refs = ([base] if g["existe"]("refs/heads/%s" % base) else []) + \
+               (["origin/%s" % base] if g["existe"]("refs/remotes/origin/%s" % base) else [])
+        return any(self.git(r["path"], "rev-list", "--count", "%s..%s" % (ref, rama), check=False).stdout.strip()
+                   not in ("", "0") for ref in refs)
+
     def _prs(self, meta):
         try:
             return json.loads(meta.get("prs") or "{}")
@@ -1836,6 +1847,7 @@ class Board:
                              check=False).stdout.split()
                 if len(c) == 2:
                     item["rama_vs_origin"] = {"adelante": int(c[0]), "atras": int(c[1])}
+            item["modificada"] = self._rama_modificada(r, g, rama)
             item["integrada"] = g["base_local"] and self.git(r["path"], "merge-base", "--is-ancestor", rama,
                                                              item["base"], check=False).returncode == 0
             log = self.git(r["path"], "log", "-200", "--format=%h%x1f%s%x1f%an%x1f%cI",
@@ -1888,6 +1900,9 @@ class Board:
             g = self._repo_git(r, rama)
             if not ref or not g["existe"]("refs/heads/%s" % ref):
                 hechos.append({"repo": nombre, "accion": "sin-rama", "detalle": "no existe la rama local '%s'" % ref})
+                continue
+            if que == "rama" and not self._rama_modificada(r, g, rama):
+                hechos.append({"repo": nombre, "accion": "sin-cambios", "detalle": "la tarea no modifico este repo"})
                 continue
             if g["existe"]("refs/remotes/origin/%s" % ref) and self.git(
                     r["path"], "rev-list", "--count", "origin/%s..%s" % (ref, ref), check=False).stdout.strip() == "0":
@@ -2217,7 +2232,8 @@ USO = """uso: wi.sh <env> <comando> [args]
   merge      <clave> --humano            SOLO el humano (app web): igual pero sin AUTO_MERGE y, si falla,
                                          la tarea no cambia de estado
   push       <clave> base|rama           SOLO el humano: sube a origin la base o la rama de cada repo de la
-                                         tarea (done/reviewed), nunca --force
+                                         tarea (done/reviewed; 'rama': solo los repos que la tarea modifico),
+                                         nunca --force
   pr         <clave>                     SOLO el humano: sube la rama y abre un PR contra la base en cada repo
                                          con commits (GitHub con gh, Azure DevOps con AZURE_DEVOPS_PAT)
   git-estado <clave> [--fetch]           commits, archivos (+/-), integrada y remoto por repo (JSON)

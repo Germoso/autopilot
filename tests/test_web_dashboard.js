@@ -71,7 +71,7 @@ function nuevoCfg() {
     logFilas: [{ hora: "2026-10-03T10:00", origen: "sistema", tarea: "-", evento: "Evento antiguo", detalle: "" }],
     trabajos: [],
     git: { clave: "task-uno", estado: "done", rama: "task-uno", repos: [{
-      repo: "jobradar", base: "dev", rama: "task-uno", existe_rama: true, integrada: false, pr: null, avisos: [],
+      repo: "jobradar", base: "dev", rama: "task-uno", existe_rama: true, integrada: false, modificada: true, pr: null, avisos: [],
       remoto: { tipo: "azure", url: "https://dev.azure.com/o/p/_git/r" }, base_vs_origin: { adelante: 0, atras: 0 },
       commits: [{ hash: "abc123", asunto: "agrega app", autor: "Coder", fecha: "2026-10-05T10:00:00" }],
       archivos: [{ ruta: "src/app.txt", estado: "A", binario: false, mas: 2, menos: 0 }] }] },
@@ -199,6 +199,7 @@ const tick = () => { const i = intervalos.find((x) => x.ms === 15000); ok(!!i, "
   ok(g.includes("agrega app") && g.includes("src/app.txt") && g.includes("+2"), "git: no muestra commits/archivos");
   ok(g.includes("Mergear a la base") && g.includes("Crear PR"), "git: faltan los botones de merge/PR en done");
   ok(!g.includes("Push de la base"), "git: muestra push sin nada que subir");
+  ok(g.includes("Push de las ramas"), "git: falta el push de las ramas modificadas sin publicar");
   ok(fetches.filter((u) => u.includes("/p1/git/")).length === 1, "git: no se pidió el estado git una sola vez");
   await tick();
   await esperar(200);
@@ -211,6 +212,11 @@ const tick = () => { const i = intervalos.find((x) => x.ms === 15000); ok(!!i, "
   await esperar(100);
   ok(!el0("#panel-git").includes("Mergear a la base"), "git: deja mergear una tarea que no está en done/reviewed");
   ok(el0("#panel-git").includes("2 sin subir"), "git: no avisa la base sin subir");
+  const cp = nuevoCfg();
+  cp.git.repos[0].rama_vs_origin = { adelante: 0, atras: 0 };
+  await cargar("#/tarea/task-uno", { cfg: cp });
+  await esperar(100);
+  ok(!el0("#panel-git").includes("Push de las ramas"), "git: ofrece push de una rama ya publicada")
 
   if (fallos.length) {
     console.error("FALLÓ " + fallos.length + ":");

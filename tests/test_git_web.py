@@ -132,6 +132,31 @@ def test_push_rechazado_sin_force(p):
     assert git(p["bare"], "rev-parse", "main").stdout.strip() == remoto_antes
 
 
+def test_push_rama_solo_si_la_tarea_modifico_el_repo(p):
+    b = p["b"]
+    assert b.git_estado("task-uno")["repos"][0]["modificada"]
+    res = b.push("task-uno", "rama")
+    assert res["ok"] and res["repos"][0]["accion"] == "subida"
+    assert git(p["bare"], "rev-parse", "task-uno").stdout.strip() == sha(p["repo"], "task-uno")
+    assert git(p["bare"], "rev-parse", "main").stdout.strip() != sha(p["repo"], "task-uno")   # la base no se toca
+    git(p["repo"], "fetch", "-q", "origin")
+    assert b.push("task-uno", "rama")["repos"][0]["accion"] == "al-dia"
+
+
+def test_push_rama_salta_repo_sin_cambios(p):
+    git(p["repo"], "branch", "-f", "task-uno", "main")      # rama sin commits propios
+    assert not p["b"].git_estado("task-uno")["repos"][0]["modificada"]
+    res = p["b"].push("task-uno", "rama")
+    assert res["repos"][0]["accion"] == "sin-cambios"
+    assert git(p["bare"], "rev-parse", "--verify", "--quiet", "task-uno", check=False).returncode != 0
+
+
+def test_rama_mergeada_sin_push_sigue_modificada(p):
+    p["b"].merge("task-uno", humano=True)                  # base local la tiene, origin/main no
+    r = p["b"].git_estado("task-uno")["repos"][0]
+    assert r["integrada"] and r["modificada"]
+
+
 def test_push_solo_en_done_o_reviewed(p):
     p["b"].modificar("task-uno", "qa")
     with pytest.raises(wi.Error, match="done o reviewed"):
