@@ -65,8 +65,8 @@ mi-proyecto/
   o con `wi.sh <env> reviewed <clave>`). Así `done` queda solo con lo pendiente de revisar. Con
   `AUTO_MERGE=true` el autopilot la mueve sola (además de mergearla) al aprobar el QA/E2E; sin la
   variable, el autopilot nunca mueve tareas a `reviewed` ni las vuelve a tocar.
-- **Pedir cambios** (`done`, `reviewed` o `stopped` → coder, QA o E2E): botón **✏️ Pedir cambios** de
-  la app web, que pregunta a quién (por dentro, `wi.sh <env> pedir-cambios <clave> "<texto>" --a
+- **Feedback y devolver** (`done`, `reviewed` o `stopped` → coder, QA o E2E): botón **💬 Feedback y
+  devolver** de la app web, que pregunta a quién se la devuelves (por dentro, `wi.sh <env> pedir-cambios <clave> "<texto>" --a
   coder|qa|e2e`).
   | Destino | Pasa a | Feedback | Intento |
   |---|---|---|---|
@@ -74,9 +74,10 @@ mi-proyecto/
   | qa | `qa` (vuelve a certificar) | `## Feedback de QA` | a 0 |
   | e2e (`E2E=true`) | `e2e` (vuelve a probar) | `## Feedback de E2E` | no cambia |
 
-  El texto queda como `### CAMBIOS PEDIDOS en la revisión humana[, para QA|E2E]`: el agente lo ve como
+  El texto queda como `### FEEDBACK DEL HUMANO para el coder|QA|E2E` (las tareas viejas pueden traer
+  `CAMBIOS PEDIDOS en la revisión humana`, que se sigue reconociendo): el agente lo ve como
   *Último feedback* en `get` y sus instrucciones le dicen que lo trate como un criterio prioritario.
-  También se suma al `## Criterio de aceptación`. Aviso ✏️ por Telegram.
+  También se suma al `## Criterio de aceptación`. Aviso 💬 por Telegram.
 - **El nombre del archivo es `<tipo>-<id>-<slug>.md`.** `<tipo>-<id>` es la clave de
   la tarea y **el nombre de su rama**. El `<id>` lo da quien crea la tarea: número (`140123`) o
   texto (`login_social`), en minúsculas, dígitos y `_` (sin `-`, que separa la clave del slug).
