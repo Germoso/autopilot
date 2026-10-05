@@ -143,7 +143,7 @@ def cargar_config(env_path=None):
     valor_e2e = vals.get("E2E", "false").strip().lower()
     valor_tg = vals.get("TELEGRAM", "false").strip().lower()
     valor_am = vals.get("AUTO_MERGE", "false").strip().lower()
-    return {"workspace": bool(ws), "raiz": raiz, "dir": wdir, "repos": repos,
+    return {"workspace": bool(ws), "raiz": raiz, "proyecto": base, "dir": wdir, "repos": repos,
             "paralelo": paralelo, "capacidad": capacidad,
             "parallel_invalido": None if valor_parallel in ("true", "false") else vals.get("PARALLEL"),
             "vigia": {"activo": vals.get("WATCHDOG", "true").strip().lower() != "false",
@@ -1676,21 +1676,22 @@ class Board:
         return r
 
     # -- AUTO_MERGE: integrar la rama de la tarea en la base (solo local; nunca push ni borrar ramas)
-    def merge(self, clave):
+    def merge(self, clave, humano=False):
         """Mergea la rama de la tarea a la base de sus repos y la deja reviewed.
 
-        Solo corre con AUTO_MERGE=true. Si un repo no mergerea limpio (conflicto o cambios
-        sin commitear), NO toca esa base y la tarea queda stopped con el motivo (avisado por
-        Telegram via modificar). Nunca hace push ni borra ramas.
+        Automatico: solo con AUTO_MERGE=true; si un repo no mergea limpio (conflicto o cambios sin
+        commitear), NO toca esa base y la tarea queda stopped con el motivo (avisado por Telegram).
+        humano=True (boton de la app web): no necesita AUTO_MERGE y, si falla, la tarea no cambia de
+        estado: el humano ve el error por repo. Nunca hace push ni borra ramas.
         """
-        if not self.cfg.get("auto_merge"):
+        if not humano and not self.cfg.get("auto_merge"):
             raise Error("AUTO_MERGE=false: el merge a la base lo hace el humano (o activa "
                         "AUTO_MERGE=true en autopilot.env)")
         clave = clave.strip().lower()
         estado, _, meta, _, _ = self.leer(clave)
         if estado not in ("done", "reviewed"):
             raise Error("solo una tarea en done se mergea (%s esta en %s)" % (clave, estado))
-        rama = meta.get("rama") or clave
+        rama = self._rama_de(meta, clave)
         hechos, falla = [], None
         for r in self.repos_de_tarea(meta):
             nombre = r["nombre"] or os.path.basename(r["path"])
@@ -1713,6 +1714,10 @@ class Board:
             if not m["ok"]:
                 falla = "%s: no se pudo mergear %s en %s: %s" % (nombre, rama, r["base"], m["detalle"])
                 break
+        if falla and humano:
+            self.log("Merge a la base fallido (app web)", "humano", "nota", clave, rama, "-",
+                     falla.replace("\n", " ")[:500])
+            return {"ok": False, "estado": estado, "repos": hechos, "motivo": falla[:500]}
         if falla:
             motivo = "AUTO_MERGE: %s" % falla
             self.modificar(clave, "stopped", secs_set={"Motivo de stopped": motivo})
@@ -1722,6 +1727,9 @@ class Board:
         detalle = ", ".join("%s: %s" % (h["repo"], h["accion"]) for h in hechos) or "sin repos"
         if estado != "reviewed":
             self.modificar(clave, "reviewed")
+        if humano:
+            self.log("Merge a la base (app web)", "humano", "nota", clave, rama, "-", detalle)
+            return {"ok": True, "estado": "reviewed", "repos": hechos}
         self.log("Merge automatico a la base (AUTO_MERGE)", "sistema", "nota", clave, rama, "-", detalle)
         self.avisar("🔗 %s mergeada a la base y marcada reviewed (AUTO_MERGE=true): %s" % (clave, detalle))
         return {"ok": True, "estado": "reviewed", "repos": hechos}
@@ -1760,6 +1768,187 @@ class Board:
         finally:
             if temporal:
                 self.git(repo, "worktree", "remove", "--force", wt, check=False)
+
+    # -- git desde la app web (solo el humano): ver cambios, mergear, push y PR. Nunca --force ni borrar ramas.
+    @staticmethod
+    def _rama_de(meta, clave):
+        return meta.get("rama") or clave.lower()
+
+    def _git_red(self, repo, *args, timeout=120):
+        """git que habla con el remoto: sin preguntas por terminal (la web no puede contestarlas)."""
+        env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="", SSH_ASKPASS="")
+        env["GIT_SSH_COMMAND"] = env.get("GIT_SSH_COMMAND") or "ssh -o BatchMode=yes"
+        try:
+            return subprocess.run(["git", "-C", repo] + list(args), capture_output=True, text=True,
+                                  timeout=timeout, env=env)
+        except subprocess.TimeoutExpired:
+            return subprocess.CompletedProcess(args, 124, "", "tardo mas de %d s (red o credenciales)" % timeout)
+
+    def _repo_git(self, r, rama):
+        """Refs de un repo de la tarea: base local (o origin/<base>), y si existen la rama y origin."""
+        existe = lambda ref: self.git(r["path"], "rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
+        base = r.get("base") or ""
+        local = bool(base) and existe("refs/heads/%s" % base)
+        return {"existe": existe, "base_ref": base if local else "origin/%s" % base, "base_local": local,
+                "rama": existe("refs/heads/%s" % rama), "base_ok": local or (bool(base) and existe("refs/remotes/origin/%s" % base))}
+
+    def _prs(self, meta):
+        try:
+            return json.loads(meta.get("prs") or "{}")
+        except ValueError:
+            return {}
+
+    def git_estado(self, clave, fetch=False):
+        """Lo que la app web muestra en el panel Git: por repo, commits y archivos de la rama contra la
+        base, si ya esta integrada, cuanto le falta subir a la base y el remoto. Solo lectura (salvo fetch)."""
+        import remoto
+        clave = clave.strip().lower()
+        estado, _, meta, _, _ = self.leer(clave)
+        rama, prs, out = self._rama_de(meta, clave), self._prs(meta), []
+        for r in self.repos_de_tarea(meta):
+            nombre = r["nombre"] or os.path.basename(r["path"])
+            item = {"repo": nombre, "base": r.get("base") or "", "rama": rama, "existe_rama": False,
+                    "integrada": False, "commits": [], "archivos": [], "pr": prs.get(nombre), "avisos": []}
+            out.append(item)
+            if not os.path.isdir(r["path"]):
+                item["avisos"].append("no existe la carpeta del repo")
+                continue
+            url = self.git(r["path"], "remote", "get-url", "origin", check=False).stdout.strip()
+            item["remoto"] = remoto.analizar(url) if url else {"tipo": "ninguno", "url": ""}
+            if fetch and url:
+                f = self._git_red(r["path"], "fetch", "--quiet", "origin", timeout=60)
+                if f.returncode != 0:
+                    item["avisos"].append("fetch: " + remoto.sin_credenciales((f.stderr or f.stdout).strip())[:200])
+            g = self._repo_git(r, rama)
+            item["existe_rama"] = g["rama"]
+            if not g["base_ok"]:
+                item["avisos"].append("no existe la rama base '%s'" % item["base"])
+                continue
+            if g["base_local"] and g["existe"]("refs/remotes/origin/%s" % item["base"]):
+                c = self.git(r["path"], "rev-list", "--left-right", "--count",
+                             "%s...origin/%s" % (item["base"], item["base"]), check=False).stdout.split()
+                if len(c) == 2:
+                    item["base_vs_origin"] = {"adelante": int(c[0]), "atras": int(c[1])}
+            if not g["rama"]:
+                continue
+            if g["existe"]("refs/remotes/origin/%s" % rama):
+                c = self.git(r["path"], "rev-list", "--left-right", "--count", "%s...origin/%s" % (rama, rama),
+                             check=False).stdout.split()
+                if len(c) == 2:
+                    item["rama_vs_origin"] = {"adelante": int(c[0]), "atras": int(c[1])}
+            item["integrada"] = g["base_local"] and self.git(r["path"], "merge-base", "--is-ancestor", rama,
+                                                             item["base"], check=False).returncode == 0
+            log = self.git(r["path"], "log", "-200", "--format=%h%x1f%s%x1f%an%x1f%cI",
+                           "%s..%s" % (g["base_ref"], rama), check=False).stdout
+            item["commits"] = [dict(zip(("hash", "asunto", "autor", "fecha"), l.split("\x1f")))
+                               for l in log.splitlines() if l.strip()]
+            rango = "%s...%s" % (g["base_ref"], rama)
+            estados = {}
+            for l in self.git(r["path"], "diff", "--no-renames", "--name-status", rango, check=False).stdout.splitlines():
+                partes = l.split("\t", 1)
+                if len(partes) == 2:
+                    estados[partes[1]] = partes[0][:1]
+            for l in self.git(r["path"], "diff", "--no-renames", "--numstat", rango, check=False).stdout.splitlines():
+                partes = l.split("\t", 2)
+                if len(partes) == 3:
+                    binario = partes[0] == "-"
+                    item["archivos"].append({"ruta": partes[2], "estado": estados.get(partes[2], "M"), "binario": binario,
+                                             "mas": 0 if binario else int(partes[0]), "menos": 0 if binario else int(partes[1])})
+        return {"clave": clave, "estado": estado, "rama": rama, "repos": out}
+
+    def git_diff(self, clave, repo, archivo, limite=200000):
+        """Diff de un archivo de la tarea (base...rama), recortado a `limite` bytes."""
+        clave = clave.strip().lower()
+        meta = self.leer(clave)[2]
+        rama = self._rama_de(meta, clave)
+        r = next((x for x in self.repos_de_tarea(meta) if (x["nombre"] or os.path.basename(x["path"])) == repo), None)
+        if not r:
+            raise Error("el repo '%s' no es de la tarea %s" % (repo, clave))
+        g = self._repo_git(r, rama)
+        if not (g["rama"] and g["base_ok"]):
+            raise Error("no existe la rama %s o la base %s en %s" % (rama, r.get("base"), repo))
+        texto = self.git(r["path"], "diff", "--no-renames", "%s...%s" % (g["base_ref"], rama), "--", archivo,
+                         check=False).stdout
+        return {"repo": repo, "archivo": archivo, "diff": texto[:limite], "recortado": len(texto) > limite}
+
+    def push(self, clave, que):
+        """Sube a origin la base (que='base', p. ej. tras mergear) o la rama de la tarea (que='rama') de
+        cada repo de la tarea. Nunca --force: si el remoto avanzo, git lo rechaza y se informa."""
+        import remoto
+        if que not in ("base", "rama"):
+            raise Error("push: indica 'base' o 'rama'")
+        clave = clave.strip().lower()
+        estado, _, meta, _, _ = self.leer(clave)
+        if estado not in ("done", "reviewed"):
+            raise Error("solo se hace push de una tarea en done o reviewed (%s esta en %s)" % (clave, estado))
+        rama, hechos = self._rama_de(meta, clave), []
+        for r in self.repos_de_tarea(meta):
+            nombre = r["nombre"] or os.path.basename(r["path"])
+            ref = r.get("base") if que == "base" else rama
+            g = self._repo_git(r, rama)
+            if not ref or not g["existe"]("refs/heads/%s" % ref):
+                hechos.append({"repo": nombre, "accion": "sin-rama", "detalle": "no existe la rama local '%s'" % ref})
+                continue
+            if g["existe"]("refs/remotes/origin/%s" % ref) and self.git(
+                    r["path"], "rev-list", "--count", "origin/%s..%s" % (ref, ref), check=False).stdout.strip() == "0":
+                hechos.append({"repo": nombre, "accion": "al-dia", "detalle": "origin/%s ya tiene todo" % ref})
+                continue
+            p = self._git_red(r["path"], "push", "origin", "refs/heads/%s:refs/heads/%s" % (ref, ref))
+            salida = remoto.sin_credenciales((p.stderr or p.stdout).strip())[-400:]
+            hechos.append({"repo": nombre, "accion": "subida" if p.returncode == 0 else "rechazada",
+                           "detalle": ("push de %s ok" % ref) if p.returncode == 0 else salida})
+        ok = all(h["accion"] != "rechazada" for h in hechos)
+        self.log("Push de la %s (app web)" % que, "humano", "nota", clave, rama, "-",
+                 ", ".join("%s: %s" % (h["repo"], h["accion"]) for h in hechos)[:500])
+        return {"ok": ok, "estado": estado, "repos": hechos}
+
+    def crear_pr(self, clave):
+        """Sube la rama de la tarea y abre un Pull Request contra la base en cada repo con commits
+        (GitHub o Azure DevOps). Si ya hay uno abierto, lo reusa. La tarea no cambia de estado."""
+        import remoto
+        clave = clave.strip().lower()
+        estado, _, meta, titulo, secs = self.leer(clave)
+        if estado not in ("done", "reviewed"):
+            raise Error("solo se abre un PR de una tarea en done o reviewed (%s esta en %s)" % (clave, estado))
+        rama, prs, hechos = self._rama_de(meta, clave), self._prs(meta), []
+        for r in self.repos_de_tarea(meta):
+            nombre = r["nombre"] or os.path.basename(r["path"])
+            g = self._repo_git(r, rama)
+            if not (g["rama"] and g["base_ok"]):
+                hechos.append({"repo": nombre, "accion": "sin-rama", "detalle": "no existe la rama %s o la base" % rama})
+                continue
+            commits = self.git(r["path"], "log", "--format=- %h %s", "%s..%s" % (g["base_ref"], rama), check=False).stdout.strip()
+            if not commits:
+                hechos.append({"repo": nombre, "accion": "sin-cambios", "detalle": "la rama no tiene commits nuevos"})
+                continue
+            url = self.git(r["path"], "remote", "get-url", "origin", check=False).stdout.strip()
+            if not url:
+                hechos.append({"repo": nombre, "accion": "error", "detalle": "el repo no tiene remoto origin"})
+                continue
+            p = self._git_red(r["path"], "push", "origin", "refs/heads/%s:refs/heads/%s" % (rama, rama))
+            if p.returncode != 0:
+                hechos.append({"repo": nombre, "accion": "error", "detalle": "push de la rama: " +
+                               remoto.sin_credenciales((p.stderr or p.stdout).strip())[-300:]})
+                continue
+            cuerpo = "\n\n".join(x for x in (
+                "Tarea **%s** del autopilot." % clave,
+                "## Resultado\n\n" + secs["Resultado"] if secs.get("Resultado", "").strip() else "",
+                "## Criterio de aceptación\n\n" + secs.get("Criterio de aceptación", "-"),
+                "## Commits\n\n" + commits) if x)
+            try:
+                pr = remoto.crear_pr(remoto.analizar(url), r["path"], r["base"], rama, "%s: %s" % (clave, titulo),
+                                     cuerpo, self.cfg.get("proyecto"))
+            except (remoto.Error, subprocess.TimeoutExpired) as e:
+                hechos.append({"repo": nombre, "accion": "error", "detalle": str(e)[:400]})
+                continue
+            prs[nombre] = pr["url"]
+            hechos.append({"repo": nombre, "accion": "existente" if pr["existente"] else "creado", "detalle": pr["url"]})
+        if any(h["accion"] in ("creado", "existente") for h in hechos):
+            self.modificar(clave, meta_set={"prs": json.dumps(prs, ensure_ascii=False)},
+                           secs_set={"Pull requests": "\n".join("- %s: %s" % kv for kv in sorted(prs.items()))})
+        self.log("Pull request (app web)", "humano", "nota", clave, rama, "-",
+                 ", ".join("%s: %s" % (h["repo"], h["accion"]) for h in hechos)[:500])
+        return {"ok": bool(hechos) and all(h["accion"] not in ("error",) for h in hechos), "estado": estado, "repos": hechos}
 
     @staticmethod
     def coder_worktree_path(repo, clave):
@@ -1874,15 +2063,17 @@ class Board:
         y archivos cambiados. Un repo de la tarea sin commits aparece con commits vacios."""
         clave = clave.lower()
         out = []
-        for r in self.repos_de_tarea(self.leer(clave)[2]):
+        meta = self.leer(clave)[2]
+        for r in self.repos_de_tarea(meta):
             nombre = r["nombre"] or os.path.basename(r["path"])
             existe = lambda ref: self.git(r["path"], "rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
             base = r["base"] if existe("refs/heads/%s" % r["base"]) else "origin/%s" % r["base"]
-            item = {"repo": nombre, "rama": clave, "base": r["base"], "commits": [], "archivos": []}
-            if existe("refs/heads/%s" % clave) and existe(base):
-                log = self.git(r["path"], "log", "--format=%h %s", "%s..%s" % (base, clave), check=False).stdout
+            rama = self._rama_de(meta, clave)
+            item = {"repo": nombre, "rama": rama, "base": r["base"], "commits": [], "archivos": []}
+            if existe("refs/heads/%s" % rama) and existe(base):
+                log = self.git(r["path"], "log", "--format=%h %s", "%s..%s" % (base, rama), check=False).stdout
                 item["commits"] = [l for l in log.splitlines() if l.strip()]
-                item["archivos"] = self.git(r["path"], "diff", "--name-only", "%s...%s" % (base, clave),
+                item["archivos"] = self.git(r["path"], "diff", "--name-only", "%s...%s" % (base, rama),
                                             check=False).stdout.split()
             out.append(item)
         return out
@@ -2023,6 +2214,14 @@ USO = """uso: wi.sh <env> <comando> [args]
   merge      <clave>                     con AUTO_MERGE=true: mergea su rama a la base (solo local,
                                          nunca push ni borra ramas) y la deja reviewed; con conflicto
                                          queda stopped y la base intacta
+  merge      <clave> --humano            SOLO el humano (app web): igual pero sin AUTO_MERGE y, si falla,
+                                         la tarea no cambia de estado
+  push       <clave> base|rama           SOLO el humano: sube a origin la base o la rama de cada repo de la
+                                         tarea (done/reviewed), nunca --force
+  pr         <clave>                     SOLO el humano: sube la rama y abre un PR contra la base en cada repo
+                                         con commits (GitHub con gh, Azure DevOps con AZURE_DEVOPS_PAT)
+  git-estado <clave> [--fetch]           commits, archivos (+/-), integrada y remoto por repo (JSON)
+  git-diff   <clave> <repo> <archivo>    diff de un archivo de la tarea contra la base
   stopped    <clave> <motivo>
   rama       <clave> nueva|existente [--repo <carpeta>]
                                          crea/cambia a la rama <clave> desde la base de su repo.
@@ -2175,7 +2374,19 @@ def main(argv):
         b.log("Revisada por el humano", "humano", "nota", a[0].lower(), a[0].lower(), "-", "done -> reviewed")
     elif cmd == "merge":
         need(1)
-        print(json.dumps(b.merge(a[0]), ensure_ascii=False, indent=2)); return 0
+        print(json.dumps(b.merge(a[0], humano="--humano" in a), ensure_ascii=False, indent=2)); return 0
+    elif cmd == "push":
+        need(2)
+        print(json.dumps(b.push(a[0], a[1]), ensure_ascii=False, indent=2)); return 0
+    elif cmd == "pr":
+        need(1)
+        print(json.dumps(b.crear_pr(a[0]), ensure_ascii=False, indent=2)); return 0
+    elif cmd == "git-estado":
+        need(1)
+        print(json.dumps(b.git_estado(a[0], fetch="--fetch" in a), ensure_ascii=False, indent=2)); return 0
+    elif cmd == "git-diff":
+        need(3)
+        print(b.git_diff(a[0], a[1], a[2])["diff"]); return 0
     elif cmd == "new":
         need(1); b.modificar(a[0], "new", secs_set={"Motivo de stopped": ""})
     elif cmd == "stopped":

@@ -106,3 +106,19 @@ details summary { cursor: pointer; font-weight: 550; }
 .visor-pie { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; color: #fff; font-size: 13px; opacity: .85; padding: 0 16px; word-break: break-all; }
 .visor img { max-height: calc(100% - 60px); }
 @media (max-width: 600px) { .visor-nav { width: 40px; height: 40px; font-size: 26px; } .visor-nav.anterior { left: 6px; } .visor-nav.siguiente { right: 6px; } }
+
+/* panel Git de la tarea */
+.git-repo { border-top: 1px solid var(--borde); padding: 10px 0; }
+.git-repo h3 { margin: 0 0 6px; font-size: 15px; }
+.git-commits { margin: 6px 0; padding-left: 18px; font-size: 13px; }
+.git-archivo > button { display: block; width: 100%; text-align: left; border: 0; border-radius: 6px; padding: 4px 6px; font: 13px ui-monospace, Menlo, monospace; background: none; overflow-wrap: anywhere; }
+.git-archivo > button:hover { background: var(--fondo); }
+.git-est { display: inline-block; width: 1.4em; text-align: center; border-radius: 4px; font-weight: 700; }
+.est-A { color: var(--ok); } .est-D { color: var(--mal); } .est-M { color: var(--aviso); }
+.git-archivo .mas { color: var(--ok); } .git-archivo .menos { color: var(--mal); }
+.diff { margin: 4px 0 10px; background: var(--fondo); border: 1px solid var(--borde); border-radius: 8px; padding: 8px 0; font: 12.5px/1.45 ui-monospace, Menlo, monospace; overflow: auto; max-height: 60vh; }
+.diff span { display: block; padding: 0 10px; white-space: pre; min-height: 1.45em; }
+.diff .add { background: var(--ok-suave); } .diff .del { background: var(--mal-suave); }
+.diff .hunk { color: var(--acento); background: var(--acento-suave); } .diff .meta { color: var(--suave); }
+.git-acciones { margin-top: 10px; }
+.git-resultado { margin-top: 10px; padding: 8px 12px; border: 1px solid var(--borde); border-radius: 8px; font-size: 14px; overflow-wrap: anywhere; }

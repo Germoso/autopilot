@@ -69,7 +69,25 @@ EXTRA = {
 EXTRA["e2e"] = EXTRA["qa"]
 AGENTES = ("coder", "qa", "e2e")
 
+def wi_humano(argv):
+    """wi.sh push|pr|merge --humano: los dispara solo el humano desde la app web, nunca un agente."""
+    while argv and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", argv[0]):
+        argv = argv[1:]
+    for w in ("env", "command", "exec", "nohup", "time"):
+        if argv and argv[0] == w: argv = argv[1:]
+    if argv and re.match(r"^python[0-9.]*$", os.path.basename(argv[0])):
+        argv = argv[1:]
+    if not argv or not (os.path.basename(argv[0]) in ("wi.sh", "workitems.py") or argv[0] in ("$W", "${W}")):
+        return None
+    sub = argv[2] if len(argv) > 2 else ""
+    if sub in ("push", "pr") or (sub == "merge" and "--humano" in argv):
+        return "wi.sh %s (solo el humano, desde la app web)" % sub
+    return None
+
 def motivo(argv):
+    h = wi_humano(argv)
+    if h:
+        return h
     if len(argv) >= 3 and os.path.basename(argv[0]) == "gh" and argv[1:3] == ["pr", "merge"]:
         return "gh pr merge"
     sub, args = sub_git(argv)

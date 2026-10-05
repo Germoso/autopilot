@@ -1,7 +1,7 @@
 // tests/test_web_dashboard.js — verificación del dashboard (harness de node con stubs de DOM).
 // Correr: node tests/test_web_dashboard.js
 //
-// Cubre la Fase 1 de la auditoría de UI/UX:
+// Cubre la Fase 1 de la auditoría de UI/UX (y el panel Git de la tarea, caso 9):
 //  1. index.html: skip link, main tabindex, avisos con aria-live/role.
 //  2. tablero: <h1> de vista; filtros corruptos en localStorage no rompen la vista.
 //  3. tarea: aria-label en los botones de edición (✎).
@@ -70,6 +70,11 @@ function nuevoCfg() {
     },
     logFilas: [{ hora: "2026-10-03T10:00", origen: "sistema", tarea: "-", evento: "Evento antiguo", detalle: "" }],
     trabajos: [],
+    git: { clave: "task-uno", estado: "done", rama: "task-uno", repos: [{
+      repo: "jobradar", base: "dev", rama: "task-uno", existe_rama: true, integrada: false, pr: null, avisos: [],
+      remoto: { tipo: "azure", url: "https://dev.azure.com/o/p/_git/r" }, base_vs_origin: { adelante: 0, atras: 0 },
+      commits: [{ hash: "abc123", asunto: "agrega app", autor: "Coder", fecha: "2026-10-05T10:00:00" }],
+      archivos: [{ ruta: "src/app.txt", estado: "A", binario: false, mas: 2, menos: 0 }] }] },
     trabajo: { que: "health", rc: null, salida: "", inicio: "10:00" },
   };
 }
@@ -103,6 +108,7 @@ async function cargar(hash, opts = {}) {
     if (s === "/api/sesion") return resp({ ok: true });
     if (s === "/api/proyectos") return resp([{ id: "p1", nombre: "jobradar" }]);
     if (s.includes("/p1/tarea/")) return resp(cfg.tarea);
+    if (s.includes("/p1/git/")) return resp(cfg.git);
     if (s.includes("/p1/log")) return resp(cfg.logFilas);
     if (s.includes("/p1/trabajos")) return resp(cfg.trabajos);
     if (s.includes("/p1/trabajo/")) return resp(cfg.trabajo);
@@ -186,12 +192,32 @@ const tick = () => { const i = intervalos.find((x) => x.ms === 15000); ok(!!i, "
   ok(!el0("#avisos").includes("Cadena detenida"), "tablero: el banner de cadena no se quita al destrabarse");
   ok(global.location.hash === "#/", "el refresco navega sin querer (hash cambió)");
 
+  // 9) tarea: panel Git (commits, archivos y botones según el estado)
+  await cargar("#/tarea/task-uno");
+  await esperar(100);
+  const g = el0("#panel-git");
+  ok(g.includes("agrega app") && g.includes("src/app.txt") && g.includes("+2"), "git: no muestra commits/archivos");
+  ok(g.includes("Mergear a la base") && g.includes("Crear PR"), "git: faltan los botones de merge/PR en done");
+  ok(!g.includes("Push de la base"), "git: muestra push sin nada que subir");
+  ok(fetches.filter((u) => u.includes("/p1/git/")).length === 1, "git: no se pidió el estado git una sola vez");
+  await tick();
+  await esperar(200);
+  ok(fetches.filter((u) => u.includes("/p1/git/")).length === 1, "git: el refresco automático vuelve a pedir git");
+  ok(el0("#panel-git").includes("src/app.txt"), "git: el refresco borra el panel");
+  const cq = nuevoCfg();
+  cq.tarea.estado = "qa"; cq.git.estado = "qa";
+  cq.git.repos[0].base_vs_origin = { adelante: 2, atras: 0 };
+  await cargar("#/tarea/task-uno", { cfg: cq });
+  await esperar(100);
+  ok(!el0("#panel-git").includes("Mergear a la base"), "git: deja mergear una tarea que no está en done/reviewed");
+  ok(el0("#panel-git").includes("2 sin subir"), "git: no avisa la base sin subir");
+
   if (fallos.length) {
     console.error("FALLÓ " + fallos.length + ":");
     for (const f of fallos) console.error(" - " + f);
     process.exit(1);
   }
-  console.log("OK: dashboard (accesibilidad, bug herramientas, refresco) — 8/8");
+  console.log("OK: dashboard (accesibilidad, bug herramientas, refresco) — 9/9");
 })().catch((e) => { console.error("ERROR:", e.stack || e.message); process.exit(1); });
 
 function el0(sel) { const e = elementos.get(sel); return e ? e.innerHTML : ""; }

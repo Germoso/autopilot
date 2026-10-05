@@ -781,6 +781,14 @@ uso: wi.sh <env> <comando> [args]
   merge      <clave>                     con AUTO_MERGE=true: mergea su rama a la base (solo local,
                                          nunca push ni borra ramas) y la deja reviewed; con conflicto
                                          queda stopped y la base intacta
+  merge      <clave> --humano            SOLO el humano (app web): igual pero sin AUTO_MERGE y, si falla,
+                                         la tarea no cambia de estado
+  push       <clave> base|rama           SOLO el humano: sube a origin la base o la rama de cada repo de la
+                                         tarea (done/reviewed), nunca --force
+  pr         <clave>                     SOLO el humano: sube la rama y abre un PR contra la base en cada repo
+                                         con commits (GitHub con gh, Azure DevOps con AZURE_DEVOPS_PAT)
+  git-estado <clave> [--fetch]           commits, archivos (+/-), integrada y remoto por repo (JSON)
+  git-diff   <clave> <repo> <archivo>    diff de un archivo de la tarea contra la base
   stopped    <clave> <motivo>
   rama       <clave> nueva|existente [--repo <carpeta>]
                                          crea/cambia a la rama <clave> desde la base de su repo.
@@ -884,6 +892,15 @@ usuario lo pidió).
   agrupados por paso (con filtro por agente), log, reportes de `test-results/`, estado del watcher y
   de la pausa.
 - **Gestionar / editar:** cada botón llama a `wi.sh` (mismas validaciones, log y avisos de Telegram).
+- **Panel Git** (detalle de la tarea): `GET /api/p/<id>/git/<clave>[?fetch=1]` (`git-estado`) y
+  `GET /api/p/<id>/diff/<clave>?repo=&archivo=` (`git-diff`, recortado a 200 KB) para ver; `POST
+  /api/p/<id>/git` con `op` = `merge` (`merge --humano`), `push-base`, `push-rama` o `pr` para actuar
+  (solo con la tarea en `done`/`reviewed`; el resultado se muestra por repo). El git que habla con el
+  remoto corre sin preguntas (`GIT_TERMINAL_PROMPT=0`): usa las credenciales que ya tenga tu git. Los
+  PR de Azure DevOps usan `AZURE_DEVOPS_PAT` (entorno → `azure-sync.secrets.env` del proyecto →
+  `~/.config/autopilot-kit/ado-mcp.secrets.env`), que va a curl por stdin, nunca en argv. Las URLs de
+  los PR quedan en la sección `## Pull requests` de la tarea. `git-guard.sh` bloquea a los agentes
+  `wi.sh push`, `pr` y `merge --humano`.
   Los adjuntos subidos van a `adjuntos/<clave>/humano/`; nunca se aceptan archivos `.env*`.
 - **Correr:** `health-check` y `run-tests` como trabajos en segundo plano (uno de cada
   tipo por proyecto a la vez), con su salida.
