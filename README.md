@@ -12,7 +12,7 @@ afuera). El autopilot las toma una por una:
 ```
 
 - Funciona con **Claude Code** y **OpenCode**.
-- Cada tarea tiene **su propia rama** (`bug-140123`, `task-login_social`). **Nunca hace push**: eso lo haces tú. El merge a la base lo haces tú también (o activás `AUTO_MERGE=true` y el kit lo hace por vos al aprobar, solo local y sin push).
+- Cada tarea tiene **su propia rama** (`bug-140123`, `task-login_social`). **Nunca hace push**: eso lo haces tú. El merge a la base lo haces tú también (desde la app web con un botón, a mano, o activás `AUTO_MERGE=true` y el kit lo hace por vos al aprobar, solo local y sin push).
 - **Nunca toca producción.** Solo usa los ambientes de QA que tú le das.
 - Todo queda escrito en un archivo `.md` por tarea: qué hizo el coder, qué probó el QA, capturas.
 
@@ -93,6 +93,19 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
   Si te convence, mergea la rama. Después márcala como revisada (botón en la app web, o mueve el
   archivo a `reviewed/`).
 
+  **Todo desde la app web — panel Git de la tarea:** por cada repo ves la rama contra su base, los
+  commits y los archivos cambiados (+/−); clic en un archivo para ver su diff. Con la tarea en `done`
+  o `reviewed` tienes los botones:
+  - **⤵ Mergear a la base**: merge local en cada repo (sin push); si sale bien la tarea pasa a
+    `reviewed` y la rama se conserva. Si hay conflicto, la base queda intacta y la tarea no cambia.
+  - **⬆ Push de la base**: sube a `origin` la base que mergeaste (nunca `--force`; si el remoto
+    avanzó, te lo dice).
+  - **⬆ Crear PR**: sube la rama y abre un Pull Request contra la base en cada repo con cambios.
+    GitHub con `gh`; **Azure DevOps** con el PAT `AZURE_DEVOPS_PAT` (en `azure-sync.secrets.env`
+    del proyecto o en `~/.config/autopilot-kit/ado-mcp.secrets.env`, permiso *Code: Read & Write*).
+    El link al PR queda en la tarea.
+  - **↻ Actualizar** hace `git fetch` y recalcula.
+
   **¿Quieres que cambie algo?** (esté en `done` o ya en `reviewed`): en la app web, abre la tarea y
   pulsa **✏️ Pedir cambios**. Escribe qué está mal, qué esperas y dónde (y, si quieres, adjunta
   capturas). La tarea vuelve al coder **en la misma rama**, con tu pedido como feedback y sumado al
@@ -138,7 +151,7 @@ Muestra todos tus proyectos del autopilot:
   criterio, el historial de cada intento (notas del coder, reportes de QA y E2E) y los **adjuntos
   agrupados por paso**: tarea original, subidos por ti, y coder / QA / E2E de cada intento, con
   botones para ver solo los de un agente.
-- **Gestionar:** pedir cambios al coder en una tarea revisada, devolver a QA o a E2E, detener, marcar revisada, cambiar prioridad, pausar el autopilot.
+- **Gestionar:** panel Git (diff, mergear a la base, push, crear PR en GitHub o Azure DevOps), pedir cambios al coder en una tarea revisada, devolver a QA o a E2E, detener, marcar revisada, cambiar prioridad, pausar el autopilot.
 - **Crear y editar** tareas y subirles capturas.
 - **Correr** el health check y las pruebas guardadas, viendo la salida.
 - El **log** de actividad y los reportes de `run-tests`.

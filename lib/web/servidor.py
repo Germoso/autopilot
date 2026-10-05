@@ -102,6 +102,10 @@ def limpiar(cfg, x):
     return f(x)
 
 
+GIT_OPS = {"merge": ["merge", "{clave}", "--humano"], "push-base": ["push", "{clave}", "base"],
+           "push-rama": ["push", "{clave}", "rama"], "pr": ["pr", "{clave}"]}
+
+
 def wi_cmd(env, *args):
     r = subprocess.run([sys.executable, os.path.join(KIT, "workitems.py"), env] + [str(a) for a in args],
                        capture_output=True, text=True, timeout=300)
@@ -218,6 +222,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                      "log": b.db.log_listar(clave, 100),
                      "borradores": {k: os.path.isdir(b.borrador_dir(clave, k)) for k in ("qa", "e2e")}}
             return self.enviar(200, limpiar(cfg, datos))
+        m = re.match(r"^git/((?:task|bug)-%s)$" % wi.ID, sub)
+        if m:
+            return self.enviar(200, limpiar(cfg, b.git_estado(m.group(1), fetch=(q.get("fetch") or [""])[0] == "1")))
+        m = re.match(r"^diff/((?:task|bug)-%s)$" % wi.ID, sub)
+        if m:
+            return self.enviar(200, limpiar(cfg, b.git_diff(m.group(1), (q.get("repo") or [""])[0],
+                                                            (q.get("archivo") or [""])[0])))
         if sub == "log":
             return self.enviar(200, limpiar(cfg, b.db.log_listar(None, int((q.get("n") or ["300"])[0]))))
         if sub == "pruebas":
@@ -274,7 +285,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.error(401, "clave incorrecta")
             if not self.autorizado():
                 return self.error(401, "falta la clave")
-            m = re.match(r"^/api/p/(\w+)/(accion|crear|subir|correr|pausa)$", ruta)
+            m = re.match(r"^/api/p/(\w+)/(accion|crear|subir|correr|pausa|git)$", ruta)
             if not m:
                 return self.error(404, "no existe")
             p = self.proyecto(m.group(1))
@@ -298,6 +309,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if ok:
             wi_cmd(p["env"], "log", "App web: %s" % accion, "humano", "nota", clave, clave)
         return self.enviar(200 if ok else 400, {"ok": ok, "salida": out.replace("ERROR: ", "")})
+
+    def post_git(self, p, d):
+        """Merge / push / PR pedidos por el humano desde el panel Git. Responde el resultado por repo."""
+        op, clave = d.get("op"), str(d.get("clave", "")).lower()
+        if op not in GIT_OPS or not wi.es_clave(clave):
+            return self.error(400, "operacion o tarea invalida")
+        r = subprocess.run([sys.executable, os.path.join(KIT, "workitems.py"), p["env"]] +
+                           [x.format(clave=clave) for x in GIT_OPS[op]], capture_output=True, text=True, timeout=600)
+        cfg = board(p["env"]).cfg
+        try:
+            res = json.loads(r.stdout)
+        except ValueError:
+            return self.enviar(400, limpiar(cfg, {"ok": False, "salida": (r.stdout + r.stderr).strip().replace("ERROR: ", "")}))
+        return self.enviar(200, limpiar(cfg, res))
 
     def post_crear(self, p, d):
         campos = [d.get(k, "") for k in ("tipo", "numero", "prioridad", "titulo", "descripcion", "criterio", "repo")]
