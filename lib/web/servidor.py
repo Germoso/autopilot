@@ -40,7 +40,7 @@ import cadena  # noqa: E402
 CONF = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "autopilot-kit")
 ESTATICOS = os.path.join(WEB, "estatico")
 TRABAJOS = {}          # id -> {proyecto, que, proceso, salida, inicio, fin, rc}
-ACCIONES = {"reqa": "reqa", "re-e2e": "re-e2e", "stop": "stopped", "reviewed": "reviewed", "new": "new", "cambios": "pedir-cambios",
+ACCIONES = {"reqa": "reqa", "re-e2e": "re-e2e", "stop": "stopped", "reviewed": "reviewed", "new": "new", "cambios": "pedir-cambios", "ignorar": "ignorar", "restaurar": "restaurar",
             "prioridad": "prioridad", "criterio": "criterio", "descripcion": "descripcion", "titulo": "titulo"}
 
 
@@ -347,6 +347,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not texto:
                 return self.error(400, "falta el texto")
             args.append(texto)
+        if accion == "ignorar" and str(d.get("texto", "")).strip():
+            args.append(str(d["texto"]).strip())
         if accion == "cambios":
             destino = d.get("destino") or "coder"
             if destino not in ("coder", "qa", "e2e"):
