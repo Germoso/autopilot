@@ -42,9 +42,9 @@ import unicodedata
 ESTADOS = ["new", "in-progress", "qa", "validando", "e2e", "probando-e2e", "bug-fix", "stopped", "done", "reviewed"]
 # Tareas que ya no estan activas. `reviewed` = done que el humano ya reviso (lo mueve el humano).
 CERRADAS = ("done", "stopped", "reviewed")
-# El coder ya termino (cola QA en adelante): se puede subir la rama de la tarea. Mergear, push de la base
-# y PR siguen solo en done/reviewed.
-CODER_TERMINO = ("qa", "validando", "e2e", "probando-e2e", "done", "reviewed")
+# El coder ya termino (cola QA en adelante, o detenida): se puede subir la rama de la tarea. Mergear, push
+# de la base y PR siguen solo en done/reviewed.
+CODER_TERMINO = ("qa", "validando", "e2e", "probando-e2e", "done", "reviewed", "stopped")
 PRIO ={"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 TIPOS = ("task", "bug")
 SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Repos modificados", "Notas del desarrollador",
