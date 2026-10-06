@@ -327,7 +327,7 @@ def parsear(texto):
     return meta, titulo, secciones
 
 
-AVISO_VISTA = ("<!-- Vista generada por el autopilot desde .workitems/autopilot.db. Para cambiar la tarea usa la "
+AVISO_VISTA = ("<!-- Vista generada por el autopilot desde .workitems/autopilot.db: solo el bug original. Notas, reportes e historial: wi.sh get o la app web. "
                "app web o wi.sh; si editas o mueves este archivo, el cambio se importa. -->")
 
 
@@ -402,14 +402,30 @@ def limpiar_imagenes_texto(texto, board_dir, clave, historial=True):
     return re.sub(r"\n{3,}", "\n\n", nuevo).strip(), n[0]
 
 
-def serializar(meta, titulo, secciones, vista=False):
+def serializar(meta, titulo, secciones):
+    """La tarea completa (todas las secciones): lo que devuelve `get <clave> todo`."""
     out = ["---"]
     for k in CAMPOS + [k for k in meta if k not in CAMPOS]:
         if k in meta:
             out.append("%s: %s" % (k, meta[k]))
-    out += ["---", "# %s" % titulo, ""] + ([AVISO_VISTA, ""] if vista else [])
+    out += ["---", "# %s" % titulo, ""]
     for h in SECCIONES + [h for h in secciones if h not in SECCIONES]:
         out += ["## %s" % h, "", secciones.get(h, "").strip(), ""]
+    return "\n".join(out).rstrip() + "\n"
+
+
+def vista_md(meta, titulo, secciones, adjuntos):
+    """El .md de lectura: solo el bug original (descripcion y criterio de Azure) y sus adjuntos originales.
+    Notas, reportes, feedback e historial viven en la base; no se escriben aqui."""
+    out = ["---"]
+    for k in CAMPOS + [k for k in meta if k not in CAMPOS]:
+        if k in meta:
+            out.append("%s: %s" % (k, meta[k]))
+    out += ["---", "# %s" % titulo, "", AVISO_VISTA, "",
+            "## Descripción", "", secciones.get("Descripción", "").strip(), "",
+            "## Criterio de aceptación", "", secciones.get("Criterio de aceptación", "").strip(), "",
+            "## Adjuntos originales", ""]
+    out += ["- %s" % a["ruta"] for a in adjuntos] or ["_(ninguno)_"]
     return "\n".join(out).rstrip() + "\n"
 
 
@@ -480,7 +496,9 @@ class Board:
         vieja = os.path.join(self.dir, fila["vista"]) if fila and fila["vista"] else None
         path = self._vista_path(clave, estado, titulo)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        texto = serializar(meta, titulo, secs, vista=True)
+        originales = [dict(a, ruta=os.path.join(self.dir, a["ruta"])) for a in self.db.adjuntos(clave)
+                      if (a.get("origen") or "original") == "original"]
+        texto = vista_md(meta, titulo, secs, originales)
         escribir_atomico(path, texto)
         if vieja and os.path.realpath(vieja) != os.path.realpath(path) and os.path.exists(vieja):
             os.remove(vieja)
@@ -520,7 +538,9 @@ class Board:
                     meta.setdefault("id", m.group(2))
                     meta.setdefault("tipo", m.group(1))
                     meta.setdefault("rama", clave)
-                self.db.guardar(clave, e, meta, titulo or clave, secs)
+                    self.db.guardar(clave, e, meta, titulo or clave, secs)
+                else:   # la vista solo trae el bug: el historial y los adjuntos de la base no se tocan
+                    self.db.actualizar_desde_vista(clave, e, meta, titulo or clave, secs)
                 self.db.set_vista(clave, os.path.relpath(path, self.dir), sha)
                 self.log(evento, "humano", "nota", clave, clave)
 
@@ -859,13 +879,13 @@ class Board:
 
     def get(self, clave, parte="resumen", intento=None, ultimo=False, como_json=False):
         clave = clave.strip().lower()
-        estado, path, meta, titulo, secs = self.leer(clave)
+        estado, _, meta, titulo, secs = self.leer(clave)
         self.adjuntos(clave)   # registra en la base los archivos nuevos de adjuntos/<clave>/
         adj = [dict(a, ruta=os.path.join(self.dir, a["ruta"])) for a in self.db.adjuntos(clave)]
         entradas = lambda tipos: [e for e in self.db.entradas(clave, intento=intento, ultimo=ultimo)
                                   if e["tipo"] in ((tipos,) if isinstance(tipos, str) else tipos)]
         if como_json:
-            return json.dumps({"clave": clave, "estado": estado, "titulo": titulo, "meta": meta, "archivo_md": path,
+            return json.dumps({"clave": clave, "estado": estado, "titulo": titulo, "meta": meta,
                                "descripcion": secs.get("Descripción", ""), "criterio": secs.get("Criterio de aceptación", ""),
                                "resultado": secs.get("Resultado", ""), "motivo": secs.get("Motivo de stopped", ""),
                                "adjuntos": adj, "entradas": self.db.entradas(clave, intento=intento, ultimo=ultimo)},
@@ -910,7 +930,7 @@ class Board:
         if parte in self.PARTES:
             return bloque(entradas(self.PARTES[parte]))
         if parte == "todo":
-            return open(path, encoding="utf-8").read()
+            return serializar(meta, titulo, secs)
         raise Error("parte desconocida '%s'. Usa: resumen, descripcion, criterio, adjuntos, notas, qa, e2e, "
                     "feedback, historial, resultado, motivo, todo" % parte)
 

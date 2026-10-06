@@ -14,7 +14,7 @@ afuera). El autopilot las toma una por una:
 - Funciona con **Claude Code** y **OpenCode**.
 - Cada tarea tiene **su propia rama** (`bug-140123`, `task-login_social`). **Nunca hace push**: eso lo haces tú. El merge a la base lo haces tú también (desde la app web con un botón, a mano, o activás `AUTO_MERGE=true` y el kit lo hace por vos al aprobar, solo local y sin push).
 - **Nunca toca producción.** Solo usa los ambientes de QA que tú le das.
-- Todo queda escrito en un archivo `.md` por tarea: qué hizo el coder, qué probó el QA, capturas.
+- Todo queda guardado en la base de la tarea: qué hizo el coder, qué probó el QA, capturas. El `.md` de cada tarea solo muestra el bug original y sus adjuntos originales.
 
 ---
 
@@ -85,7 +85,7 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
 
 ### Qué haces tú
 
-- **Tareas en `done`:** ábrela (en la app web o su `.md`) y mira:
+- **Tareas en `done`:** ábrela (en la app web o con `wi.sh <env> get <clave>`) y mira:
   - *Repos modificados*: qué ramas mergear y en qué repos;
   - *Notas del desarrollador*: qué hizo y por qué;
   - *Reporte de QA*: qué probó y **cómo probarlo tú a mano**.
@@ -128,7 +128,7 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
   por vos** (solo local: nunca hace push ni borra ramas) y deja la tarea en `reviewed` sola. Si el
   merge no entra limpio (conflicto, o cambios sin commitear en tu copia), la base queda intacta, la
   tarea pasa a `stopped` con el motivo y te avisa por Telegram.
-- **Tareas en `stopped`:** el motivo está al final del `.md` (*Motivo de stopped*), con lo que
+- **Tareas en `stopped`:** el motivo está en la app web o con `wi.sh <env> get <clave> motivo` (*Motivo de stopped*), con lo que
   recomienda hacer. Cuando lo resuelvas, devuélvela a la cola:
   ```sh
   ~/.local/share/autopilot-kit/wi.sh autopilot.env reqa bug-140123

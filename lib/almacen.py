@@ -169,6 +169,19 @@ class Almacen:
             self.con.execute("ROLLBACK")
             raise
 
+    def actualizar_desde_vista(self, clave, estado, meta, titulo, secs):
+        """Lo que el humano puede cambiar en el .md: carpeta (estado), titulo, prioridad, descripcion y criterio.
+        No toca entradas (historial) ni adjuntos, y tampoco el resto de los metadatos: el frontmatter del .md
+        puede estar desactualizado frente a la base (p. ej. el intento)."""
+        cols = {k: meta[k] for k in ("prioridad",) if k in meta}
+        cols.update(estado=estado, titulo=titulo)
+        if "Descripción" in secs:
+            cols["descripcion"] = secs["Descripción"]
+        if "Criterio de aceptación" in secs:
+            cols["criterio"] = secs["Criterio de aceptación"]
+        sets = ", ".join('"%s"=:%s' % (k, k) for k in cols)
+        self.con.execute("UPDATE tareas SET %s WHERE clave=:clave" % sets, dict(cols, clave=clave))
+
     def set_vista(self, clave, ruta, sha):
         self.con.execute("UPDATE tareas SET vista=?, vista_sha=? WHERE clave=?", (ruta, sha, clave))
 

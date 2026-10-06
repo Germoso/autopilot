@@ -43,7 +43,7 @@ Si no existe, este proyecto **no participa** del sistema. No preguntes, no asuma
 ```
 .workitems/                     # WORKITEMS_DIR; NO esta en git (va en .gitignore)
 ├── autopilot.db                # LA FUENTE DE VERDAD: tareas, historial por intento, adjuntos, log (SQLite)
-├── new/          bug-140123-login-falla.md     # vistas .md de lectura, una por tarea, en la carpeta de su estado
+├── new/          bug-140123-login-falla.md     # vista .md de lectura (solo el bug original y sus adjuntos originales), en la carpeta de su estado
 ├── in-progress/ qa/ validando/ e2e/ probando-e2e/ bug-fix/ stopped/ done/ reviewed/
 ├── adjuntos/<clave>/           # imagenes, videos y capturas (archivos; la base guarda su ruta)
 ├── planes/<slug>.md            # planes de /autopilot-plan (brainstorming y desglose)
@@ -358,8 +358,8 @@ Registra cada evento con `$W "$E" log`.
 
 ### Regla de los encargos: la tarea por `wi.sh get`, nunca un resumen tuyo
 
-La tarea vive en la base del tablero (`.workitems/autopilot.db`); el `.md` es solo una vista y crece con
-cada intento. Para **ahorrar tokens**, en todo encargo:
+La tarea vive en la base del tablero (`.workitems/autopilot.db`); el `.md` es solo una vista del bug original
+(descripción, criterio y adjuntos originales) y no crece con cada intento. Para **ahorrar tokens**, en todo encargo:
 - da la **clave** y el comando para leerla: `$W "$E" get <clave>` (descripción y criterio **completos**,
   adjuntos con ruta, último feedback e índice del historial) y qué más le conviene pedir
   (`get <clave> notas --ultimo`, `qa --ultimo`, `e2e --ultimo`, `feedback`…);
