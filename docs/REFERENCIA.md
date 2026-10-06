@@ -56,7 +56,7 @@ mi-proyecto/
 ```
 
 - **La fuente de verdad es `autopilot.db`** (SQLite, modo WAL: varios agentes escriben a la vez sin
-  pisarse). Cada `.md` de las carpetas es una **vista generada** que se reescribe con cada cambio.
+  pisarse). Cada `.md` de las carpetas es una **vista generada** que se reescribe con cada cambio. Solo muestra el bug original (descripción, criterio y adjuntos originales); notas, reportes, feedback e historial se consultan con `get` o en la app web.
 - **El estado de una tarea es la carpeta donde está su `.md`.** Podés mover tareas a mano
   (explorador, VS Code, Obsidian) o crear un `.md` en `new/`: el próximo comando lo pasa a la base y
   el watcher lo ve en segundos. Para editar textos usa la app web o `wi.sh` (`descripcion`,
@@ -521,7 +521,7 @@ copia de trabajo). "Cumple por lectura de código" no alcanza.
 
 ### Las imágenes se ven en la tarea
 
-Todas las imágenes quedan **enlazadas en el `.md`** de la tarea, para verlas junto al texto en VS
+Las imágenes **originales** quedan enlazadas en el `.md` de la tarea (las del coder y del QA se ven en la app web y con `get`), para verlas junto al texto en VS
 Code, Obsidian o GitHub:
 
 - las del work item (capturas y fotogramas), en `## Adjuntos` y en su lugar dentro del texto;
