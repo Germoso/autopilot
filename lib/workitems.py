@@ -802,6 +802,29 @@ class Board:
         return [principal] + [self.repo_de(x) for x in extra if x != principal["nombre"]]
 
     # -- escritura
+    def mover(self, clave, estado_nuevo, motivo=""):
+        """Movimiento manual del humano a cualquier estado. Los puestos siguen con su capacidad (modificar lo
+        valida) y `ignored` tiene su propio comando (`ignorar`). Detenerla exige motivo."""
+        clave = clave.strip().lower()
+        estado_nuevo = (estado_nuevo or "").strip()
+        if estado_nuevo == "ignored":
+            raise Error("para ignorar una tarea usa `ignorar` (%s)" % clave)
+        if estado_nuevo not in ESTADOS:
+            raise Error("estado invalido: %s (usa uno de: %s)" % (estado_nuevo, ", ".join(ESTADOS)))
+        actual = self.buscar(clave)[0]
+        if actual == estado_nuevo:
+            raise Error("%s ya esta en %s" % (clave, estado_nuevo))
+        secs = None
+        if estado_nuevo == "stopped":
+            if not motivo.strip():
+                raise Error("para detener %s hace falta el motivo" % clave)
+            secs = {"Motivo de stopped": motivo.strip()}
+        elif estado_nuevo == "new":
+            secs = {"Motivo de stopped": ""}
+        self.modificar(clave, estado_nuevo, secs_set=secs)
+        self.log("Movida a mano: %s -> %s" % (actual, estado_nuevo), "humano", "nota", clave, clave, "-",
+                 "%s -> %s" % (actual, estado_nuevo))
+
     def modificar(self, clave, estado_nuevo=None, meta_set=None, secs_set=None, secs_append=None):
         """Mueve (si corresponde) y reescribe una tarea. Primero rename, luego replace."""
         with self.lock():
@@ -2360,6 +2383,7 @@ USO = """uso: wi.sh <env> <comando> [args]
   init                                   crea las carpetas del board y log.md
   in-progress|qa|validando|bugfix|done|new <clave>
   reviewed   <clave>                     done -> reviewed: el humano ya reviso la tarea
+  mover      <clave> <estado> [motivo]   mueve a mano a cualquier estado (stopped pide motivo; no ignored)
   merge      <clave>                     con AUTO_MERGE=true: mergea su rama a la base (solo local,
                                          nunca push ni borra ramas) y la deja reviewed; con conflicto
                                          queda stopped y la base intacta
@@ -2524,6 +2548,8 @@ def main(argv):
     b.verificar()
     if cmd in MOVER:
         need(1); b.modificar(a[0], MOVER[cmd])
+    elif cmd == "mover":
+        need(2); b.mover(a[0], a[1], a[2] if len(a) > 2 else "")
     elif cmd == "reviewed":
         need(1)
         if b.buscar(a[0])[0] not in ("done", "reviewed"):
