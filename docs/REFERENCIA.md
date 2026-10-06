@@ -311,6 +311,7 @@ Lo crea `/autopilot-init`; se edita a mano. En un workspace va en la carpeta pad
 | `TELEGRAM_ALERTS_ONLY` | `false` | Solo los avisos que necesitan intervención (🚨) |
 | `CADENA_MIN` | `20` | Minutos de cadena detenida esperando al humano antes de avisar por Telegram |
 | `CADENA_REAVISO_MIN` | `240` | Cada cuántos minutos re-avisar mientras la cadena siga detenida |
+| `QA` | `true` | Con `false` el kit no lanza QA: las tareas que terminan el coder se quedan en Cola QA; los coders siguen |
 | `AUTO_MERGE` | `false` | Con `true`: al aprobar (done) el kit mergea la rama a la base (solo local, sin push) y deja `reviewed`; con conflicto, `stopped` y la base intacta |
 | `E2E` | `false` | Etapa de pruebas E2E después del QA |
 | `E2E_COMMAND_TIMEOUT` | `2400` | Segundos máximos por comando en E2E |

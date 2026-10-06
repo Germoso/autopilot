@@ -94,6 +94,8 @@ def cargar_config(env_path=None):
       PARALLEL=true|false  (default false: 1 coder + 1 QA). Con true: MAX_CODERS y MAX_QA (default 2 y 2).
       WATCHDOG=true|false (default true), WATCHDOG_INTERVAL=60 s, HUNG_MINUTES=10, STALE_MINUTES=45,
       COMMAND_TIMEOUT=900 s (lo aplica aenv.sh).
+    QA=true|false (default true). Con false el kit no lanza QA: las tareas que terminan el coder quedan en
+      Cola QA hasta que lo vuelvas a activar. Los coders siguen trabajando.
     E2E (etapa despues del QA, agente e2e-tester):
       E2E=true|false (default false), MAX_E2E (default 1; con PARALLEL=false siempre 1),
       E2E_COMMAND_TIMEOUT=2400 s (aenv.sh --e2e y e2e.sh),
@@ -147,6 +149,7 @@ def cargar_config(env_path=None):
             e2e_api[k[8:]] = ({"archivo": partes[0].strip(), "regex": partes[1], "reemplazo": "|".join(partes[2:])}
                               if len(partes) >= 3 and partes[0].strip() else {"invalido": v})
     valor_e2e = vals.get("E2E", "false").strip().lower()
+    valor_qa = vals.get("QA", "true").strip().lower()
     valor_tg = vals.get("TELEGRAM", "false").strip().lower()
     valor_am = vals.get("AUTO_MERGE", "false").strip().lower()
     return {"workspace": bool(ws), "raiz": raiz, "proyecto": base, "dir": wdir, "repos": repos,
@@ -155,6 +158,8 @@ def cargar_config(env_path=None):
             "vigia": {"activo": vals.get("WATCHDOG", "true").strip().lower() != "false",
                       "intervalo": entero("WATCHDOG_INTERVAL", 60), "hung_min": entero("HUNG_MINUTES", 10),
                       "stale_min": entero("STALE_MINUTES", 45), "timeout": entero("COMMAND_TIMEOUT", 900)},
+            "qa": {"activo": valor_qa != "false",
+                   "invalido": None if valor_qa in ("true", "false") else vals.get("QA")},
             "e2e": {"activo": valor_e2e == "true",
                     "invalido": None if valor_e2e in ("true", "false") else vals.get("E2E"),
                     "timeout": entero("E2E_COMMAND_TIMEOUT", 2400),
@@ -565,6 +570,13 @@ class Board:
     def avisos(self):
         """Problemas de configuracion que dejarian tareas en stopped."""
         out = []
+        if self.cfg["qa"]["invalido"] is not None:
+            out.append("QA=%s no es valido: usa true o false. Se usa true (QA activo)" % self.cfg["qa"]["invalido"])
+        if not self.cfg["qa"]["activo"] and os.path.isdir(self.dir):
+            esperando = [c for e, c, _ in self.archivos() if e == "qa"]
+            if esperando:
+                out.append("hay tareas en Cola QA (%s) pero QA=false: nadie las certifica hasta que pongas QA=true"
+                           % ", ".join(esperando))
         if self.cfg.get("parallel_invalido") is not None:
             out.append("PARALLEL=%s no es valido: usa true o false. Se usa false (1 coder + 1 QA)"
                        % self.cfg["parallel_invalido"])
@@ -1163,7 +1175,7 @@ class Board:
             acciones.append({"puesto": "coder", "tarea": t,
                              "accion": "desarrollar-bugfix" if t["estado"] == "bug-fix" else "desarrollar"})
             huecos -= 1
-        for t in ([] if pausa else qa[:max(0, cap["qa"] - len(ocupados["qa"]))]):
+        for t in ([] if pausa or not self.cfg["qa"]["activo"] else qa[:max(0, cap["qa"] - len(ocupados["qa"]))]):
             acciones.append({"puesto": "qa", "accion": "certificar", "tarea": t})
         if self.cfg["e2e"]["activo"] and not pausa:  # con E2E=false la cola e2e no se atiende (y avisos() lo dice)
             for t in e2e[:max(0, cap["e2e"] - len(ocupados["e2e"]))]:
