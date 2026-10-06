@@ -122,3 +122,44 @@ def test_bugfix_no_vuelve_a_traer(p):
     antes = sha(p["repo"], "task-uno")
     info = p["b"].preparar_rama("task-uno", "existente")
     assert "base_al_dia" not in info and sha(p["repo"], "task-uno") == antes
+
+
+# ----------------------------------------------------------------- boton "Pull de las bases" (app web)
+def test_pull_bases_adelanta_la_base(p):
+    commit(p["equipo"], "nuevo.txt", "x\n", "cambio del equipo")
+    git(p["equipo"], "push", "-q", "origin", "main")
+    res = p["b"].pull_bases("task-uno")
+    assert res["ok"] and res["repos"][0]["accion"] == "actualizada"
+    assert sha(p["repo"], "main") == sha(p["equipo"], "main")
+    assert (p["repo"] / "nuevo.txt").exists()                               # la copia del humano se actualizo
+    assert p["b"].pull_bases("task-uno")["repos"][0]["accion"] == "al-dia"
+    assert p["b"].leer("task-uno")[0] == "in-progress"                     # no toca el estado de la tarea
+
+
+def test_pull_bases_respeta_cambios_sin_commitear(p):
+    commit(p["equipo"], "nuevo.txt", "x\n", "cambio del equipo")
+    git(p["equipo"], "push", "-q", "origin", "main")
+    (p["repo"] / "base.txt").write_text("editando\n")
+    antes = sha(p["repo"], "main")
+    res = p["b"].pull_bases("task-uno")
+    assert not res["ok"] and res["repos"][0]["accion"] == "no-adelantada"
+    assert "cambios sin commitear" in res["repos"][0]["detalle"]
+    assert sha(p["repo"], "main") == antes and (p["repo"] / "base.txt").read_text() == "editando\n"
+
+
+def test_pull_bases_divergida_no_mergea(p):
+    commit(p["repo"], "local.txt", "l\n", "local")
+    commit(p["equipo"], "remoto.txt", "r\n", "remoto")
+    git(p["equipo"], "push", "-q", "origin", "main")
+    antes = sha(p["repo"], "main")
+    res = p["b"].pull_bases("task-uno")
+    assert not res["ok"] and res["repos"][0]["accion"] == "divergida"
+    assert sha(p["repo"], "main") == antes
+
+
+def test_git_guard_bloquea_pull_bases_a_los_agentes():
+    import json
+    guard = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib", "git-guard.sh")
+    r = subprocess.run(["bash", guard, "coder"], input=json.dumps({"tool_input": {"command": '$W "$E" pull-bases task-1'}}),
+                       capture_output=True, text=True)
+    assert r.returncode == 2

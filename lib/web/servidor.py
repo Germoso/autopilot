@@ -40,7 +40,7 @@ import cadena  # noqa: E402
 CONF = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "autopilot-kit")
 ESTATICOS = os.path.join(WEB, "estatico")
 TRABAJOS = {}          # id -> {proyecto, que, proceso, salida, inicio, fin, rc}
-ACCIONES = {"reqa": "reqa", "re-e2e": "re-e2e", "stop": "stopped", "reviewed": "reviewed", "new": "new", "cambios": "pedir-cambios",
+ACCIONES = {"reqa": "reqa", "re-e2e": "re-e2e", "stop": "stopped", "reviewed": "reviewed", "new": "new", "cambios": "pedir-cambios", "ignorar": "ignorar", "restaurar": "restaurar",
             "prioridad": "prioridad", "criterio": "criterio", "descripcion": "descripcion", "titulo": "titulo"}
 
 
@@ -103,7 +103,7 @@ def limpiar(cfg, x):
 
 
 GIT_OPS = {"merge": ["merge", "{clave}", "--humano"], "push-base": ["push", "{clave}", "base"],
-           "push-rama": ["push", "{clave}", "rama"], "pr": ["pr", "{clave}"]}
+           "push-rama": ["push", "{clave}", "rama"], "pr": ["pr", "{clave}"], "pull-base": ["pull-bases", "{clave}"]}
 
 
 def wi_cmd(env, *args):
@@ -347,6 +347,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not texto:
                 return self.error(400, "falta el texto")
             args.append(texto)
+        if accion == "ignorar" and str(d.get("texto", "")).strip():
+            args.append(str(d["texto"]).strip())
+        if accion == "cambios":
+            destino = d.get("destino") or "coder"
+            if destino not in ("coder", "qa", "e2e"):
+                return self.error(400, "destino invalido")
+            args += ["--a", destino]
         ok, out = wi_cmd(p["env"], *args)
         if ok:
             wi_cmd(p["env"], "log", "App web: %s" % accion, "humano", "nota", clave, clave)

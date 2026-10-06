@@ -43,7 +43,7 @@ Si no existe, este proyecto **no participa** del sistema. No preguntes, no asuma
 ```
 .workitems/                     # WORKITEMS_DIR; NO esta en git (va en .gitignore)
 ├── autopilot.db                # LA FUENTE DE VERDAD: tareas, historial por intento, adjuntos, log (SQLite)
-├── new/          bug-140123-login-falla.md     # vistas .md de lectura, una por tarea, en la carpeta de su estado
+├── new/          bug-140123-login-falla.md     # vista .md de lectura (solo el bug original y sus adjuntos originales), en la carpeta de su estado
 ├── in-progress/ qa/ validando/ e2e/ probando-e2e/ bug-fix/ stopped/ done/ reviewed/
 ├── adjuntos/<clave>/           # imagenes, videos y capturas (archivos; la base guarda su ruta)
 ├── planes/<slug>.md            # planes de /autopilot-plan (brainstorming y desglose)
@@ -129,6 +129,16 @@ servicio; al volver, `--inicio` las respeta (no las marca huérfanas) y el watch
   `$W "$E" stopped <clave> "POSIBLE PRODUCCIÓN: <lo que vio>. RECOMENDACIÓN: <lo que propone>"`.
   No lo reintentes: lo resuelve el humano (creando o corrigiendo `.env.autopilot`).
 - Tú nunca ejecutas nada contra ambientes.
+- **Motivo de `stopped`: en Markdown y con saltos de línea**, nunca todo en una línea (el humano lo lee en
+  la app web y en Telegram). Una línea de título con la causa, cada punto en su línea `- ...` y la
+  recomendación en su propio párrafo. Pasa los saltos dentro de las comillas:
+  ```
+  $W "$E" stopped <clave> "NO CERTIFICABLE (E2E): falta lo siguiente
+  - <punto 1>
+  - <punto 2>
+
+  RECOMENDACIÓN: <qué hacer>"
+  ```
 
 ## REGLAS DE GIT (sin excepciones)
 
@@ -187,7 +197,7 @@ $W "$E" new         <clave>
 $W "$E" reviewed    <clave>                   # SOLO el humano: done -> reviewed
 $W "$E" merge       <clave>                   # con AUTO_MERGE=true: integra su rama en la base (solo local)
                                                # y la deja reviewed; con conflicto: stopped, base intacta
-$W "$E" stopped     <clave> "<motivo>"
+$W "$E" stopped     <clave> "<motivo>"        # Markdown con saltos de linea (ver abajo)
 $W "$E" resultado   <clave> "<rama | commit | resumen>"
 $W "$E" add-task    <task|bug> <id> <prioridad> "<titulo>" "<descripcion>" "<criterio>" [repo] [--depende <claves>] [--origen <texto>]   # repo obligatorio en workspace; @archivo en descripcion/criterio
 $W "$E" log <evento> <origen> <tipo> <tarea> <rama> <commit> <detalle>
@@ -358,8 +368,8 @@ Registra cada evento con `$W "$E" log`.
 
 ### Regla de los encargos: la tarea por `wi.sh get`, nunca un resumen tuyo
 
-La tarea vive en la base del tablero (`.workitems/autopilot.db`); el `.md` es solo una vista y crece con
-cada intento. Para **ahorrar tokens**, en todo encargo:
+La tarea vive en la base del tablero (`.workitems/autopilot.db`); el `.md` es solo una vista del bug original
+(descripción, criterio y adjuntos originales) y no crece con cada intento. Para **ahorrar tokens**, en todo encargo:
 - da la **clave** y el comando para leerla: `$W "$E" get <clave>` (descripción y criterio **completos**,
   adjuntos con ruta, último feedback e índice del historial) y qué más le conviene pedir
   (`get <clave> notas --ultimo`, `qa --ultimo`, `e2e --ultimo`, `feedback`…);
@@ -539,6 +549,9 @@ además prohíbe push/merge al agente principal.
 - Marcar `stopped` sin escribir el motivo.
 - Editar o mover los `.md` del board sin `wi.sh`.
 - Mover tareas a `reviewed`: eso lo hace solo el humano, después de revisar las de `done`.
-- Usar `pedir-cambios`: es el botón del humano en la app web para devolver al coder una tarea revisada.
-- Usar `merge --humano`, `push` o `pr`: son los botones del panel Git de la app web, solo del humano.
+- Usar `pedir-cambios`: es el botón "Feedback y devolver" del humano en la app web para devolver una
+  tarea revisada al coder, a QA o a E2E. Cuando una tarea llega así, el `Último feedback` empieza con
+  `FEEDBACK DEL HUMANO` (o `CAMBIOS PEDIDOS`, el nombre viejo): inclúyelo tal cual en el encargo del
+  puesto que la toma.
+- Usar `merge --humano`, `push`, `pull-bases` o `pr`: son los botones del panel Git de la app web, solo del humano.
 - Inventar que hiciste algo que no hiciste.

@@ -128,3 +128,8 @@ details summary { cursor: pointer; font-weight: 550; }
 .video-mini video { display: block; }
 .video-mini .play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;
   font-size: 34px; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+
+/* pedir cambios: a quien */
+.destinos { border: 1px solid var(--borde); border-radius: 8px; padding: 8px 12px; display: flex; gap: 18px; flex-wrap: wrap; }
+.destinos legend { padding: 0 4px; color: var(--suave); font-size: 14px; }
+.destinos label { display: flex; gap: 6px; align-items: center; }

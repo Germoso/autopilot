@@ -200,6 +200,7 @@ const tick = () => { const i = intervalos.find((x) => x.ms === 15000); ok(!!i, "
   ok(g.includes("Mergear a la base") && g.includes("Crear PR"), "git: faltan los botones de merge/PR en done");
   ok(!g.includes("Push de la base"), "git: muestra push sin nada que subir");
   ok(g.includes("Push de las ramas"), "git: falta el push de las ramas modificadas sin publicar");
+  ok(g.includes("Pull de las bases"), "git: falta el pull de las bases");
   ok(fetches.filter((u) => u.includes("/p1/git/")).length === 1, "git: no se pidió el estado git una sola vez");
   await tick();
   await esperar(200);
@@ -211,6 +212,8 @@ const tick = () => { const i = intervalos.find((x) => x.ms === 15000); ok(!!i, "
   await cargar("#/tarea/task-uno", { cfg: cq });
   await esperar(100);
   ok(!el0("#panel-git").includes("Mergear a la base"), "git: deja mergear una tarea que no está en done/reviewed");
+  ok(el0("#panel-git").includes("Pull de las bases"), "git: el pull de las bases debe estar en cualquier estado");
+  ok(el0("#panel-git").includes("se habilitan cuando"), "git: se perdió el aviso de estados");
   ok(el0("#panel-git").includes("2 sin subir"), "git: no avisa la base sin subir");
   const cp = nuevoCfg();
   cp.git.repos[0].rama_vs_origin = { adelante: 0, atras: 0 };
@@ -218,12 +221,24 @@ const tick = () => { const i = intervalos.find((x) => x.ms === 15000); ok(!!i, "
   await esperar(100);
   ok(!el0("#panel-git").includes("Push de las ramas"), "git: ofrece push de una rama ya publicada")
 
+  // 10) tarea: un motivo de stopped en una sola línea se arma legible (etiquetas en negrita y lista)
+  const cm = nuevoCfg();
+  cm.tarea.estado = "stopped";
+  cm.tarea.motivo = "NO CERTIFICABLE (E2E): falta la cuenta X; y confirmar Y. RECOMENDACIÓN: agregar la cuenta; o probar a mano.";
+  await cargar("#/tarea/task-uno", { cfg: cm });
+  const vm = el0("#vista");
+  ok(vm.includes("**NO CERTIFICABLE (E2E):**\n- falta la cuenta X\n- confirmar Y."), "motivo: no se separan los puntos");
+  ok(vm.includes("\n\n**RECOMENDACIÓN:**\n- agregar la cuenta\n- o probar a mano."), "motivo: la recomendación no va en su párrafo");
+  cm.tarea.motivo = "Línea 1\nLínea 2; sin tocar";
+  await cargar("#/tarea/task-uno", { cfg: cm });
+  ok(el0("#vista").includes("Línea 1\nLínea 2; sin tocar"), "motivo: se reformateó uno que ya traía saltos");
+
   if (fallos.length) {
     console.error("FALLÓ " + fallos.length + ":");
     for (const f of fallos) console.error(" - " + f);
     process.exit(1);
   }
-  console.log("OK: dashboard (accesibilidad, bug herramientas, refresco) — 9/9");
+  console.log("OK: dashboard (accesibilidad, bug herramientas, refresco) — 10/10");
 })().catch((e) => { console.error("ERROR:", e.stack || e.message); process.exit(1); });
 
 function el0(sel) { const e = elementos.get(sel); return e ? e.innerHTML : ""; }

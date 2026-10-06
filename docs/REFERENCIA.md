@@ -56,7 +56,7 @@ mi-proyecto/
 ```
 
 - **La fuente de verdad es `autopilot.db`** (SQLite, modo WAL: varios agentes escriben a la vez sin
-  pisarse). Cada `.md` de las carpetas es una **vista generada** que se reescribe con cada cambio.
+  pisarse). Cada `.md` de las carpetas es una **vista generada** que se reescribe con cada cambio. Solo muestra el bug original (descripción, criterio y adjuntos originales); notas, reportes, feedback e historial se consultan con `get` o en la app web.
 - **El estado de una tarea es la carpeta donde está su `.md`.** Podés mover tareas a mano
   (explorador, VS Code, Obsidian) o crear un `.md` en `new/`: el próximo comando lo pasa a la base y
   el watcher lo ve en segundos. Para editar textos usa la app web o `wi.sh` (`descripcion`,
@@ -65,11 +65,19 @@ mi-proyecto/
   o con `wi.sh <env> reviewed <clave>`). Así `done` queda solo con lo pendiente de revisar. Con
   `AUTO_MERGE=true` el autopilot la mueve sola (además de mergearla) al aprobar el QA/E2E; sin la
   variable, el autopilot nunca mueve tareas a `reviewed` ni las vuelve a tocar.
-- **Pedir cambios** (`done` o `reviewed` → `bug-fix`): botón **✏️ Pedir cambios** de la app web (por
-  dentro, `wi.sh <env> pedir-cambios <clave> "<texto>"`). El texto queda como `### CAMBIOS PEDIDOS en la
-  revisión humana` en `## Feedback de QA` (el coder lo ve como *Último feedback* en `get`) y se suma al
-  `## Criterio de aceptación` para que QA y E2E lo certifiquen. Intento a 0; misma rama; aviso ✏️ por
-  Telegram.
+- **Feedback y devolver** (`done`, `reviewed` o `stopped` → coder, QA o E2E): botón **💬 Feedback y
+  devolver** de la app web, que pregunta a quién se la devuelves (por dentro, `wi.sh <env> pedir-cambios <clave> "<texto>" --a
+  coder|qa|e2e`).
+  | Destino | Pasa a | Feedback | Intento |
+  |---|---|---|---|
+  | coder (defecto) | `bug-fix` (misma rama) | `## Feedback de QA` | a 0 |
+  | qa | `qa` (vuelve a certificar) | `## Feedback de QA` | a 0 |
+  | e2e (`E2E=true`) | `e2e` (vuelve a probar) | `## Feedback de E2E` | no cambia |
+
+  El texto queda como `### FEEDBACK DEL HUMANO para el coder|QA|E2E` (las tareas viejas pueden traer
+  `CAMBIOS PEDIDOS en la revisión humana`, que se sigue reconociendo): el agente lo ve como
+  *Último feedback* en `get` y sus instrucciones le dicen que lo trate como un criterio prioritario.
+  También se suma al `## Criterio de aceptación`. Aviso 💬 por Telegram.
 - **El nombre del archivo es `<tipo>-<id>-<slug>.md`.** `<tipo>-<id>` es la clave de
   la tarea y **el nombre de su rama**. El `<id>` lo da quien crea la tarea: número (`140123`) o
   texto (`login_social`), en minúsculas, dígitos y `_` (sin `-`, que separa la clave del slug).
@@ -513,7 +521,7 @@ copia de trabajo). "Cumple por lectura de código" no alcanza.
 
 ### Las imágenes se ven en la tarea
 
-Todas las imágenes quedan **enlazadas en el `.md`** de la tarea, para verlas junto al texto en VS
+Las imágenes **originales** quedan enlazadas en el `.md` de la tarea (las del coder y del QA se ven en la app web y con `get`), para verlas junto al texto en VS
 Code, Obsidian o GitHub:
 
 - las del work item (capturas y fotogramas), en `## Adjuntos` y en su lugar dentro del texto;
@@ -794,6 +802,8 @@ uso: wi.sh <env> <comando> [args]
                                          la tarea no cambia de estado
   push       <clave> base|rama           SOLO el humano: sube a origin la base o la rama de cada repo de la
                                          tarea (done/reviewed), nunca --force
+  pull-bases <clave>                     SOLO el humano: trae lo ultimo de origin a la rama base de cada
+                                         repo de la tarea (fast-forward; nunca merge, rebase ni push)
   pr         <clave>                     SOLO el humano: sube la rama y abre un PR contra la base en cada repo
                                          con commits (GitHub con gh, Azure DevOps con AZURE_DEVOPS_PAT)
   git-estado <clave> [--fetch]           commits, archivos (+/-), integrada y remoto por repo (JSON)
@@ -826,8 +836,10 @@ uso: wi.sh <env> <comando> [args]
   rechazar   <clave> <feedback> [--bloqueo]   validando -> bug-fix. --bloqueo: algo preexistente que se
                                          arregla en codigo impide compilar/probar; no cuenta como intento
   reqa       <clave>                     -> qa, Intento a 0 (conserva el historial)
-  pedir-cambios <clave> <texto>          SOLO el humano: done/reviewed -> bug-fix con lo que quiere cambiar
-                                         (Feedback de QA y Criterio de aceptacion), Intento a 0
+  pedir-cambios <clave> <texto> [--a coder|qa|e2e]
+                                         SOLO el humano: done/reviewed/stopped -> bug-fix (coder, defecto),
+                                         qa o e2e con su pedido (en el feedback de ese puesto y en el
+                                         Criterio de aceptacion); Intento a 0 salvo e2e
   probar-e2e <clave>                     e2e -> probando-e2e (ocupa el puesto e2e)
   e2e-worktree <clave>                   copias para el E2E: repos de la tarea (su rama) + los que
                                          hacen falta para el flujo real (E2E_CLIENTS, en su base)
@@ -905,12 +917,14 @@ usuario lo pidió).
 - **Panel Git** (detalle de la tarea): `GET /api/p/<id>/git/<clave>[?fetch=1]` (`git-estado`) y
   `GET /api/p/<id>/diff/<clave>?repo=&archivo=` (`git-diff`, recortado a 200 KB) para ver; `POST
   /api/p/<id>/git` con `op` = `merge` (`merge --humano`), `push-base`, `push-rama` o `pr` para actuar
-  (solo con la tarea en `done`/`reviewed`; el resultado se muestra por repo). El git que habla con el
+  (solo con la tarea en `done`/`reviewed`; el resultado se muestra por repo), y `pull-base`
+  (`pull-bases`, en cualquier estado): fast-forward de la base de cada repo desde `origin`, con la
+  misma lógica que se usa antes de crear una rama. El git que habla con el
   remoto corre sin preguntas (`GIT_TERMINAL_PROMPT=0`): usa las credenciales que ya tenga tu git. Los
   PR de Azure DevOps usan `AZURE_DEVOPS_PAT` (entorno → `azure-sync.secrets.env` del proyecto →
   `~/.config/autopilot-kit/ado-mcp.secrets.env`), que va a curl por stdin, nunca en argv. Las URLs de
   los PR quedan en la sección `## Pull requests` de la tarea. `git-guard.sh` bloquea a los agentes
-  `wi.sh push`, `pr` y `merge --humano`.
+  `wi.sh push`, `pr`, `pull-bases` y `merge --humano`.
   Los adjuntos subidos van a `adjuntos/<clave>/humano/`; nunca se aceptan archivos `.env*`.
 - **Correr:** `health-check` y `run-tests` como trabajos en segundo plano (uno de cada
   tipo por proyecto a la vez), con su salida.

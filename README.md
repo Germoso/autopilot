@@ -14,7 +14,7 @@ afuera). El autopilot las toma una por una:
 - Funciona con **Claude Code** y **OpenCode**.
 - Cada tarea tiene **su propia rama** (`bug-140123`, `task-login_social`). **Nunca hace push**: eso lo haces tú. El merge a la base lo haces tú también (desde la app web con un botón, a mano, o activás `AUTO_MERGE=true` y el kit lo hace por vos al aprobar, solo local y sin push).
 - **Nunca toca producción.** Solo usa los ambientes de QA que tú le das.
-- Todo queda escrito en un archivo `.md` por tarea: qué hizo el coder, qué probó el QA, capturas.
+- Todo queda guardado en la base de la tarea: qué hizo el coder, qué probó el QA, capturas. El `.md` de cada tarea solo muestra el bug original y sus adjuntos originales.
 
 ---
 
@@ -85,7 +85,7 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
 
 ### Qué haces tú
 
-- **Tareas en `done`:** ábrela (en la app web o su `.md`) y mira:
+- **Tareas en `done`:** ábrela (en la app web o con `wi.sh <env> get <clave>`) y mira:
   - *Repos modificados*: qué ramas mergear y en qué repos;
   - *Notas del desarrollador*: qué hizo y por qué;
   - *Reporte de QA*: qué probó y **cómo probarlo tú a mano**.
@@ -104,20 +104,31 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
     GitHub con `gh`; **Azure DevOps** con el PAT `AZURE_DEVOPS_PAT` (en `azure-sync.secrets.env`
     del proyecto o en `~/.config/autopilot-kit/ado-mcp.secrets.env`, permiso *Code: Read & Write*).
     El link al PR queda en la tarea.
+  - **⬇ Pull de las bases** (en cualquier estado): trae lo último de `origin` a la rama base de cada
+    repo, como un `git pull` pero solo avanzando: si tu base tiene commits sin subir, divergió o tu
+    copia tiene cambios sin commitear, no la toca y te dice por qué. Nunca hace merge ni push.
   - **↻ Actualizar** hace `git fetch` y recalcula.
 
-  **¿Quieres que cambie algo?** (esté en `done` o ya en `reviewed`): en la app web, abre la tarea y
-  pulsa **✏️ Pedir cambios**. Escribe qué está mal, qué esperas y dónde (y, si quieres, adjunta
-  capturas). La tarea vuelve al coder **en la misma rama**, con tu pedido como feedback y sumado al
-  criterio de aceptación, y pasa otra vez por QA (y E2E): vuelve a `done` cuando esté. El contador
-  de intentos vuelve a 0. Si ya la habías mergeado, después mergea la rama de nuevo.
+  **¿Hace falta otra vuelta?** (esté en `done`, `reviewed` o `stopped`): en la app web, abre la tarea
+  y pulsa **💬 Feedback y devolver**. Elige **a quién se la devuelves** y escribe tu feedback (y, si
+  quieres, adjunta capturas):
+  - **Coder**: qué está mal, qué esperas y dónde. Vuelve al coder **en la misma rama** y pasa otra
+    vez por QA (y E2E).
+  - **QA**: qué tiene que verificar o cómo probarlo (datos, pasos, casos). Vuelve a la cola de QA,
+    que la certifica otra vez con tus indicaciones; si algo no cumple, va al coder.
+  - **E2E** (con `E2E=true`): qué flujo probar de punta a punta, con qué datos o en qué plataforma.
+    Vuelve a la cola de E2E.
+
+  Tu feedback queda como el último de ese puesto y se suma al criterio de aceptación, así QA y
+  E2E lo certifican. El contador de intentos vuelve a 0 (salvo E2E, que no cuenta intentos). Si ya la
+  habías mergeado y el coder cambia algo, después mergea la rama de nuevo.
 
   **Opcional — `AUTO_MERGE=true`:** si no querés mergear a mano, activá `AUTO_MERGE=true` en
   `autopilot.env`: en cuanto el QA (y el E2E, si lo usás) aprueban, **el kit mergea la rama a la base
   por vos** (solo local: nunca hace push ni borra ramas) y deja la tarea en `reviewed` sola. Si el
   merge no entra limpio (conflicto, o cambios sin commitear en tu copia), la base queda intacta, la
   tarea pasa a `stopped` con el motivo y te avisa por Telegram.
-- **Tareas en `stopped`:** el motivo está al final del `.md` (*Motivo de stopped*), con lo que
+- **Tareas en `stopped`:** el motivo está en la app web o con `wi.sh <env> get <clave> motivo` (*Motivo de stopped*), con lo que
   recomienda hacer. Cuando lo resuelvas, devuélvela a la cola:
   ```sh
   ~/.local/share/autopilot-kit/wi.sh autopilot.env reqa bug-140123
@@ -151,7 +162,7 @@ Muestra todos tus proyectos del autopilot:
   criterio, el historial de cada intento (notas del coder, reportes de QA y E2E) y los **adjuntos
   agrupados por paso**: tarea original, subidos por ti, y coder / QA / E2E de cada intento, con
   botones para ver solo los de un agente.
-- **Gestionar:** panel Git (diff, mergear a la base, push, crear PR en GitHub o Azure DevOps), pedir cambios al coder en una tarea revisada, devolver a QA o a E2E, detener, marcar revisada, cambiar prioridad, pausar el autopilot.
+- **Gestionar:** panel Git (diff, mergear a la base, push, crear PR en GitHub o Azure DevOps), dar feedback y devolver una tarea revisada al coder, a QA o a E2E, devolver a QA o a E2E, detener, marcar revisada, cambiar prioridad, pausar el autopilot.
 - **Crear y editar** tareas y subirles capturas.
 - **Correr** el health check y las pruebas guardadas, viendo la salida.
 - El **log** de actividad y los reportes de `run-tests`.

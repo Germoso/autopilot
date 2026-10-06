@@ -39,13 +39,16 @@ import subprocess
 import sys
 import unicodedata
 
-ESTADOS = ["new", "in-progress", "qa", "validando", "e2e", "probando-e2e", "bug-fix", "stopped", "done", "reviewed"]
+ESTADOS = ["new", "in-progress", "qa", "validando", "e2e", "probando-e2e", "bug-fix", "stopped", "done", "reviewed",
+           "ignored"]
+# ignored: una tarea detenida que el humano decidio ignorar. Nada la toma ni la cuenta (plan, cadena,
+# vigia, Telegram); sigue en el board (Azure no la reimporta) y se puede restaurar a stopped.
 # Tareas que ya no estan activas. `reviewed` = done que el humano ya reviso (lo mueve el humano).
-CERRADAS = ("done", "stopped", "reviewed")
+CERRADAS = ("done", "stopped", "reviewed", "ignored")
 # El coder ya termino (cola QA en adelante, o detenida): se puede subir la rama de la tarea. Mergear, push
 # de la base y PR siguen solo en done/reviewed.
 CODER_TERMINO = ("qa", "validando", "e2e", "probando-e2e", "done", "reviewed", "stopped")
-PRIO ={"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+PRIO = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 TIPOS = ("task", "bug")
 SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Repos modificados", "Notas del desarrollador",
              "Reporte de QA", "Feedback de QA", "Reporte E2E", "Feedback de E2E", "Resultado", "Motivo de stopped"]
@@ -330,7 +333,7 @@ def parsear(texto):
     return meta, titulo, secciones
 
 
-AVISO_VISTA = ("<!-- Vista generada por el autopilot desde .workitems/autopilot.db. Para cambiar la tarea usa la "
+AVISO_VISTA = ("<!-- Vista generada por el autopilot desde .workitems/autopilot.db: solo el bug original. Notas, reportes e historial: wi.sh get o la app web. "
                "app web o wi.sh; si editas o mueves este archivo, el cambio se importa. -->")
 
 
@@ -405,18 +408,40 @@ def limpiar_imagenes_texto(texto, board_dir, clave, historial=True):
     return re.sub(r"\n{3,}", "\n\n", nuevo).strip(), n[0]
 
 
-def serializar(meta, titulo, secciones, vista=False):
+def serializar(meta, titulo, secciones):
+    """La tarea completa (todas las secciones): lo que devuelve `get <clave> todo`."""
     out = ["---"]
     for k in CAMPOS + [k for k in meta if k not in CAMPOS]:
         if k in meta:
             out.append("%s: %s" % (k, meta[k]))
-    out += ["---", "# %s" % titulo, ""] + ([AVISO_VISTA, ""] if vista else [])
+    out += ["---", "# %s" % titulo, ""]
     for h in SECCIONES + [h for h in secciones if h not in SECCIONES]:
         out += ["## %s" % h, "", secciones.get(h, "").strip(), ""]
     return "\n".join(out).rstrip() + "\n"
 
 
+def vista_md(meta, titulo, secciones, adjuntos):
+    """El .md de lectura: solo el bug original (descripcion y criterio de Azure) y sus adjuntos originales.
+    Notas, reportes, feedback e historial viven en la base; no se escriben aqui."""
+    out = ["---"]
+    for k in CAMPOS + [k for k in meta if k not in CAMPOS]:
+        if k in meta:
+            out.append("%s: %s" % (k, meta[k]))
+    out += ["---", "# %s" % titulo, "", AVISO_VISTA, "",
+            "## Descripción", "", secciones.get("Descripción", "").strip(), "",
+            "## Criterio de aceptación", "", secciones.get("Criterio de aceptación", "").strip(), "",
+            "## Adjuntos originales", ""]
+    out += ["- %s" % a["ruta"] for a in adjuntos] or ["_(ninguno)_"]
+    return "\n".join(out).rstrip() + "\n"
+
+
 # ----------------------------------------------------------------- board
+
+def es_feedback_humano(titulo):
+    """Encabezado de un bloque de feedback que escribio el humano con "Feedback y devolver" (o el
+    "Pedir cambios" de antes)."""
+    return "FEEDBACK DEL HUMANO" in titulo or "CAMBIOS PEDIDOS" in titulo
+
 class Board:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -477,7 +502,9 @@ class Board:
         vieja = os.path.join(self.dir, fila["vista"]) if fila and fila["vista"] else None
         path = self._vista_path(clave, estado, titulo)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        texto = serializar(meta, titulo, secs, vista=True)
+        originales = [dict(a, ruta=os.path.join(self.dir, a["ruta"])) for a in self.db.adjuntos(clave)
+                      if (a.get("origen") or "original") == "original"]
+        texto = vista_md(meta, titulo, secs, originales)
         escribir_atomico(path, texto)
         if vieja and os.path.realpath(vieja) != os.path.realpath(path) and os.path.exists(vieja):
             os.remove(vieja)
@@ -517,7 +544,9 @@ class Board:
                     meta.setdefault("id", m.group(2))
                     meta.setdefault("tipo", m.group(1))
                     meta.setdefault("rama", clave)
-                self.db.guardar(clave, e, meta, titulo or clave, secs)
+                    self.db.guardar(clave, e, meta, titulo or clave, secs)
+                else:   # la vista solo trae el bug: el historial y los adjuntos de la base no se tocan
+                    self.db.actualizar_desde_vista(clave, e, meta, titulo or clave, secs)
                 self.db.set_vista(clave, os.path.relpath(path, self.dir), sha)
                 self.log(evento, "humano", "nota", clave, clave)
 
@@ -809,7 +838,7 @@ class Board:
                 self._escribir_repos_modificados(clave.lower())
             except Error:
                 pass
-        if estado_nuevo in CERRADAS:
+        if estado_nuevo in CERRADAS and estado_nuevo != "ignored":   # ignorar no borra nada (ya paso por stopped)
             self._cerrar_coder(clave.lower(), estado_nuevo)
         if estado_nuevo and estado_nuevo != estado:
             self._avisar_estado(clave.lower(), estado_nuevo, titulo, meta, secs, set(secs_append or {}))
@@ -856,13 +885,13 @@ class Board:
 
     def get(self, clave, parte="resumen", intento=None, ultimo=False, como_json=False):
         clave = clave.strip().lower()
-        estado, path, meta, titulo, secs = self.leer(clave)
+        estado, _, meta, titulo, secs = self.leer(clave)
         self.adjuntos(clave)   # registra en la base los archivos nuevos de adjuntos/<clave>/
         adj = [dict(a, ruta=os.path.join(self.dir, a["ruta"])) for a in self.db.adjuntos(clave)]
         entradas = lambda tipos: [e for e in self.db.entradas(clave, intento=intento, ultimo=ultimo)
                                   if e["tipo"] in ((tipos,) if isinstance(tipos, str) else tipos)]
         if como_json:
-            return json.dumps({"clave": clave, "estado": estado, "titulo": titulo, "meta": meta, "archivo_md": path,
+            return json.dumps({"clave": clave, "estado": estado, "titulo": titulo, "meta": meta,
                                "descripcion": secs.get("Descripción", ""), "criterio": secs.get("Criterio de aceptación", ""),
                                "resultado": secs.get("Resultado", ""), "motivo": secs.get("Motivo de stopped", ""),
                                "adjuntos": adj, "entradas": self.db.entradas(clave, intento=intento, ultimo=ultimo)},
@@ -907,7 +936,7 @@ class Board:
         if parte in self.PARTES:
             return bloque(entradas(self.PARTES[parte]))
         if parte == "todo":
-            return open(path, encoding="utf-8").read()
+            return serializar(meta, titulo, secs)
         raise Error("parte desconocida '%s'. Usa: resumen, descripcion, criterio, adjuntos, notas, qa, e2e, "
                     "feedback, historial, resultado, motivo, todo" % parte)
 
@@ -925,7 +954,17 @@ class Board:
             return b.split("\n", 1)[1].strip() if "\n" in b and "RECHAZADO" in b.split("\n", 1)[0] else b
         n = meta.get("intento", "0")
         t = "%s — %s" % (clave, titulo)
-        if estado == "in-progress":
+
+        def pedido(seccion):  # el humano devolvio la tarea a este puesto con su feedback: el texto, o None
+            if seccion not in escritas:
+                return None
+            b = re.split(r"(?m)^### ", secs.get(seccion, "").strip())[-1]
+            return b.split("\n", 1)[1].strip() if es_feedback_humano(b.split("\n", 1)[0]) and "\n" in b else None
+        if estado == "qa" and pedido("Feedback de QA") is not None:
+            self.avisar("💬 Le diste feedback a QA en %s; vuelve a certificar:\n%s" % (t, pedido("Feedback de QA")[:600]))
+        elif estado == "e2e" and pedido("Feedback de E2E") is not None:
+            self.avisar("💬 Le diste feedback a E2E en %s; vuelve a probar:\n%s" % (t, pedido("Feedback de E2E")[:600]))
+        elif estado == "in-progress":
             self.avisar("🧑‍💻 El coder empezó %s%s" % (t, " (corrige el intento %s)" % n if n != "0" else ""))
         elif estado == "qa":
             self.avisar("📦 %s terminada por el coder: a QA" % t)
@@ -939,9 +978,9 @@ class Board:
             quien = "E2E" if "Feedback de E2E" in escritas else "QA"
             bloque = re.split(r"(?m)^### ", secs.get("Feedback de %s" % quien, "").strip())[-1]
             fb = ultimo("Feedback de %s" % quien)
-            if "CAMBIOS PEDIDOS" in bloque.split("\n", 1)[0]:
+            if es_feedback_humano(bloque.split("\n", 1)[0]):
                 cuerpo = bloque.split("\n", 1)[1].strip() if "\n" in bloque else ""
-                self.avisar("✏️ Pediste cambios en %s, vuelve al coder:\n%s" % (t, cuerpo[:600]))
+                self.avisar("💬 Le diste feedback al coder en %s; vuelve a corregir:\n%s" % (t, cuerpo[:600]))
             elif "BLOQUEO PREEXISTENTE" in bloque.split("\n", 1)[0]:
                 cuerpo = bloque.split("\n", 1)[1].strip() if "\n" in bloque else ""
                 self.avisar("🔧 %s vuelve al coder para corregir algo que impedia probar (no necesita tu "
@@ -2035,7 +2074,8 @@ class Board:
         - la base local tiene commits que origin no tiene (p. ej. merges de dependencias sin push): nace
           de la base local, que ya incluye todo origin;
         - divergieron, o no hay red/credenciales: nace de la base local y queda un aviso.
-        Nunca hace merge, rebase ni push. Devuelve {"origen", "detalle", "aviso"}."""
+        Nunca hace merge, rebase ni push. Devuelve {"origen", "accion", "detalle", "aviso"}; accion:
+        actualizada | no-adelantada | al-dia | local-adelante | divergida | sin-red | sin-local."""
         repo, base = r["path"], r["base"]
         existe = lambda ref: self.git(repo, "rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
         aviso = ""
@@ -2048,20 +2088,24 @@ class Board:
                     base, remoto.sin_credenciales((f.stderr or f.stdout).strip())[:200])
         local, remota = existe("refs/heads/%s" % base), existe("refs/remotes/origin/%s" % base)
         if not local:
-            return {"origen": "origin/%s" % base if remota else "", "detalle": "desde origin/%s" % base, "aviso": aviso}
+            return {"origen": "origin/%s" % base if remota else "", "accion": "sin-red" if aviso else "sin-local",
+                    "detalle": "sin base local: se usa origin/%s" % base, "aviso": aviso}
         if not remota or aviso:
-            return {"origen": base, "detalle": "desde la base local %s" % base, "aviso": aviso}
+            return {"origen": base, "accion": "sin-red" if aviso else "al-dia",
+                    "detalle": "desde la base local %s" % base, "aviso": aviso}
         cuenta = lambda rango: int(self.git(repo, "rev-list", "--count", rango, check=False).stdout.strip() or 0)
         atras, adelante = cuenta("%s..origin/%s" % (base, base)), cuenta("origin/%s..%s" % (base, base))
         if atras and adelante:
-            return {"origen": base, "detalle": "desde la base local %s" % base,
+            return {"origen": base, "accion": "divergida", "detalle": "desde la base local %s" % base,
                     "aviso": "%s local y origin/%s divergieron (%d commits locales sin subir, %d nuevos en origin): "
                              "la rama nace de la base local; integralos y haz push de la base" % (base, base, adelante, atras)}
         if not atras:
-            return {"origen": base, "detalle": "%s ya estaba al dia con origin%s" % (
-                base, " (%d commits locales sin subir)" % adelante if adelante else ""), "aviso": ""}
-        return {"origen": "origin/%s" % base, "aviso": "",
-                "detalle": "origin/%s trajo %d commit(s) nuevos; %s" % (base, atras, self._adelantar_base(repo, base))}
+            return {"origen": base, "accion": "local-adelante" if adelante else "al-dia",
+                    "detalle": "%s ya estaba al dia con origin%s" % (
+                        base, " (%d commits locales sin subir)" % adelante if adelante else ""), "aviso": ""}
+        ok, texto = self._adelantar_base(repo, base)
+        return {"origen": "origin/%s" % base, "aviso": "", "accion": "actualizada" if ok else "no-adelantada",
+                "detalle": "origin/%s trajo %d commit(s) nuevos; %s" % (base, atras, texto)}
 
     def _adelantar_base(self, repo, base):
         """Fast-forward de la base local a origin/<base>. Si esta abierta en una copia (la del humano)
@@ -2073,12 +2117,31 @@ class Board:
         if not donde:
             r = self.git(repo, "update-ref", "refs/heads/%s" % base, "origin/%s" % base,
                          self.git(repo, "rev-parse", base).stdout.strip(), check=False)
-            return "base local adelantada" if r.returncode == 0 else "no se pudo adelantar la base local"
+            return (True, "base local adelantada") if r.returncode == 0 else (False, "no se pudo adelantar la base local")
         if self.git(donde, "status", "--porcelain", "--untracked-files=no", check=False).stdout.strip():
-            return "la base local no se adelanto: %s tiene cambios sin commitear" % donde
+            return False, "la base local no se adelanto: %s tiene cambios sin commitear" % donde
         r = self.git(donde, "merge", "--ff-only", "--quiet", "origin/%s" % base, check=False)
-        return ("base local adelantada en %s" % donde) if r.returncode == 0 else \
-            "la base local no se adelanto en %s: %s" % (donde, (r.stderr or r.stdout).strip()[:150])
+        return (True, "base local adelantada en %s" % donde) if r.returncode == 0 else \
+            (False, "la base local no se adelanto en %s: %s" % (donde, (r.stderr or r.stdout).strip()[:150]))
+
+    def pull_bases(self, clave):
+        """Boton "Pull de las bases" del panel Git: trae lo ultimo de origin a la rama base de cada repo
+        de la tarea. Como un `git pull --ff-only`: solo avanza la base si no hay commits locales sin subir
+        y tu copia (si la tiene abierta) esta limpia; nunca hace merge, rebase ni push."""
+        clave = clave.strip().lower()
+        estado, _, meta, _, _ = self.leer(clave)
+        hechos = []
+        for r in self.repos_de_tarea(meta):
+            nombre = r["nombre"] or os.path.basename(r["path"])
+            if not r.get("base"):
+                hechos.append({"repo": nombre, "accion": "error", "detalle": "no hay rama base definida"})
+                continue
+            x = self._base_al_dia(r)
+            hechos.append({"repo": nombre, "accion": x["accion"], "detalle": x["aviso"] or x["detalle"]})
+        ok = all(h["accion"] in ("actualizada", "al-dia", "local-adelante", "sin-local") for h in hechos)
+        self.log("Pull de las bases (app web)", "humano", "nota", clave, "-", "-",
+                 ", ".join("%s: %s" % (h["repo"], h["accion"]) for h in hechos)[:500])
+        return {"ok": ok, "estado": estado, "repos": hechos}
 
     def _info_rama(self, r, clave):
         wt = self.coder_worktree_path(r, clave)
@@ -2305,11 +2368,16 @@ USO = """uso: wi.sh <env> <comando> [args]
   push       <clave> base|rama           SOLO el humano: sube a origin la base o la rama de cada repo de la
                                          tarea (done/reviewed; 'rama': solo los repos que la tarea modifico),
                                          nunca --force
+  pull-bases <clave>                     SOLO el humano: trae lo ultimo de origin a la rama base de cada
+                                         repo de la tarea (fast-forward; nunca merge, rebase ni push)
   pr         <clave>                     SOLO el humano: sube la rama y abre un PR contra la base en cada repo
                                          con commits (GitHub con gh, Azure DevOps con AZURE_DEVOPS_PAT)
   git-estado <clave> [--fetch]           commits, archivos (+/-), integrada y remoto por repo (JSON)
   git-diff   <clave> <repo> <archivo>    diff de un archivo de la tarea contra la base
   stopped    <clave> <motivo>
+  ignorar    <clave> [motivo]            SOLO el humano: stopped -> ignored. El sistema la ignora (no se toma,
+                                         no cuenta en la cadena, el vigia ni Telegram); no borra nada
+  restaurar  <clave>                     SOLO el humano: ignored -> stopped
   rama       <clave> nueva|existente [--repo <carpeta>]
                                          crea/cambia a la rama <clave> desde la base de su repo
                                          (nueva: antes trae lo ultimo de origin/<base>, sin merges).
@@ -2330,8 +2398,10 @@ USO = """uso: wi.sh <env> <comando> [args]
   rechazar   <clave> <feedback> [--bloqueo]   validando -> bug-fix. --bloqueo: algo preexistente que se
                                          arregla en codigo impide compilar/probar; no cuenta como intento
   reqa       <clave>                     -> qa, Intento a 0 (conserva el historial)
-  pedir-cambios <clave> <texto>          SOLO el humano: done/reviewed -> bug-fix con lo que quiere cambiar
-                                         (Feedback de QA y Criterio de aceptacion), Intento a 0
+  pedir-cambios <clave> <texto> [--a coder|qa|e2e]
+                                         SOLO el humano ("Feedback y devolver"): done/reviewed/stopped ->
+                                         bug-fix (coder, defecto), qa o e2e con su feedback (en el de ese puesto y en el
+                                         Criterio de aceptacion); Intento a 0 salvo e2e
   probar-e2e <clave>                     e2e -> probando-e2e (ocupa el puesto e2e)
   e2e-worktree <clave>                   copias para el E2E: repos de la tarea (su rama) + los que
                                          hacen falta para el flujo real (E2E_CLIENTS, en su base)
@@ -2466,6 +2536,9 @@ def main(argv):
     elif cmd == "push":
         need(2)
         print(json.dumps(b.push(a[0], a[1]), ensure_ascii=False, indent=2)); return 0
+    elif cmd == "pull-bases":
+        need(1)
+        print(json.dumps(b.pull_bases(a[0]), ensure_ascii=False, indent=2)); return 0
     elif cmd == "pr":
         need(1)
         print(json.dumps(b.crear_pr(a[0]), ensure_ascii=False, indent=2)); return 0
@@ -2479,6 +2552,23 @@ def main(argv):
         need(1); b.modificar(a[0], "new", secs_set={"Motivo de stopped": ""})
     elif cmd == "stopped":
         need(2); b.modificar(a[0], "stopped", secs_set={"Motivo de stopped": a[1]})
+    elif cmd == "ignorar":
+        # SOLO el humano: una detenida que ya no interesa. Deja de existir para el sistema (no se toma, no
+        # cuenta en la cadena ni en Telegram) sin borrar nada: rama, worktree e historial quedan.
+        need(1)
+        estado = b.buscar(a[0])[0]
+        if estado != "stopped":
+            raise Error("solo se ignora una tarea detenida (%s esta en %s)" % (a[0], estado))
+        motivo = " ".join(a[1:]).strip()
+        b.modificar(a[0], "ignored", secs_set={"Ignorada": "%s%s" % (ahora(), (": " + motivo) if motivo else "")})
+        b.log("Ignorada por el humano", "humano", "nota", a[0].lower(), a[0].lower(), "-", motivo or "stopped -> ignored")
+    elif cmd == "restaurar":
+        need(1)
+        estado = b.buscar(a[0])[0]
+        if estado != "ignored":
+            raise Error("solo se restaura una tarea ignorada (%s esta en %s)" % (a[0], estado))
+        b.modificar(a[0], "stopped", secs_set={"Ignorada": ""})
+        b.log("Restaurada por el humano", "humano", "nota", a[0].lower(), a[0].lower(), "-", "ignored -> stopped")
     elif cmd == "rama":
         need(2)
         repo = a[a.index("--repo") + 1] if "--repo" in a and a.index("--repo") + 1 < len(a) else None
@@ -2613,21 +2703,34 @@ def main(argv):
         b.modificar(a[0], "qa", meta_set={"intento": "0"}, secs_append={
             "Feedback de QA": "### Re-QA manual (%s)\n\nContador de intentos reiniciado." % ahora()})
     elif cmd == "pedir-cambios":
-        # El humano reviso la tarea (done o reviewed) y quiere otro cambio: vuelve al coder con su pedido,
-        # que tambien se suma al criterio para que QA (y E2E) lo certifiquen. Contador a 0, como reqa.
+        # Boton "Feedback y devolver": el humano reviso la tarea (done, reviewed o stopped) y la devuelve a un puesto:
+        #   coder -> bug-fix (corrige en la misma rama), qa -> cola de QA (vuelve a certificar),
+        #   e2e   -> cola de E2E (vuelve a probar de punta a punta).
+        # El pedido va al feedback de ese puesto (lo ven como "Ultimo feedback" en `get`) y se suma al
+        # criterio para que QA/E2E lo certifiquen. Contador a 0 (salvo E2E, que no cuenta intentos, como re-e2e).
         need(2)
+        destino = a[a.index("--a") + 1] if "--a" in a and a.index("--a") + 1 < len(a) else "coder"
         texto = a[1].strip()
+        if destino not in ("coder", "qa", "e2e"):
+            raise Error("--a debe ser coder, qa o e2e")
         if not texto:
-            raise Error("falta el texto con los cambios que quieres")
+            raise Error("falta el texto con tu feedback")
+        if destino == "e2e" and not b.cfg["e2e"]["activo"]:
+            raise Error("la etapa E2E no esta activa (E2E=true en autopilot.env)")
         estado = b.buscar(a[0])[0]
-        if estado not in ("done", "reviewed"):
-            raise Error("solo se piden cambios a una tarea en done o reviewed (%s esta en %s)" % (a[0], estado))
+        if estado not in ("done", "reviewed", "stopped"):
+            raise Error("solo se da feedback y se devuelve una tarea en done, reviewed o stopped (%s esta en %s)"
+                        % (a[0], estado))
         fecha = ahora()
-        b.modificar(a[0], "bug-fix", meta_set={"intento": "0"}, secs_set={"Motivo de stopped": ""}, secs_append={
-            "Feedback de QA": "### CAMBIOS PEDIDOS en la revisión humana (%s)\n\n%s" % (fecha, texto),
-            "Criterio de aceptación": "**Cambios pedidos en la revisión humana (%s):**\n\n%s" % (fecha, texto)})
-        b.log("Cambios pedidos por el humano", "humano", "nota", a[0].lower(), a[0].lower(), "-",
-              "%s -> bug-fix" % estado)
+        nuevo, seccion, meta_set = {"coder": ("bug-fix", "Feedback de QA", {"intento": "0"}),
+                                    "qa": ("qa", "Feedback de QA", {"intento": "0"}),
+                                    "e2e": ("e2e", "Feedback de E2E", {})}[destino]
+        para = {"coder": " para el coder", "qa": " para QA", "e2e": " para E2E"}[destino]
+        b.modificar(a[0], nuevo, meta_set=meta_set, secs_set={"Motivo de stopped": ""}, secs_append={
+            seccion: "### FEEDBACK DEL HUMANO%s (%s)\n\n%s" % (para, fecha, texto),
+            "Criterio de aceptación": "**Feedback de la revisión humana%s (%s):**\n\n%s" % (para, fecha, texto)})
+        b.log("Feedback del humano, devuelta a %s" % destino, "humano", "nota", a[0].lower(), a[0].lower(), "-",
+              "%s -> %s" % (estado, nuevo))
     elif cmd == "add-task":
         opts, pos, i = {}, [], 0
         while i < len(a):
