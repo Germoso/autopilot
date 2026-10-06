@@ -45,6 +45,9 @@ ESTADOS = ["new", "in-progress", "qa", "validando", "e2e", "probando-e2e", "bug-
 # vigia, Telegram); sigue en el board (Azure no la reimporta) y se puede restaurar a stopped.
 # Tareas que ya no estan activas. `reviewed` = done que el humano ya reviso (lo mueve el humano).
 CERRADAS = ("done", "stopped", "reviewed", "ignored")
+# El coder ya termino (cola QA en adelante, o detenida): se puede subir la rama de la tarea. Mergear, push
+# de la base y PR siguen solo en done/reviewed.
+CODER_TERMINO = ("qa", "validando", "e2e", "probando-e2e", "done", "reviewed", "stopped")
 PRIO = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 TIPOS = ("task", "bug")
 SECCIONES = ["Descripción", "Criterio de aceptación", "Adjuntos", "Repos modificados", "Notas del desarrollador",
@@ -1931,8 +1934,10 @@ class Board:
             raise Error("push: indica 'base' o 'rama'")
         clave = clave.strip().lower()
         estado, _, meta, _, _ = self.leer(clave)
-        if estado not in ("done", "reviewed"):
-            raise Error("solo se hace push de una tarea en done o reviewed (%s esta en %s)" % (clave, estado))
+        if que == "rama" and estado not in CODER_TERMINO:
+            raise Error("solo se sube la rama de una tarea que el coder termino (%s esta en %s)" % (clave, estado))
+        if que == "base" and estado not in ("done", "reviewed"):
+            raise Error("solo se hace push de la base con una tarea en done o reviewed (%s esta en %s)" % (clave, estado))
         rama, hechos = self._rama_de(meta, clave), []
         for r in self.repos_de_tarea(meta):
             nombre = r["nombre"] or os.path.basename(r["path"])

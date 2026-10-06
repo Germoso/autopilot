@@ -157,10 +157,27 @@ def test_rama_mergeada_sin_push_sigue_modificada(p):
     assert r["integrada"] and r["modificada"]
 
 
-def test_push_solo_en_done_o_reviewed(p):
-    p["b"].modificar("task-uno", "qa")
-    with pytest.raises(wi.Error, match="done o reviewed"):
+@pytest.mark.parametrize("estado", ["qa", "validando", "e2e", "probando-e2e", "done", "reviewed", "stopped"])
+def test_push_rama_desde_que_el_coder_termina(p, estado):
+    p["b"].modificar("task-uno", estado)
+    res = p["b"].push("task-uno", "rama")
+    assert res["ok"] and res["repos"][0]["accion"] == "subida"
+
+
+@pytest.mark.parametrize("estado", ["new", "in-progress", "bug-fix"])
+def test_push_rama_no_antes_de_que_termine_el_coder(p, estado):
+    p["b"].modificar("task-uno", estado)
+    with pytest.raises(wi.Error, match="coder termino"):
         p["b"].push("task-uno", "rama")
+
+
+@pytest.mark.parametrize("estado", ["qa", "validando", "e2e", "probando-e2e"])
+def test_push_base_y_pr_solo_en_done_o_reviewed(p, estado):
+    p["b"].modificar("task-uno", estado)
+    with pytest.raises(wi.Error, match="done o reviewed"):
+        p["b"].push("task-uno", "base")
+    with pytest.raises(wi.Error, match="done o reviewed"):
+        p["b"].crear_pr("task-uno")
 
 
 # ----------------------------------------------------------------- remotos
