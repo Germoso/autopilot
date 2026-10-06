@@ -129,6 +129,16 @@ servicio; al volver, `--inicio` las respeta (no las marca huérfanas) y el watch
   `$W "$E" stopped <clave> "POSIBLE PRODUCCIÓN: <lo que vio>. RECOMENDACIÓN: <lo que propone>"`.
   No lo reintentes: lo resuelve el humano (creando o corrigiendo `.env.autopilot`).
 - Tú nunca ejecutas nada contra ambientes.
+- **Motivo de `stopped`: en Markdown y con saltos de línea**, nunca todo en una línea (el humano lo lee en
+  la app web y en Telegram). Una línea de título con la causa, cada punto en su línea `- ...` y la
+  recomendación en su propio párrafo. Pasa los saltos dentro de las comillas:
+  ```
+  $W "$E" stopped <clave> "NO CERTIFICABLE (E2E): falta lo siguiente
+  - <punto 1>
+  - <punto 2>
+
+  RECOMENDACIÓN: <qué hacer>"
+  ```
 
 ## REGLAS DE GIT (sin excepciones)
 
@@ -187,7 +197,7 @@ $W "$E" new         <clave>
 $W "$E" reviewed    <clave>                   # SOLO el humano: done -> reviewed
 $W "$E" merge       <clave>                   # con AUTO_MERGE=true: integra su rama en la base (solo local)
                                                # y la deja reviewed; con conflicto: stopped, base intacta
-$W "$E" stopped     <clave> "<motivo>"
+$W "$E" stopped     <clave> "<motivo>"        # Markdown con saltos de linea (ver abajo)
 $W "$E" resultado   <clave> "<rama | commit | resumen>"
 $W "$E" add-task    <task|bug> <id> <prioridad> "<titulo>" "<descripcion>" "<criterio>" [repo] [--depende <claves>] [--origen <texto>]   # repo obligatorio en workspace; @archivo en descripcion/criterio
 $W "$E" log <evento> <origen> <tipo> <tarea> <rama> <commit> <detalle>
