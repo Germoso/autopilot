@@ -66,8 +66,9 @@ depende de otra, el autopilot no la empieza hasta que mergees la otra y la marqu
 
 Las tareas también entran al tablero por la app web (*Nueva tarea*), con `wi.sh autopilot.env add-task ...` o
 poniendo un `.md` en `.workitems/new/`. Cómo llegan es cosa tuya: si vienen de un tracker, una
-integración las carga por esos mismos caminos (hay una de ejemplo para Azure DevOps en
-[integraciones/azure](integraciones/azure/README.md)).
+integración las carga por esos mismos caminos (hay ejemplos para Azure DevOps en
+[integraciones/azure](integraciones/azure/README.md) y para Linear en
+[integraciones/linear](integraciones/linear/README.md)).
 
 Mientras `/autopilot` corre, abre la **[app web](#app-web)** o mira la carpeta **`.workitems/`** de tu
 proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te dice cómo va**:
