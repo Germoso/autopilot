@@ -88,7 +88,10 @@ SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
 
 ## Adjuntos: capturas y videos
 
-Cada work item importado trae sus adjuntos a `.workitems/adjuntos/<clave>/`:
+El board destino es el de `autopilot.env`, salvo que `azure-sync.env` tenga `BOARD_DIR=<carpeta>` (relativo a ese
+archivo) o se pase `--board <carpeta>` (gana el flag).
+
+Cada work item importado trae sus adjuntos a `<board>/adjuntos/<clave>/`:
 
 - **Imágenes** de la descripción o los pasos: se descargan y quedan referenciadas en su lugar en el
   texto como `📷 <archivo> — imagen N` (no incrustadas; la app web las abre y las muestra en *Tarea original*).

@@ -46,6 +46,10 @@ SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
   cambiar de sprint); `@current:<Equipo>` para otro equipo; o una ruta fija `Proyecto\Sprint X`.
 - En un workspace cada tarea se crea con su `repo:`. Cada `SYNC.<repo>` necesita su `REPO.<repo>` en `autopilot.env`.
 - En modo un repo, agrega `azure-sync.env` a `.git/info/exclude` para no commitearlo.
+- **Destino:** por defecto importa al board de `autopilot.env` (`WORKITEMS_DIR`, o `.workitems/`).
+  `BOARD_DIR=<carpeta>` en `azure-sync.env` (relativo a ese archivo) o `--board <carpeta>` lo cambian;
+  el flag gana. Los adjuntos van a `<carpeta>/adjuntos/`. El autopilot solo trabaja las tareas de su
+  propio board.
 - **PAT:** se busca en `AZURE_DEVOPS_PAT`, `azure-sync.secrets.env` (junto al config) y, si no, en el
   del MCP (`~/.config/autopilot-kit/ado-mcp.secrets.env`). Nunca en un archivo versionado ni en el chat.
 

@@ -34,6 +34,7 @@ Uso:
   python3 azure-sync.py --config <...> --watch 60
   python3 azure-sync.py --config <...> --dry-run
   python3 azure-sync.py --config <...> --status
+  python3 azure-sync.py --config <...> --board <carpeta>   (o BOARD_DIR= en azure-sync.env)
 """
 import argparse
 import html
@@ -70,7 +71,7 @@ PRIO_DEFAULT = "Medium"
 PAT_MCP = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
                        "autopilot-kit", "ado-mcp.secrets.env")
 
-CFG = {"org": "", "user": "", "pat": "", "fuentes": []}
+CFG = {"org": "", "user": "", "pat": "", "fuentes": [], "board": ""}
 BOARD = None  # wi.Board, se arma en main()
 
 
@@ -93,6 +94,8 @@ def load_config(path):
     vals = leer_env(path)
     CFG["org"] = vals.get("AZURE_ORG", "")
     CFG["user"] = vals.get("AZURE_USER", "") or "pat"
+    if vals.get("BOARD_DIR"):  # relativo = relativo a azure-sync.env
+        CFG["board"] = os.path.join(os.path.dirname(os.path.abspath(path)), os.path.expanduser(vals["BOARD_DIR"]))
 
     fuentes = []
     for k, v in sorted(vals.items()):
@@ -539,9 +542,13 @@ def main():
                     help="re-trae descripcion/criterio/adjuntos de tareas ya importadas (sin claves: todas)")
     ap.add_argument("--fotogramas", action="store_true",
                     help="extrae fotogramas de videos ya descargados (tras instalar ffmpeg)")
+    ap.add_argument("--board", metavar="DIR",
+                    help="carpeta del board donde importar (pisa BOARD_DIR y el WORKITEMS_DIR de autopilot.env)")
     args = ap.parse_args()
 
     load_config(args.config)
+    if args.board:
+        CFG["board"] = os.path.abspath(os.path.expanduser(args.board))
 
     if not CFG["org"]:
         die("Falta AZURE_ORG en %s" % args.config)
@@ -558,8 +565,12 @@ def main():
     global BOARD
     try:
         # El board lo define autopilot.env (misma carpeta): de ahi salen tambien los repos.
+        # --board o BOARD_DIR (azure-sync.env) cambian solo la carpeta donde se importa.
         env_ap = os.path.join(os.path.dirname(os.path.abspath(args.config)), "autopilot.env")
-        BOARD = wi.Board(wi.cargar_config(env_ap if os.path.exists(env_ap) else args.config))
+        cfg = wi.cargar_config(env_ap if os.path.exists(env_ap) else args.config)
+        if CFG["board"]:
+            cfg["dir"] = os.path.normpath(CFG["board"])
+        BOARD = wi.Board(cfg)
     except wi.Error as e:
         die(str(e))
     if not args.dry_run and not args.status and not os.path.isdir(BOARD.dir):
