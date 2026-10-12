@@ -31,6 +31,7 @@ El script ORIGINAL (/home/user/sync_workitems.py) NO se modifica.
 
 Uso:
   python3 azure-sync.py --config <proyecto>/azure-sync.env
+  azure-sync --dry-run          (comando que instala instalar.sh; usa ./azure-sync.env)
   python3 azure-sync.py --config <...> --watch 60
   python3 azure-sync.py --config <...> --dry-run
   python3 azure-sync.py --config <...> --status
@@ -50,11 +51,12 @@ import time
 import urllib.parse
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# El formato del board vive en el kit del autopilot (workitems.py); se busca en
-# $AUTOPILOT_KIT, en el kit instalado o en el lib/ del repo (si se corre desde el repo).
+# El formato del board vive en el kit del autopilot (workitems.py); se busca en la copia
+# propia de instalar.sh --sin-kit (lib/ junto a este script), en $AUTOPILOT_KIT o el kit
+# instalado, o en el lib/ del repo (si se corre desde el repo).
 KIT = os.environ.get("AUTOPILOT_KIT") or os.path.join(
     os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "autopilot-kit")
-for d in (KIT, os.path.join(SCRIPT_DIR, "..", "..", "lib")):  # el ultimo insertado gana
+for d in (os.path.join(SCRIPT_DIR, "lib"), KIT, os.path.join(SCRIPT_DIR, "..", "..", "lib")):  # el ultimo insertado gana
     if os.path.exists(os.path.join(d, "workitems.py")):
         sys.path.insert(0, os.path.abspath(d))
 try:
@@ -534,7 +536,7 @@ def do_status():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True, help="ruta a azure-sync.env")
+    ap.add_argument("--config", default="azure-sync.env", help="ruta a azure-sync.env (default: ./azure-sync.env)")
     ap.add_argument("--watch", type=int, metavar="SEG", help="bucle cada N segundos")
     ap.add_argument("--dry-run", action="store_true", help="muestra que haria sin escribir")
     ap.add_argument("--status", action="store_true", help="solo diagnostico")

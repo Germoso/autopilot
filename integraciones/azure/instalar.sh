@@ -12,10 +12,17 @@
 #    - (OpenCode) el comando /azure-sync
 #    - (--with-mcp <org>) el MCP azure-devops en cada cliente
 #
-#  Requiere el kit del autopilot ya instalado (install.sh en la raiz del repo).
+#  Requiere el kit del autopilot ya instalado (install.sh en la raiz del repo),
+#  salvo con --sin-kit (lo usa ./install.sh --azure): instala solo Azure, con su
+#  propia copia de lo minimo del board (workitems.py y almacen.py en
+#  integraciones/azure/lib/), sin skills ni agentes del autopilot.
+#
+#  Instala tambien el comando azure-sync en ~/.local/bin para llamarlo desde la
+#  terminal (lee ./azure-sync.env si no le pasas --config).
 #
 #  Uso:
 #    integraciones/azure/instalar.sh                      # clientes detectados
+#    integraciones/azure/instalar.sh --sin-kit            # solo Azure (= ./install.sh --azure)
 #    integraciones/azure/instalar.sh --claude --with-mcp <org>
 #    integraciones/azure/instalar.sh --uninstall          # quita skill, comando, MCP y scripts
 # ============================================================
@@ -30,15 +37,17 @@ OC_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
 CC_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 MARCA=".autopilot-integracion"
 MARCA_CMD="# generado por integraciones/azure/instalar.sh. No editar: se regenera."
+BIN="$HOME/.local/bin/azure-sync"
 
-WANT_OC=0; WANT_CC=0; UNINSTALL=0; ADO_ORG=""
+WANT_OC=0; WANT_CC=0; UNINSTALL=0; SIN_KIT=0; ADO_ORG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --opencode)   WANT_OC=1 ;;
     --claude)     WANT_CC=1 ;;
     --uninstall)  UNINSTALL=1 ;;
+    --sin-kit)    SIN_KIT=1 ;;
     --with-mcp)   shift; ADO_ORG="${1:-}"; [[ -z "$ADO_ORG" ]] && { echo "--with-mcp necesita la organizacion" >&2; exit 1; } ;;
-    -h|--help)    sed -n '3,21p' "$0"; exit 0 ;;
+    -h|--help)    sed -n '3,28p' "$0"; exit 0 ;;
     *) echo "opcion desconocida: $1 (ver --help)" >&2; exit 1 ;;
   esac
   shift
@@ -112,18 +121,43 @@ if [[ "$UNINSTALL" == 1 ]]; then
     [[ "$c" == claude ]] && cc_mcp del
   done
   [[ -d "$DEST" ]] && rm -rf "$DEST" && say "scripts: $DEST"
+  if [[ -f "$BIN" ]] && grep -qF "$MARCA_CMD" "$BIN"; then rm -f "$BIN"; say "comando: $BIN"; fi
+  rmdir "$KIT/integraciones" "$KIT" 2>/dev/null  # solo si quedaron vacias (instalacion --sin-kit)
   exit 0
 fi
 
 # ------------------------------------------------------------------
 # Install
 # ------------------------------------------------------------------
-[[ -f "$KIT/workitems.py" ]] || { err "primero instala el kit del autopilot (install.sh en la raiz del repo)"; exit 1; }
+if [[ "$SIN_KIT" == 0 && ! -f "$KIT/workitems.py" ]]; then
+  err "primero instala el kit del autopilot (install.sh en la raiz del repo), o instala solo Azure con ./install.sh --azure"
+  exit 1
+fi
 [[ ${#CLIENTES[@]} -eq 0 ]] && { err "no encuentro OpenCode ni Claude Code. Usa --opencode o --claude."; exit 1; }
 
 mkdir -p "$DEST"
 cp "$AQUI/azure-sync.py" "$AQUI/ado-mcp.sh" "$AQUI/instalar.sh" "$AQUI/azure-sync.env.example" "$DEST/" && chmod +x "$DEST"/*.py "$DEST"/*.sh
 say "scripts en $DEST"
+if [[ "$SIN_KIT" == 1 ]]; then  # lo minimo del board para que azure-sync.py funcione sin el kit
+  mkdir -p "$DEST/lib" && cp "$AQUI/../../lib/workitems.py" "$AQUI/../../lib/almacen.py" "$DEST/lib/" \
+    || { err "no encuentro lib/workitems.py del repo: corre --sin-kit desde el repo del kit"; exit 1; }
+  say "board minimo en $DEST/lib (sin el kit del autopilot)"
+else
+  rm -rf "$DEST/lib"  # con el kit instalado se usa el suyo
+fi
+
+# Comando global: azure-sync [--dry-run|--status|...] desde cualquier carpeta
+if [[ -e "$BIN" ]] && ! grep -qF "$MARCA_CMD" "$BIN"; then
+  warn "$BIN ya existe y no es de la integracion, no se toco"
+else
+  mkdir -p "$(dirname "$BIN")"
+  printf '#!/usr/bin/env bash
+%s
+exec python3 "%s/azure-sync.py" "$@"
+' "$MARCA_CMD" "$DEST" > "$BIN" && chmod +x "$BIN"
+  say "comando: $BIN"
+  case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) warn "$HOME/.local/bin no esta en tu PATH: agregalo para usar azure-sync";; esac
+fi
 
 for c in "${CLIENTES[@]}"; do
   cfg="$(cfg_de "$c")"
@@ -162,4 +196,5 @@ fi
 if [[ -f "$KIT/ado-mcp.sh" && -n "$ADO_ORG" ]]; then rm -f "$KIT/ado-mcp.sh"; say "quitado $KIT/ado-mcp.sh (version vieja)"; fi
 
 echo
-echo "==> Listo. Comando: /azure-sync   Config por proyecto: azure-sync.env (ver $AQUI/README.md)"
+echo "==> Listo. En el agente: /azure-sync   En la terminal: azure-sync --dry-run (en la carpeta del proyecto)"
+echo "    Config por proyecto: azure-sync.env (ver $AQUI/README.md)"

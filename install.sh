@@ -23,6 +23,7 @@
 #    ./install.sh --opencode --claude    # elige clientes explicitamente
 #    ./install.sh --init /mi/proyecto --base dev        # prepara un repo (o usa /autopilot-init)
 #    ./install.sh --init /mi/workspace --base app=dev  # workspace: carpeta con varios repos
+#    ./install.sh --azure                # SOLO la integracion de Azure DevOps, sin el kit
 #    ./install.sh --uninstall            # deshace todo lo instalado por el kit
 # ============================================================
 
@@ -37,6 +38,11 @@ SKILLS=(autopilot autopilot-init autopilot-plan autopilot-web)
 MARCA=".autopilot-kit"
 RENDER="$KIT_DIR/clients/render.py"
 
+# --azure: solo la integracion de Azure (sin el kit). El resto de flags (--claude, --uninstall...) va a ella.
+RESTO=(); SOLO_AZURE=0
+for a in "$@"; do [[ "$a" == --azure ]] && SOLO_AZURE=1 || RESTO+=("$a"); done
+[[ "$SOLO_AZURE" == 1 ]] && exec "$KIT_DIR/integraciones/azure/instalar.sh" --sin-kit "${RESTO[@]}"
+
 WANT_OC=0; WANT_CC=0; UNINSTALL=0; PROJ=""; BASES=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -45,7 +51,7 @@ while [[ $# -gt 0 ]]; do
     --uninstall)    UNINSTALL=1 ;;
     --base)         shift; [[ -z "${1:-}" ]] && { echo "--base necesita la rama (o repo=rama)" >&2; exit 1; }; BASES+=(--base "$1") ;;
     --init)         shift; PROJ="${1:-}";    [[ -z "$PROJ" ]] && { echo "--init necesita una ruta" >&2; exit 1; } ;;
-    -h|--help)      sed -n '3,29p' "$0"; exit 0 ;;
+    -h|--help)      sed -n '3,30p' "$0"; exit 0 ;;
     *) echo "opcion desconocida: $1 (ver --help)" >&2; exit 1 ;;
   esac
   shift

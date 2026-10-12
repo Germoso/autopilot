@@ -17,10 +17,17 @@ ejemplo para escribir una integración con otro tracker.
 
 ```sh
 ./install.sh                                   # primero el kit del autopilot (raíz del repo)
+./install.sh --azure                           # o SOLO Azure, sin el kit del autopilot
 integraciones/azure/instalar.sh                # skill /azure-sync + scripts
 integraciones/azure/instalar.sh --with-mcp <org>   # además registra el MCP de Azure DevOps
 integraciones/azure/instalar.sh --uninstall
 ```
+
+Con `./install.sh --azure` no hace falta el kit: se instala solo `/azure-sync` y una copia de lo mínimo del board
+(`workitems.py` y `almacen.py` en `integraciones/azure/lib/`), sin skills ni agentes del autopilot. Si
+después instalás el kit, volvé a correr `integraciones/azure/instalar.sh` y se usa el del kit.
+
+Las dos formas instalan además el comando `azure-sync` en `~/.local/bin`, para usarlo desde la terminal.
 
 Los scripts quedan en `~/.local/share/autopilot-kit/integraciones/azure/`. `./install.sh --uninstall`
 del kit también desinstala la integración.
@@ -60,9 +67,10 @@ SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
 ```
 
 ```sh
-K=~/.local/share/autopilot-kit/integraciones/azure
-python3 $K/azure-sync.py --config ./azure-sync.env --dry-run
-python3 $K/azure-sync.py --config ./azure-sync.env
+cd /ruta/al/proyecto           # donde está azure-sync.env
+azure-sync --dry-run           # qué importaría
+azure-sync                     # importa
+azure-sync --config otra/azure-sync.env --board /otro/board
 ```
 
 Importa a `new/` los work items **Task/Bug en estado New** del sprint, con clave `<tipo>-<id del work
@@ -78,8 +86,7 @@ deduplica por id (los IDs son únicos en la organización).
 Puede correr como demonio, porque no lanza agentes:
 
 ```sh
-setsid nohup python3 ~/.local/share/autopilot-kit/integraciones/azure/azure-sync.py \
-  --config ./azure-sync.env --watch 60 &>/dev/null &
+setsid nohup azure-sync --config ./azure-sync.env --watch 60 &>/dev/null &
 ```
 
 ### Adjuntos: capturas y videos
