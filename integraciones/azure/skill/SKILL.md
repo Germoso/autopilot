@@ -21,6 +21,7 @@ Es **aditivo**, igual que el script original `sync_workitems.py`:
 |---|---|
 | Solo crea, nunca modifica | Solo escribe archivos nuevos en `new/`. Nunca mueve, edita ni borra uno existente |
 | Dedup por número | Si ya hay un `*-<id>-*.md` en **cualquier** carpeta del board, lo salta |
+| Ignorados | También salta los que tengan su `*-<id>*.md` en las carpetas de `IGNORE_DIRS` (ya sincronizados, fuera del board) |
 | Idempotente | Correrlo N veces crea la tarea una sola vez. Las otras N-1 son `no-op` |
 | Falla ruidosa | Si Azure falla o el board no existe, sale con código ≠ 0 y no toca el board |
 | El PAT nunca se hardcodea | Se lee del entorno o de `azure-sync.secrets.env` |

@@ -22,6 +22,8 @@ GARANTIAS (identicas a las del original):
   - Solo AGREGA tareas nuevas. Nunca mueve, borra ni sobrescribe.
   - Dedup por numero: si ya hay un archivo *-<numero>-*.md en CUALQUIER
     estado del board, lo salta. (Los IDs son unicos en toda la organizacion.)
+  - IGNORE_DIRS=<carpeta>[,<carpeta>...]: tambien salta los que tengan su
+    <tipo>-<numero>*.md en esas carpetas (ya sincronizados, fuera del board).
   - Es idempotente: correrlo N veces crea la tarea una sola vez.
   - Si Azure falla en CUALQUIER fuente, sale con codigo != 0 y NO toca el board.
   - El PAT se lee del entorno, de azure-sync.secrets.env o del de ado-mcp.
@@ -73,7 +75,7 @@ PRIO_DEFAULT = "Medium"
 PAT_MCP = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
                        "autopilot-kit", "ado-mcp.secrets.env")
 
-CFG = {"org": "", "user": "", "pat": "", "fuentes": [], "board": ""}
+CFG = {"org": "", "user": "", "pat": "", "fuentes": [], "board": "", "ignore_dirs": []}
 BOARD = None  # wi.Board, se arma en main()
 
 
@@ -98,6 +100,9 @@ def load_config(path):
     CFG["user"] = vals.get("AZURE_USER", "") or "pat"
     if vals.get("BOARD_DIR"):  # relativo = relativo a azure-sync.env
         CFG["board"] = os.path.join(os.path.dirname(os.path.abspath(path)), os.path.expanduser(vals["BOARD_DIR"]))
+    # IGNORE_DIRS=<carpeta>[,<carpeta>...]: work items ya sincronizados que salieron del board
+    CFG["ignore_dirs"] = [os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(path)), os.path.expanduser(d.strip())))
+                          for d in vals.get("IGNORE_DIRS", "").split(",") if d.strip()]
 
     fuentes = []
     for k, v in sorted(vals.items()):
@@ -405,6 +410,18 @@ def recolectar():
     return [(f, wid) for f in CFG["fuentes"] for wid in fetch_new_workitems(f)]
 
 
+def ignorados():
+    """{numero: carpeta} de los <tipo>-<numero>*.md que hay (a cualquier profundidad) en IGNORE_DIRS."""
+    out = {}
+    for d in CFG["ignore_dirs"]:
+        for raiz, _, files in os.walk(d):
+            for n in files:
+                m = wi.RE_ARCHIVO.match(n)
+                if m:
+                    out.setdefault(m.group(2), d)
+    return out
+
+
 def one_pass(dry_run=False):
     pendientes = recolectar()
     if not pendientes:
@@ -412,6 +429,7 @@ def one_pass(dry_run=False):
                 "message": "Azure sin tareas New en los sprints configurados"}
 
     already = BOARD.numeros()
+    ignorar = ignorados()
     added, skipped, errors = [], [], []
 
     for fuente, wid in pendientes:
@@ -419,6 +437,9 @@ def one_pass(dry_run=False):
         donde = fuente["repo"] or fuente["project"]
         if key in already:
             skipped.append({"id": wid, "repo": donde, "reason": "ya en el board (numero %s)" % key})
+            continue
+        if key in ignorar:
+            skipped.append({"id": wid, "repo": donde, "reason": "en IGNORE_DIRS (%s)" % ignorar[key]})
             continue
         try:
             item = fetch_detail(fuente["project"], wid)
@@ -522,13 +543,15 @@ def do_fotogramas():
 
 
 def do_status():
-    already = BOARD.numeros()
+    already, ignorar = BOARD.numeros(), ignorados()
     fuentes = []
     for f in CFG["fuentes"]:
         ids = fetch_new_workitems(f)
-        nuevos = [i for i in ids if str(i) not in already]
+        en_board = [i for i in ids if str(i) in already]
+        ign = [i for i in ids if str(i) in ignorar and str(i) not in already]
+        nuevos = [i for i in ids if str(i) not in already and str(i) not in ignorar]
         fuentes.append({"repo": f["repo"] or "-", "project": f["project"], "iteration": f["iteration"],
-                        "azure_new_count": len(ids), "already_in_board": len(ids) - len(nuevos),
+                        "azure_new_count": len(ids), "already_in_board": len(en_board), "ignored": len(ign),
                         "pending_import": len(nuevos), "pending_ids": nuevos[:20]})
     print(json.dumps({"action": "status", "fuentes": fuentes}, ensure_ascii=False, indent=2))
     return 0
@@ -561,6 +584,9 @@ def main():
         if not f["project"] or not f["iteration"]:
             die("Fuente incompleta para %s: falta proyecto o sprint" % (f["repo"] or "AZURE_PROJECT"),
                 "Formato: SYNC.<repo>=<proyecto>|<Proyecto\\Sprint X o @current>")
+    faltan = [d for d in CFG["ignore_dirs"] if not os.path.isdir(d)]
+    if faltan:  # sin la carpeta se re-importaria todo lo que debia ignorarse
+        die("No existe la carpeta de IGNORE_DIRS: %s" % faltan[0], "Corrige IGNORE_DIRS en %s" % args.config)
     if not CFG["pat"]:
         die("Falta AZURE_DEVOPS_PAT", "Ponelo en el entorno, en azure-sync.secrets.env o en %s" % PAT_MCP)
 

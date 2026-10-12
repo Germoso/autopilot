@@ -57,6 +57,9 @@ SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
   `BOARD_DIR=<carpeta>` en `azure-sync.env` (relativo a ese archivo) o `--board <carpeta>` lo cambian;
   el flag gana. Los adjuntos van a `<carpeta>/adjuntos/`. El autopilot solo trabaja las tareas de su
   propio board.
+- **Ignorar:** `IGNORE_DIRS=<carpeta>[,<carpeta>...]` (relativo a `azure-sync.env`) salta los work items
+  que tengan su `<tipo>-<numero>*.md` en esas carpetas o sus subcarpetas: los ya sincronizados que
+  sacaste del board. Si una carpeta no existe, el sync no corre (para no re-importarlos).
 - **PAT:** se busca en `AZURE_DEVOPS_PAT`, `azure-sync.secrets.env` (junto al config) y, si no, en el
   del MCP (`~/.config/autopilot-kit/ado-mcp.secrets.env`). Nunca en un archivo versionado ni en el chat.
 
