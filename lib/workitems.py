@@ -694,6 +694,10 @@ class Board:
         for e in ESTADOS:
             os.makedirs(os.path.join(self.dir, e), exist_ok=True)
         self.db  # crea (o migra) la base
+        self._log_md()
+
+    def _log_md(self):
+        """Crea log.md (solo el encabezado) si no existe. No crea carpetas de estado."""
         log = os.path.join(self.dir, "log.md")
         if not os.path.exists(log):
             escribir_atomico(log, "# Log de actividad\n\n"
@@ -1114,8 +1118,7 @@ class Board:
         valores = (ahora(), origen, tipo, tarea, rama, commit, evento, detalle)
         self.db.log(*[str(v or "-")[:2000] for v in valores])
         path = os.path.join(self.dir, "log.md")   # vista de lectura del log
-        if not os.path.exists(path):
-            self.init()
+        self._log_md()   # sin init(): un importador (azure-sync) solo debe crear new/
         with open(path, "a", encoding="utf-8") as f:
             f.write("| %s |\n" % " | ".join(c(x) for x in valores))
 
