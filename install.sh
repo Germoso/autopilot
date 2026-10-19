@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # ============================================================
-#  install.sh — instala el kit para OpenCode y/o Claude Code
+#  install.sh — instala el kit para OpenCode, Claude Code y/o pi
 #
 #  Que instala:
 #    - scripts (board, watcher, guardas de git, app web) en
-#      ~/.local/share/autopilot-kit/   (compartidos por ambos clientes)
+#      ~/.local/share/autopilot-kit/   (compartidos por todos los clientes)
 #    - skills autopilot, autopilot-init, autopilot-plan y autopilot-web en la carpeta de skills de cada cliente
 #    - agentes coder, qa-reviewer y e2e-tester, generados desde agents/*.md
 #      con los bloqueos de git propios de cada cliente
 #    - (OpenCode) comandos /autopilot-init, /autopilot-plan, /autopilot y /autopilot-web
-#      (en Claude Code las skills ya son esos comandos)
+#      (en Claude Code y pi las skills ya son esos comandos)
+#    - (pi) extension de guard (pi-guard-*.mjs) que cancela push/merge, lo que toque
+#      un ambiente sin aenv.sh y la escritura de .env* / fuera de las copias de trabajo
 #
 #  Como llegan las tareas al board es externo al kit (wi.sh add-task, un .md
 #  en new/, la app web o una integracion; ver integraciones/).
@@ -20,7 +22,7 @@
 #
 #  Uso:
 #    ./install.sh                        # detecta los clientes instalados
-#    ./install.sh --opencode --claude    # elige clientes explicitamente
+#    ./install.sh --opencode --claude --pi  # elige clientes explicitamente
 #    ./install.sh --init /mi/proyecto --base dev        # prepara un repo (o usa /autopilot-init)
 #    ./install.sh --init /mi/workspace --base app=dev  # workspace: carpeta con varios repos
 #    ./install.sh --azure                # SOLO la integracion de Azure DevOps, sin el kit
@@ -34,6 +36,7 @@ KIT="${XDG_DATA_HOME:-$HOME/.local/share}/autopilot-kit"
 SECRETS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/autopilot-kit"
 OC_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
 CC_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+PI_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 SKILLS=(autopilot autopilot-init autopilot-plan autopilot-web)
 MARCA=".autopilot-kit"
 RENDER="$KIT_DIR/clients/render.py"
@@ -43,11 +46,12 @@ RESTO=(); SOLO_AZURE=0
 for a in "$@"; do [[ "$a" == --azure ]] && SOLO_AZURE=1 || RESTO+=("$a"); done
 [[ "$SOLO_AZURE" == 1 ]] && exec "$KIT_DIR/integraciones/azure/instalar.sh" --sin-kit "${RESTO[@]}"
 
-WANT_OC=0; WANT_CC=0; UNINSTALL=0; PROJ=""; BASES=()
+WANT_OC=0; WANT_CC=0; WANT_PI=0; UNINSTALL=0; PROJ=""; BASES=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --opencode)     WANT_OC=1 ;;
     --claude)       WANT_CC=1 ;;
+    --pi)           WANT_PI=1 ;;
     --uninstall)    UNINSTALL=1 ;;
     --base)         shift; [[ -z "${1:-}" ]] && { echo "--base necesita la rama (o repo=rama)" >&2; exit 1; }; BASES+=(--base "$1") ;;
     --init)         shift; PROJ="${1:-}";    [[ -z "$PROJ" ]] && { echo "--init necesita una ruta" >&2; exit 1; } ;;
@@ -64,15 +68,18 @@ err()  { printf '\033[1;31mx\033[0m %s\n' "$*"; }
 command -v python3 >/dev/null || { err "necesita python3"; exit 1; }
 
 # Sin flags de cliente: los que esten instalados
-if [[ $WANT_OC == 0 && $WANT_CC == 0 ]]; then
+if [[ $WANT_OC == 0 && $WANT_CC == 0 && $WANT_PI == 0 ]]; then
   { command -v opencode >/dev/null || [[ -d "$OC_DIR" ]]; } && WANT_OC=1
   { command -v claude   >/dev/null || [[ -d "$CC_DIR" ]]; } && WANT_CC=1
-  [[ $WANT_OC == 0 && $WANT_CC == 0 ]] && { err "no encuentro OpenCode ni Claude Code. Usa --opencode o --claude."; exit 1; }
+  { command -v pi       >/dev/null || [[ -d "$PI_DIR" ]]; } && WANT_PI=1
+  [[ $WANT_OC == 0 && $WANT_CC == 0 && $WANT_PI == 0 ]] && \
+    { err "no encuentro OpenCode, Claude Code ni pi. Usa --opencode, --claude o --pi."; exit 1; }
 fi
 CLIENTES=()
 [[ $WANT_OC == 1 ]] && CLIENTES+=(opencode)
 [[ $WANT_CC == 1 ]] && CLIENTES+=(claude)
-cfg_de() { [[ "$1" == opencode ]] && echo "$OC_DIR" || echo "$CC_DIR"; }
+[[ $WANT_PI == 1 ]] && CLIENTES+=(pi)
+cfg_de() { case "$1" in opencode) echo "$OC_DIR";; claude) echo "$CC_DIR";; pi) echo "$PI_DIR";; esac; }
 
 # ------------------------------------------------------------------
 # Uninstall
@@ -111,7 +118,7 @@ fi
 # ------------------------------------------------------------------
 echo "==> Scripts en $KIT"
 mkdir -p "$KIT"
-cp "$KIT_DIR"/lib/*.py "$KIT_DIR"/lib/*.sh "$KIT_DIR"/lib/*.cjs "$KIT_DIR"/lib/*.dart "$KIT_DIR/lib/run-tests" "$KIT_DIR/lib/health-check" "$KIT_DIR/lib/autopilot-web" \
+cp "$KIT_DIR"/lib/*.py "$KIT_DIR"/lib/*.sh "$KIT_DIR"/lib/*.cjs "$KIT_DIR"/lib/*.dart "$KIT_DIR"/lib/*.mjs "$KIT_DIR/lib/run-tests" "$KIT_DIR/lib/health-check" "$KIT_DIR/lib/autopilot-web" \
   "$KIT_DIR/clients/render.py" "$KIT/" && chmod +x "$KIT"/*.sh "$KIT"/*.py "$KIT/run-tests" "$KIT/health-check" "$KIT/autopilot-web" \
   && rm -rf "$KIT/web" && cp -r "$KIT_DIR/lib/web" "$KIT/web"
 say "$(ls "$KIT" | tr '\n' ' ')"
@@ -144,6 +151,7 @@ rm -f "$KIT/azure-sync.py"
 
 echo
 echo "==> Listo (${CLIENTES[*]})."
+[[ " ${CLIENTES[*]} " == *" pi "* ]] && echo "  (pi) Skills como /skill:autopilot y agentes coder/qa-reviewer/e2e-tester en $PI_DIR/agents"
 echo "  Comandos:  /autopilot-init  /autopilot-plan  /autopilot  /autopilot-web"
 echo "  Proyecto:  $0 --init /ruta/al/proyecto"
 echo "  Docs:      $KIT_DIR/README.md"

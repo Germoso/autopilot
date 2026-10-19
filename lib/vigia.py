@@ -212,7 +212,7 @@ def revisar(env, simular=False):
             {"nombre": r["nombre"], "path": r["path"]}, t["id"]) for r in t.get("repos", [])]
         ult = max([ultima_actividad(r, t["archivo"]) for r in rutas] or [os.path.getmtime(t["archivo"])])
         ult = max([ult] + [v["desde"] for k, v in cpu_hist.items() if k.endswith(":" + t["id"])])
-        if t.get("sesion"):  # OpenCode: la sesion registra cuando se movio por ultima vez
+        if t.get("sesion") and str(t["sesion"]).startswith("ses_"):  # OpenCode: la sesion registra cuando se movio
             ult = max(ult, sesion_actualizada(t["sesion"]))
         quieta = (ahora - ult) / 60
         ya = reportadas.get(t["id"])

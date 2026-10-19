@@ -5,7 +5,7 @@ description: Prepara la carpeta actual para el autopilot. Detecta si es un repo 
 
 # Autopilot Init
 
-Prepara **la carpeta en la que está abierto el cliente** (OpenCode o Claude Code) para usar
+Prepara **la carpeta en la que está abierto el cliente** (OpenCode, Claude Code o pi) para usar
 `/autopilot`. Todo lo hace `init.py`; tu trabajo es detectar, preguntar y reportar.
 
 ```sh

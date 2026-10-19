@@ -11,7 +11,7 @@ afuera). El autopilot las toma una por una:
                  en su rama      la certifica      persona (web/Android)  y mergeas
 ```
 
-- Funciona con **Claude Code** y **OpenCode**.
+- Funciona con **Claude Code**, **OpenCode** y **pi** (pi-coding-agent).
 - Cada tarea tiene **su propia rama** (`bug-140123`, `task-login_social`). **Nunca hace push**: eso lo haces tú. El merge a la base lo haces tú también (desde la app web con un botón, a mano, o activás `AUTO_MERGE=true` y el kit lo hace por vos al aprobar, solo local y sin push).
 - **Nunca toca producción.** Solo usa los ambientes de QA que tú le das.
 - Todo queda guardado en la base de la tarea: qué hizo el coder, qué probó el QA, capturas. El `.md` de cada tarea solo muestra el bug original y sus adjuntos originales.
@@ -28,7 +28,7 @@ cd ~/code/dotenvs
 ./install.sh
 ```
 
-**2. Preparar tu proyecto.** Abre Claude Code u OpenCode **en la carpeta del proyecto** y escribe:
+**2. Preparar tu proyecto.** Abre Claude Code, OpenCode o pi **en la carpeta del proyecto** y escribe:
 
 ```
 /autopilot-init
@@ -137,7 +137,7 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
   `bug-<id>-<título>.md` o `task-<id>-<título>.md`. El `<id>` lo eliges tú: un número (`140123`) o un
   texto (`login_social`: minúsculas, dígitos y `_`, sin `-`). Es también el nombre de la rama.
 
-> Si cierras Claude Code / OpenCode, el autopilot se detiene. Al volver, escribe `/autopilot` otra vez.
+> Si cierras Claude Code / OpenCode / pi, el autopilot se detiene. Al volver, escribe `/autopilot` otra vez.
 
 > Las tareas se guardan en una base (`.workitems/autopilot.db`); los `.md` se generan solos a partir
 > de ella para que puedas leerlas. Mover un `.md` de carpeta o crear uno nuevo sigue funcionando; para

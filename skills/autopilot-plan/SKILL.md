@@ -54,7 +54,8 @@ existe un plan en `<board>/planes/` para esta idea, léelo y retoma donde quedó
    - stack y estructura, módulos relacionados, qué ya existe y qué falta;
    - convenciones, cómo son los tests y cómo se configuran los ambientes.
 
-   En Claude Code puedes delegar la búsqueda en subagentes `Explore`, en paralelo.
+   En Claude Code puedes delegar la búsqueda en subagentes `Explore`, en paralelo; en pi, con
+   la herramienta `subagent` (agente `researcher` o `scout`).
    **No preguntes lo que el código ya responde.** Pregunta lo que el código no puede decidir.
 4. **El board.** Corre `$W "$E" query`: tareas que ya existen, para no duplicarlas y para saber qué ids están usados.
 5. **Devuelve lo que entendiste** en 5 a 10 líneas:
@@ -97,6 +98,7 @@ Origen: <idea / ruta del documento>   ·   Estado: brainstorming | definido | ta
   datos) y dejando para después los detalles.
 - **Cada pregunta con opciones concretas y tu recomendación** (y por qué), basadas en el código y en lo que ya
   se decidió. En Claude Code usa la herramienta `AskUserQuestion`; en OpenCode, la herramienta `question`.
+  En pi, `contact_supervisor` con `interview_request` (o `AskUserQuestion` si el paquete lo expone).
   Si no hay herramienta de preguntas, numéralas en el mensaje.
 - **Nunca inventes un requisito.** Todo supuesto se pregunta o se anota como supuesto confirmado por el usuario.
 - **Haz de sparring, no de secretario:**

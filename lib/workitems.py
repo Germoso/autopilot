@@ -2474,7 +2474,7 @@ USO = """uso: wi.sh <env> <comando> [args]
   log        <evento> <origen> <tipo> <tarea> <rama> <commit> <detalle>
   query      [estado]                    JSON con las tareas
   plan       [--recuperar]               lo que usa el watcher (--recuperar: solo al iniciar)
-  sesion     <clave> <ses_id>            registra la sesion de OpenCode que trabaja la tarea
+  sesion     <clave> <ses_id>            registra la sesion (OpenCode o pi) que trabaja la tarea
   notas-dev  <clave> <texto|-> [--imagenes <dir>]...   notas del coder (- = stdin)
   reporte-qa <clave> <texto|-> [--imagenes <dir>]...   reporte del QA (- = stdin)
                                          Las imagenes mencionadas en el texto (y las de --imagenes)

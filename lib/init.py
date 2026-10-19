@@ -32,7 +32,8 @@ import workitems as wi  # noqa: E402
 
 PREFERIDAS = ["develop", "dev", "main", "master"]
 IGNORAR = [".workitems/", "autopilot.env", "*.secrets.env", ".claude/settings.local.json",
-           ".env.autopilot", ".env.autopilot.e2e", "cuentas-e2e.env", "test-results/"]
+           ".env.autopilot", ".env.autopilot.e2e", "cuentas-e2e.env", "test-results/",
+           ".pi/"]  # pi: settings, extension de guard y agentes locales del proyecto
 
 
 def git(path, *args):
@@ -197,6 +198,8 @@ def clientes_instalados():
         out.append("opencode")
     if os.path.isdir(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")):
         out.append("claude")
+    if os.path.isdir(os.environ.get("PI_CODING_AGENT_DIR") or os.path.join(home, ".pi", "agent")):
+        out.append("pi")
     return out
 
 

@@ -79,25 +79,28 @@ son `wi.sh` y el `autopilot.env` (ver *Una sola vía de escritura*).
 
 ### Cómo se lanza cada cosa según el cliente
 
-| | **Claude Code** | **OpenCode** |
+| | **Claude Code** | **OpenCode** | **pi** |
 |---|---|---|
-| Watcher | Bash con `run_in_background: true`. Te re-invoca cuando retorna. Mientras, no sondees su salida. | Bash en primer plano, con el timeout más largo posible. |
-| Subagente de un puesto | Tool Agent con `subagent_type: coder`, `qa-reviewer` o `e2e-tester`. Corren **en segundo plano** (definido en el agente): no los esperes; Claude Code te avisa cuando terminan. | Herramienta de subagentes (`task`) con `agent: coder`, `qa-reviewer` o `e2e-tester`, `description: "<clave>: <puesto>"` y **`background: true`**: corre como **sesión hija** de la tuya, en paralelo, y la herramienta vuelve enseguida con su `sessionID`. **Regístralo siempre**: `$W "$E" sesion <clave> <sessionID>` (con él el watcher sabe cuándo termina, el vigía mide su actividad y los pedidos de permiso se rechazan solos). No la esperes ni la sondees. Sus permisos vienen de la definición del agente: solo su copia de trabajo, el kit y `/tmp`; lo demás se deniega (**nunca pregunta**). *Solo si tu OpenCode no acepta `background` en `task`* (versiones viejas): `python3 $K/oc_sesion.py lanzar <agente> <carpeta abierta> "<clave>: <puesto>" - --adjunto <img>...` con el encargo por stdin, y registra el `sesion` que devuelve. |
-| Fin de un subagente | Llega como aviso de tarea terminada, con su respuesta. | Llega el aviso de OpenCode ("subagent … completed") **y** el watcher lo devuelve en `terminadas`. Procésalo una sola vez: con el primero que llegue. La respuesta completa: `python3 $K/oc_sesion.py resultado <ses>`. Si la tarea ya no está en ese puesto, ya la procesaste: ignora el otro aviso. |
-| Imágenes | Pásale las rutas en el encargo: las abre con Read. | Igual: rutas completas en el encargo (las abre con su herramienta de lectura). Con `oc_sesion.py`, además como `--adjunto`. |
+| Watcher | Bash con `run_in_background: true`. Te re-invoca cuando retorna. Mientras, no sondees su salida. | Bash en primer plano, con el timeout más largo posible. | Bash en primer plano, sin timeout (pi no tiene `run_in_background`): el watcher corta solo cuando detecta algo y retorna. Los subagentes te despiertan nativamente al terminar; si estás dentro de una espera larga del watcher, procésalos cuando retorne y relánzalo. |
+| Subagente de un puesto | Tool Agent con `subagent_type: coder`, `qa-reviewer` o `e2e-tester`. Corren **en segundo plano** (definido en el agente): no los esperes; Claude Code te avisa cuando terminan. | Herramienta de subagentes (`task`) con `agent: coder`, `qa-reviewer` o `e2e-tester`, `description: "<clave>: <puesto>"` y **`background: true`**: corre como **sesión hija** de la tuya, en paralelo, y la herramienta vuelve enseguida con su `sessionID`. **Regístralo siempre**: `$W "$E" sesion <clave> <sessionID>` (con él el watcher sabe cuándo termina, el vigía mide su actividad y los pedidos de permiso se rechazan solos). No la esperes ni la sondees. Sus permisos vienen de la definición del agente: solo su copia de trabajo, el kit y `/tmp`; lo demás se deniega (**nunca pregunta**). *Solo si tu OpenCode no acepta `background` en `task`* (versiones viejas): `python3 $K/oc_sesion.py lanzar <agente> <carpeta abierta> "<clave>: <puesto>" - --adjunto <img>...` con el encargo por stdin, y registra el `sesion` que devuelve. | Herramienta `subagent` con `agent: "coder"`, `"qa-reviewer"` o `"e2e-tester"` y `task: "<clave>: <puesto>"` (ruta completa de los adjuntos en el task). Corren **en segundo plano por defecto** (los agentes se generan con `async: true`): la llamada vuelve enseguida con su `sessionID`. **Regístralo**: `$W "$E" sesion <clave> <sessionID>` (queda en la tarea y en el log; el fin no lo detecta el watcher — te llega como aviso nativo de pi). No la esperes ni la sondees. |
+| Fin de un subagente | Llega como aviso de tarea terminada, con su respuesta. | Llega el aviso de OpenCode ("subagent … completed") **y** el watcher lo devuelve en `terminadas`. Procésalo una sola vez: con el primero que llegue. La respuesta completa: `python3 $K/oc_sesion.py resultado <ses>`. Si la tarea ya no está en ese puesto, ya la procesaste: ignora el otro aviso. | Llega **una sola vez** como notificación nativa de pi (no hay aviso duplicado como en OpenCode): es el evento B/C/D. La respuesta es el texto final del subagente; si necesitas más detalle, `subagent({action:"status", id: <sessionID>})` o `bg_wait({id: <sessionID>})`. |
+| Imágenes | Pásale las rutas en el encargo: las abre con Read. | Igual: rutas completas en el encargo (las abre con su herramienta de lectura). Con `oc_sesion.py`, además como `--adjunto`. | Igual: rutas completas en el `task`. |
 
 En OpenCode cada puesto se ve como sesión hija de la tuya: el usuario puede abrirla y mirarla en vivo.
+En pi cada subagente corre en su propia sesión hija (misma cuenta): `subagent({action:"status"})` muestra su estado; el usuario puede verlas en el TUI.
 
 ### Por qué el watcher y no polling del agente
 
 - **No consume tokens mientras espera.** El proceso duerme entre lecturas del board; no hay
   turnos de modelo hasta que retorna.
-- **El despertar es la propia salida del script** (o, en Claude Code, el aviso de un subagente).
+- **El despertar es la propia salida del script** (o, en Claude Code o pi, el aviso de un subagente).
 - **Un solo watcher a la vez.** Llévalo en la cuenta: si lo lanzaste y no retornó, sigue corriendo.
 
 **LIMITACIÓN CONOCIDA:** el watcher vive dentro de la sesión. Si el usuario cierra el cliente, deja
 de vigilar. En OpenCode las sesiones de los puestos (registradas con `wi.sh sesion`) sí siguen en su
 servicio; al volver, `--inicio` las respeta (no las marca huérfanas) y el watcher avisa cuando terminan.
+  En pi los subagentes async (registrados con `wi.sh sesion`) también siguen su curso; al volver, `--inicio`
+  los respeta igual y el watcher avisa cuando terminan.
 
 ## REGLA DE ORO: NUNCA DEJAR EL WATCHER PARADO
 
@@ -202,7 +205,7 @@ $W "$E" resultado   <clave> "<rama | commit | resumen>"
 $W "$E" add-task    <task|bug> <id> <prioridad> "<titulo>" "<descripcion>" "<criterio>" [repo] [--depende <claves>] [--origen <texto>]   # repo obligatorio en workspace; @archivo en descripcion/criterio
 $W "$E" log <evento> <origen> <tipo> <tarea> <rama> <commit> <detalle>
 $W "$E" query [estado]
-$W "$E" sesion      <clave> <ses_id>          # OpenCode: sesión que trabaja la tarea
+$W "$E" sesion      <clave> <ses_id>          # OpenCode/pi: sesión que trabaja la tarea (para el vigilante)
 $W "$E" notas-dev   <clave> -   <<'FIN'       # notas del coder (stdin)
 $W "$E" reporte-qa  <clave> -   <<'FIN'       # reporte del QA (stdin)
 $W "$E" qa-worktree <clave>                   # copia de trabajo del QA
@@ -244,9 +247,9 @@ watcher antes de ocupar el puesto, te devuelve la misma acción):
 
 Si `wi.sh rama` falla, la tarea ya quedó en `stopped`: sigue con lo demás. Pueden venir **varias
 acciones** (varios coders y varios QA si `PARALLEL=true`): atiéndelas todas y lanza todos los
-subagentes en segundo plano, uno por tarea (en Claude Code y en OpenCode, en el mismo mensaje).
+subagentes en segundo plano, uno por tarea (en Claude Code, OpenCode y pi, en el mismo mensaje).
 
-### B. Terminó el coder (aviso de Claude Code, o `terminadas` con puesto `coder` en OpenCode)
+### B. Terminó el coder (aviso de Claude Code o pi, o `terminadas` con puesto `coder` en OpenCode)
 
 Antes de verificar, recarga los repos de la tarea: el coder pudo haber sumado otros
 (`$W "$E" repos <clave>`).
@@ -268,6 +271,7 @@ Antes de verificar, recarga los repos de la tarea: el coder pudo haber sumado ot
 5. Si pasó a `qa`: `$W "$E" solapes <clave>`. Si comparte archivos con otra tarea activa, agrégalo
    a su `resultado` ("⚠️ comparte <archivos> con <otra>: posible conflicto al mergear").
 6. En OpenCode, si el `outcome` no es `succeeded` (falló o se interrumpió) → `stopped` con ese motivo.
+   (En pi la notificación de subagente terminado ya es el evento B; en Claude Code también.)
 
 Al pasar a `done` o `stopped`, el worktree del coder se borra solo y se liberan sus reservas (en
 `stopped` se conserva si tiene cambios sin commitear, y queda anotado).
@@ -336,6 +340,7 @@ CPU, sesión) durante `STALE_MINUTES`. Para cada una:
   está esperando y pidiéndole que corte lo que esté bloqueado. Si ya terminó sin avisar, procesa su
   resultado (eventos B, C o D).
 - **OpenCode:** `python3 $K/oc_sesion.py estado <ses>`; si terminó, procesa su resultado.
+- **pi:** `subagent({action:"status", id: <sessionID>})`; si terminó, procesa su resultado.
 - Si no responde o no hay agente → `$W "$E" stopped <clave> "Atascada: <N> min sin actividad"`.
 
 Relanza el watcher después.
@@ -522,8 +527,10 @@ E2E; no commitea. Veredicto `APROBADO` (cada criterio CUMPLE con capturas, en ca
 `RECHAZADO` (→ `bug-fix`) o `NO CERTIFICABLE` (→ `stopped`).
 
 Los bloqueos son reales, no instrucciones: en OpenCode son permisos `deny` del agente; en
-Claude Code, un hook `PreToolUse` (`$K/git-guard.sh`) que cancela el comando. `/autopilot-init`
-además prohíbe push/merge al agente principal.
+Claude Code, un hook `PreToolUse` (`$K/git-guard.sh`) que cancela el comando; en pi, una extensión
+(`$K/pi-guard-<rol>.mjs`) que intercepta cada `tool_call` y cancela lo prohibido (misma `git-guard.sh`).
+`/autopilot-init` además prohíbe push/merge al agente principal (en pi, la extensión `pi-guard-todos.mjs`
+ambient en `.pi/extensions/` del proyecto).
 
 ## Log de actividad
 

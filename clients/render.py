@@ -8,14 +8,18 @@ Salida:
             <cfg>/commands/<cmd>.md   /autopilot-init, /autopilot-plan, /autopilot y /autopilot-web
   claude    <cfg>/agents/<name>.md    hook PreToolUse -> git-guard.sh <role>
             (sin commands: en Claude Code las skills ya son esos comandos)
+  pi        <cfg>/agents/<name>.md    frontmatter de pi (async, tools, subagentOnlyExtensions)
+                                      + guard real: extension pi-guard-<role>.mjs del kit, que
+                                      intercepta tool_call y cancela lo prohibido (git-guard.sh)
+            (sin commands: en pi las skills ya son esos comandos, /skill:<nombre>)
 
 Todo archivo generado lleva la marca MARCA en el frontmatter; uninstall solo
 borra archivos con esa marca.
 
 uso:
-  render.py install   <opencode|claude> <cfg_dir> <kit_dir>
-  render.py uninstall <opencode|claude> <cfg_dir>
-  render.py project   <opencode|claude> <proyecto> <kit_dir>   protege push/merge en el proyecto
+  render.py install   <opencode|claude|pi> <cfg_dir> <kit_dir>
+  render.py uninstall <opencode|claude|pi> <cfg_dir>
+  render.py project   <opencode|claude|pi> <proyecto> <kit_dir>   protege push/merge en el proyecto
 """
 import glob
 import json
@@ -146,6 +150,24 @@ def front_claude(meta, kit):
     return out
 
 
+def front_pi(meta, kit):
+    """Frontmatter de pi. Los bloqueos reales van en una extension (pi-guard-<role>.mjs del
+    kit) que intercepta tool_call y cancela lo prohibido (misma logica que git-guard.sh y
+    escritura.sh, reutilizadas tal cual); se carga SOLO en las sesiones de este agente
+    (subagentOnlyExtensions), no en el resto de la sesion del usuario."""
+    role = meta["role"]
+    guard = os.path.join(kit, "pi-guard-%s.mjs" % role)
+    out = [MARCA, "name: " + meta["name"], "description: " + q(meta["description"]),
+           "role: " + role,
+           # pi corre los subagentes en segundo plano por defecto: el watcher no los espera.
+           "async: true",
+           # Solo estas herramientas. Sin 'subagent': el agente no lanza subagentes.
+           "tools: read, bash, edit, write, grep, find, ls",
+           # Guard real (push/merge, aenv.sh, .env*, copias de trabajo): solo en sus sesiones.
+           "subagentOnlyExtensions: " + q(guard)]
+    return out
+
+
 def escribir(path, front, cuerpo):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if os.path.exists(path) and MARCA not in open(path, encoding="utf-8").read():
@@ -161,7 +183,12 @@ def install(cliente, cfg, kit):
     for src in sorted(glob.glob(os.path.join(KIT_SRC, "agents", "*.md"))):
         meta, cuerpo = leer_agente(src)
         actuales.add(meta["name"] + ".md")
-        front = front_opencode(meta) if cliente == "opencode" else front_claude(meta, kit)
+        if cliente == "opencode":
+            front = front_opencode(meta)
+        elif cliente == "claude":
+            front = front_claude(meta, kit)
+        else:
+            front = front_pi(meta, kit)
         escribir(os.path.join(cfg, "agents", meta["name"] + ".md"), front, cuerpo)
     # Agentes que el kit instalo antes y ya no existen (p. ej. renombrados): se borran.
     # Solo archivos con la marca del kit; nunca uno ajeno.
@@ -205,7 +232,20 @@ def json_merge(path, mutar, backup=True):
 
 def project(cliente, proj, kit):
     """Prohibe push/merge tambien al agente principal (el orquestador) en ese proyecto."""
-    if cliente == "claude":
+    if cliente == "pi":
+        # Pi no tiene permisos por comando por proyecto: se instala la extension guard en
+        # .pi/extensions/ del proyecto (ambient en esa carpeta) con modo 'todos' (push/merge/
+        # pull/gh pr merge y nada que toque un ambiente fuera de aenv.sh).
+        dst = os.path.join(proj, ".pi", "extensions", "pi-guard-todos.mjs")
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        for nombre in ("pi-guard.mjs", "pi-guard-todos.mjs"):
+            destino = os.path.join(os.path.dirname(dst), nombre)
+            if os.path.exists(destino):
+                os.remove(destino)
+            shutil.copy2(os.path.join(kit, nombre), destino)
+        print("  + %s (push/merge y ambientes prohibidos al agente principal)" % dst)
+        return
+    elif cliente == "claude":
         path = os.path.join(proj, ".claude", "settings.local.json")
         guard = "%s todos" % shlex.quote(os.path.join(kit, "git-guard.sh"))
 
