@@ -100,7 +100,7 @@ En pi cada subagente corre en su propia sesión hija (misma cuenta): `subagent({
 de vigilar. En OpenCode las sesiones de los puestos (registradas con `wi.sh sesion`) sí siguen en su
 servicio; al volver, `--inicio` las respeta (no las marca huérfanas) y el watcher avisa cuando terminan.
   En pi los subagentes async (registrados con `wi.sh sesion`) también siguen su curso; al volver, `--inicio`
-  los respeta igual y el watcher avisa cuando terminan.
+  los respeta igual y su fin te llega como aviso nativo de pi (no lo detecta el watcher).
 
 ## REGLA DE ORO: NUNCA DEJAR EL WATCHER PARADO
 

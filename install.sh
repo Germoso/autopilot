@@ -152,6 +152,10 @@ rm -f "$KIT/azure-sync.py"
 echo
 echo "==> Listo (${CLIENTES[*]})."
 [[ " ${CLIENTES[*]} " == *" pi "* ]] && echo "  (pi) Skills como /skill:autopilot y agentes coder/qa-reviewer/e2e-tester en $PI_DIR/agents"
-echo "  Comandos:  /autopilot-init  /autopilot-plan  /autopilot  /autopilot-web"
+if [[ " ${CLIENTES[*]} " == *" pi "* && " ${CLIENTES[*]} " != *" opencode "* ]]; then
+  echo "  Comandos:  /skill:autopilot-init  /skill:autopilot-plan  /skill:autopilot  /skill:autopilot-web"
+else
+  echo "  Comandos:  /autopilot-init  /autopilot-plan  /autopilot  /autopilot-web"
+fi
 echo "  Proyecto:  $0 --init /ruta/al/proyecto"
 echo "  Docs:      $KIT_DIR/README.md"
