@@ -895,47 +895,23 @@ uso: wi.sh <env> <comando> [args]
 
 Otros scripts en `~/.local/share/autopilot-kit/`: `aenv.sh [--e2e] <repo> -- <cmd>` (corre con
 `.env.autopilot` validado), `e2e.sh --help` (herramientas del agente E2E), `e2e-setup.sh`,
-`vigia.py <env> --simular`, `autopilot-web [--lan] [--port N]`.
+`vigia.py <env> --simular`, `orca-board` (tablero de tareas de Orca, CLI o `web`).
 
 ---
 
-## App web (`autopilot-web`)
+## Tablero de tareas de Orca (`orca-board`)
 
-Servidor Python sin dependencias (`lib/web/servidor.py`) con la interfaz incluida en el kit (sin CDN).
-Muestra todos los proyectos donde se usó el kit: cada `wi.sh` registra su `autopilot.env` en
-`~/.config/autopilot-kit/proyectos.json`.
+`orca-board` (`lib/orca-board.py`) lee las tareas de orquestación de Orca directamente del CLI
+(`orca orchestration task-list` / `run-list`), así que es **agnóstico de agente**: funciona con
+cualquier cliente (Claude Code, OpenCode, pi, codex...) y desde cualquier dispositivo. Orca sigue
+siendo la única fuente de verdad; el tablero solo la muestra.
 
-**Desde el cliente:** la skill `/autopilot-web` (`skills/autopilot-web/SKILL.md`) la arranca
-desacoplada (`setsid nohup`, vive sin el cliente), verifica que responde, y si ya hay una
-instancia reporta URL/PID/modo y pregunta antes de detenerla o rearrancarla. Argumentos:
-`lan` (`--lan`), `puerto <n>` (`--port`), `detener` (mata solo un PID del kit y solo si el
-usuario lo pidió).
-
-- **Ver:** tablero (columnas vacías ocultas por defecto), detalle con historial por intento, adjuntos
-  agrupados por paso (con filtro por agente), log, reportes de `test-results/`, estado del watcher y
-  de la pausa.
-- **Gestionar / editar:** cada botón llama a `wi.sh` (mismas validaciones, log y avisos de Telegram).
-- **Panel Git** (detalle de la tarea): `GET /api/p/<id>/git/<clave>[?fetch=1]` (`git-estado`) y
-  `GET /api/p/<id>/diff/<clave>?repo=&archivo=` (`git-diff`, recortado a 200 KB) para ver; `POST
-  /api/p/<id>/git` con `op` = `merge` (`merge --humano`), `push-base`, `push-rama` o `pr` para actuar
-  (solo con la tarea en `done`/`reviewed`; el resultado se muestra por repo), y `pull-base`
-  (`pull-bases`, en cualquier estado): fast-forward de la base de cada repo desde `origin`, con la
-  misma lógica que se usa antes de crear una rama. El git que habla con el
-  remoto corre sin preguntas (`GIT_TERMINAL_PROMPT=0`): usa las credenciales que ya tenga tu git. Los
-  PR de Azure DevOps usan `AZURE_DEVOPS_PAT` (entorno → `azure-sync.secrets.env` del proyecto →
-  `~/.config/autopilot-kit/ado-mcp.secrets.env`), que va a curl por stdin, nunca en argv. Las URLs de
-  los PR quedan en la sección `## Pull requests` de la tarea. `git-guard.sh` bloquea a los agentes
-  `wi.sh push`, `pr`, `pull-bases` y `merge --humano`.
-  Los adjuntos subidos van a `adjuntos/<clave>/humano/`; nunca se aceptan archivos `.env*`.
-- **Correr:** `health-check` y `run-tests` como trabajos en segundo plano (uno de cada
-  tipo por proyecto a la vez), con su salida.
-
-**Seguridad:** sin `--lan` escucha solo en `127.0.0.1`. Con `--lan` escucha en la red y pide la clave
-de `~/.config/autopilot-kit/web.env` (600, se genera sola); la sesión es una cookie
-`HttpOnly; SameSite=Strict`. Toda acción (POST) exige el encabezado `X-Autopilot: 1` (contra CSRF). Solo
-sirve archivos dentro de `.workitems/` y `test-results/` (nunca la base ni `.env*`); los SVG se
-descargan en vez de mostrarse; la salida pasa por el mismo filtro de secretos que Telegram. Va sin
-HTTPS: úsala solo en una red de confianza.
+- **CLI:** `orca-board` lista las runs y sus tareas por estado (colores en tty, filtros
+  `--run <id>`, `--status <est>`, `--json` para scripts).
+- **Web:** `orca-board web [--port N]` sirve `http://localhost:8766` con tarjetas por estado
+  (lista / en curso / completada / fallida / bloqueada), auto-refresco y un botón **Iniciar** por
+  tarea que ejecuta `orca orchestration worker-start` (agente y base branch opcionales). Con
+  `--lan` escucha en la red local (sin HTTPS: solo red de confianza). Sin dependencias (stdlib).
 
 ---
 
@@ -947,7 +923,7 @@ dotenvs/
 ├── lib/                        # -> ~/.local/share/autopilot-kit/  (compartido por ambos clientes)
 │   ├── workitems.py            # el board (unica implementacion); vistas .md y migracion
 │   ├── almacen.py              # la base SQLite del board (autopilot.db)
-│   ├── web/, autopilot-web     # app web: ver, gestionar, crear y correr (stdlib + JS, sin CDN)
+│   ├── orca-board, orca-board.py # tablero agnostico de tareas de Orca (CLI + web, stdlib)
 │   ├── wi.sh                   # unica via de escritura del board + ramas
 │   ├── watcher.sh              # sensor: lee el board y retorna
 │   ├── init.py                 # prepara un repo o workspace (lo usa /autopilot-init)
@@ -964,8 +940,7 @@ dotenvs/
 ├── skills/                     # -> carpeta de skills de cada cliente
 │   ├── autopilot/SKILL.md      # reglas, maquina de estados, arranque por cliente
 │   ├── autopilot-init/SKILL.md # /autopilot-init
-│   ├── autopilot-plan/SKILL.md # /autopilot-plan: idea o documento -> brainstorming -> tareas
-│   └── autopilot-web/SKILL.md  # /autopilot-web: arranca y gestiona la app web
+│   └── autopilot-plan/SKILL.md # /autopilot-plan: idea o documento -> brainstorming -> tareas
 ├── agents/                     # fuente unica de los subagentes
 │   ├── coder.md
 │   ├── qa-reviewer.md
@@ -982,7 +957,7 @@ dotenvs/
 |---|---|---|
 | Skills | `~/.config/opencode/skills/` | `~/.claude/skills/` |
 | Subagentes | `~/.config/opencode/agents/*.md` | `~/.claude/agents/*.md` |
-| `/autopilot-init`, `/autopilot-plan`, `/autopilot`, `/autopilot-web` | comandos en `~/.config/opencode/commands/` | las propias skills |
+| `/autopilot-init`, `/autopilot-plan`, `/autopilot` | comandos en `~/.config/opencode/commands/` | las propias skills |
 | Bloqueo de push/merge en subagentes | `permission.bash` con `deny` | hook `PreToolUse` → `git-guard.sh` |
 | Bloqueo en el agente principal (por proyecto) | `opencode.json` del proyecto | `.claude/settings.local.json` (deny + hook) |
 | Cómo espera el watcher | primer plano | segundo plano (`run_in_background`): Claude Code te re-invoca al terminar |

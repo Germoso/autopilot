@@ -3,18 +3,18 @@
 #  install.sh — instala el kit para OpenCode, Claude Code y/o pi
 #
 #  Que instala:
-#    - scripts (board, watcher, guardas de git, app web) en
+#    - scripts (board, guardas de git, tablero de Orca) en
 #      ~/.local/share/autopilot-kit/   (compartidos por todos los clientes)
-#    - skills autopilot, autopilot-init, autopilot-plan y autopilot-web en la carpeta de skills de cada cliente
-#    - agentes coder, qa-reviewer y e2e-tester, generados desde agents/*.md
+#    - skills autopilot, autopilot-init, autopilot-plan, ponytail y tdd en la carpeta de skills de cada cliente
+#    - agente coder, generado desde agents/*.md
 #      con los bloqueos de git propios de cada cliente
-#    - (OpenCode) comandos /autopilot-init, /autopilot-plan, /autopilot y /autopilot-web
+#    - (OpenCode) comandos /autopilot-init, /autopilot-plan y /autopilot
 #      (en Claude Code y pi las skills ya son esos comandos)
 #    - (pi) extension de guard (pi-guard-*.mjs) que cancela push/merge, lo que toque
 #      un ambiente sin aenv.sh y la escritura de .env* / fuera de las copias de trabajo
 #
-#  Como llegan las tareas al board es externo al kit (wi.sh add-task, un .md
-#  en new/, la app web o una integracion; ver integraciones/).
+#  El tablero visual de tareas es agnostico de agente: orca-board (CLI + web)
+#  lee las tareas de orquestacion de Orca (orca orchestration task-list).
 #
 #  Que NO hace:
 #    - No pisa archivos que no genero el kit.
@@ -37,7 +37,7 @@ SECRETS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/autopilot-kit"
 OC_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
 CC_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 PI_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
-SKILLS=(autopilot autopilot-init autopilot-plan autopilot-web)
+SKILLS=(autopilot autopilot-init autopilot-plan ponytail tdd)
 MARCA=".autopilot-kit"
 RENDER="$KIT_DIR/clients/render.py"
 
@@ -118,9 +118,8 @@ fi
 # ------------------------------------------------------------------
 echo "==> Scripts en $KIT"
 mkdir -p "$KIT"
-cp "$KIT_DIR"/lib/*.py "$KIT_DIR"/lib/*.sh "$KIT_DIR"/lib/*.cjs "$KIT_DIR"/lib/*.dart "$KIT_DIR"/lib/*.mjs "$KIT_DIR/lib/run-tests" "$KIT_DIR/lib/health-check" "$KIT_DIR/lib/autopilot-web" \
-  "$KIT_DIR/clients/render.py" "$KIT/" && chmod +x "$KIT"/*.sh "$KIT"/*.py "$KIT/run-tests" "$KIT/health-check" "$KIT/autopilot-web" \
-  && rm -rf "$KIT/web" && cp -r "$KIT_DIR/lib/web" "$KIT/web"
+cp "$KIT_DIR"/lib/*.py "$KIT_DIR"/lib/*.sh "$KIT_DIR"/lib/*.cjs "$KIT_DIR"/lib/*.dart "$KIT_DIR"/lib/*.mjs "$KIT_DIR/lib/run-tests" "$KIT_DIR/lib/health-check" "$KIT_DIR/lib/orca-board" \
+  "$KIT_DIR/clients/render.py" "$KIT/" && chmod +x "$KIT"/*.sh "$KIT"/*.py "$KIT/run-tests" "$KIT/health-check" "$KIT/orca-board"
 say "$(ls "$KIT" | tr '\n' ' ')"
 
 # ------------------------------------------------------------------
@@ -151,11 +150,12 @@ rm -f "$KIT/azure-sync.py"
 
 echo
 echo "==> Listo (${CLIENTES[*]})."
-[[ " ${CLIENTES[*]} " == *" pi "* ]] && echo "  (pi) Skills como /skill:autopilot y agentes coder/qa-reviewer/e2e-tester en $PI_DIR/agents"
+[[ " ${CLIENTES[*]} " == *" pi "* ]] && echo "  (pi) Skills como /skill:autopilot y agente coder en $PI_DIR/agents"
 if [[ " ${CLIENTES[*]} " == *" pi "* && " ${CLIENTES[*]} " != *" opencode "* ]]; then
-  echo "  Comandos:  /skill:autopilot-init  /skill:autopilot-plan  /skill:autopilot  /skill:autopilot-web"
+  echo "  Comandos:  /skill:autopilot-init  /skill:autopilot-plan  /skill:autopilot"
 else
-  echo "  Comandos:  /autopilot-init  /autopilot-plan  /autopilot  /autopilot-web"
+  echo "  Comandos:  /autopilot-init  /autopilot-plan  /autopilot"
 fi
+echo "  Tablero Orca (agnostico):  $KIT/orca-board | $KIT/orca-board web"
 echo "  Proyecto:  $0 --init /ruta/al/proyecto"
 echo "  Docs:      $KIT_DIR/README.md"

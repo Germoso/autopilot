@@ -5,7 +5,7 @@ render.py — Genera la configuracion de cada cliente desde una sola fuente.
 Fuente unica:  agents/*.md  (frontmatter neutro: name, description, role)
 Salida:
   opencode  <cfg>/agents/<name>.md    permisos de bash por patron (permission.bash)
-            <cfg>/commands/<cmd>.md   /autopilot-init, /autopilot-plan, /autopilot y /autopilot-web
+            <cfg>/commands/<cmd>.md   /autopilot-init, /autopilot-plan y /autopilot
   claude    <cfg>/agents/<name>.md    hook PreToolUse -> git-guard.sh <role>
             (sin commands: en Claude Code las skills ya son esos comandos)
   pi        <cfg>/agents/<name>.md    frontmatter de pi (async, tools, subagentOnlyExtensions)
@@ -41,11 +41,7 @@ BASE = ["git push", "git merge", "git pull", "gh pr merge"]
 DENY = {
     "coder": BASE + ["git rebase", "git branch -d", "git branch -D", "git branch --delete",
                       "git reset --hard", "git switch", "git checkout -b", "git checkout -B"],
-    "qa": BASE + ["git rebase", "git commit", "git add", "git switch", "git checkout", "git reset",
-                  "git stash", "git cherry-pick", "git revert", "git branch -d", "git branch -D",
-                  "git branch --delete"],
 }
-DENY["e2e"] = DENY["qa"]
 
 # Nunca contra produccion (mismo criterio que git-guard.sh): lo que se conecta a un ambiente solo
 # pasa envuelto en aenv.sh, que valida el .env.autopilot del humano. OpenCode: gana la ultima regla.
@@ -54,9 +50,6 @@ AMBIENTE_DENY = ["npm run *", "npm start*", "npm test*", "npm t *", "npm exec *"
                  "sequelize *", "knex *", "nodemon *", "*migrat*", "*seed*", "flutter run*", "flutter drive*",
                  "fvm flutter run*", "fvm flutter drive*", "*integration_test*", "curl http*", "wget http*",
                  "*> .env*", "*>.env*", "cp *.env*", "mv *.env*", "sed *.env*", "tee *.env*"]
-# E2E: apps, emulador y navegador solo via e2e.sh (apunta al backend local y corta la red a produccion).
-E2E_DENY = ["flutter build*", "fvm flutter build*", "flutter install*", "fvm flutter install*", "*playwright*",
-            "emulator *", "*qemu-system*", "adb *install*", "*aenv.sh*flutter*", "*aenv.sh*playwright*"]
 AMBIENTE_ALLOW = ["npm run build*", "npm run lint*", "npm run format*", "npm run typecheck*", "npx tsc*",
                   "npx eslint*", "npx prettier*", "yarn install*", "yarn build*", "yarn lint*", "pnpm install*",
                   "curl http://localhost*", "curl http://127.0.0.1*", "*aenv.sh *"]
@@ -65,7 +58,6 @@ COMANDOS = {
     "autopilot-init": "Prepara esta carpeta (repo o workspace de varios repos) para el autopilot: rama base y board",
     "autopilot-plan": "Convierte una idea o un documento en tareas del board: brainstorming hasta tenerlo claro, desglose y alta",
     "autopilot": "Enciende el watcher del sistema autonomo sobre el board de workitems de este proyecto",
-    "autopilot-web": "Arranca y gestiona la app web del autopilot (tablero en el navegador): la levanta desacoplada, detecta si ya corre, la detiene o la rearranca (lan, puerto)",
 }
 
 
@@ -89,23 +81,12 @@ def patrones(cmd):
     return [cmd, cmd + " *"]
 
 
-def qa_dir(puesto="qa"):
-    """Carpeta de las copias de trabajo del QA o del E2E (misma que workitems.Board.*_worktree_path)."""
-    cache = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
-    return os.path.join(cache, "autopilot-kit", puesto)
-
-
 def front_opencode(meta):
     role = meta["role"]
     out = [MARCA, "description: " + q(meta["description"]), "mode: subagent", "permission:"]
-    if role in ("qa", "e2e"):
-        # Solo escribe pruebas temporales y capturas en sus copias de trabajo; nada mas.
-        out += ["  edit:", '    "*": deny', "    %s: allow" % q(qa_dir(role) + "/**"),
-                "    %s: deny" % q(qa_dir(role) + "/.api/**")]
-    else:
-        out += ["  edit:", '    "*": allow']
+    out += ["  edit:", '    "*": allow']
     # Nadie escribe .env* (salvo .env.example): los ambientes los define el humano. Va al final: gana.
-    out += ['    "**/.env*": deny', '    "**/cuentas-e2e.env": deny'] + (['    "**/.env.example": allow'] if role == "coder" else [])
+    out += ['    "**/.env*": deny', '    "**/cuentas-e2e.env": deny', '    "**/.env.example": allow']
     # Nunca preguntar (nadie mira la sesion): fuera del proyecto solo lo suyo, el resto se deniega.
     # Mismas reglas que oc_sesion.reglas(), que ademas las fija en cada sesion que lanza el autopilot.
     out += ["  external_directory:", '    "*": deny']
@@ -118,16 +99,10 @@ def front_opencode(meta):
         for p in patrones(c):
             out.append("    %s: deny" % q(p))
     out += ["    %s: deny" % q(p) for p in AMBIENTE_DENY]
-    if role == "e2e":
-        out += ["    %s: deny" % q(p) for p in E2E_DENY]
-    out += ["    %s: allow" % q(p) for p in AMBIENTE_ALLOW + (["*e2e.sh *"] if role == "e2e" else [])]
-    if role == "e2e":  # aenv.sh no sirve para saltarse e2e.sh (va despues del allow: gana)
-        out += ["    %s: deny" % q(p) for p in E2E_DENY if "aenv.sh" in p]
+    out += ["    %s: allow" % q(p) for p in AMBIENTE_ALLOW]
     for c in DENY[role]:                                       # push/merge siguen prohibidos aun con aenv.sh
         for p in patrones(c):
             out.append("    %s: deny" % q("*aenv.sh* " + p))
-            if role == "e2e":
-                out.append("    %s: deny" % q("*e2e.sh* " + p))
     return out
 
 
@@ -135,18 +110,13 @@ def front_claude(meta, kit):
     role = meta["role"]
     guard = "%s %s" % (shlex.quote(os.path.join(kit, "git-guard.sh")), role)
     out = [MARCA, "name: " + meta["name"], "description: " + q(meta["description"]),
-           # El coder y el QA trabajan en paralelo: el principal no los espera, Claude Code le avisa al terminar.
+           # El coder trabaja en paralelo: el principal no lo espera, Claude Code le avisa al terminar.
            "background: true",
            "hooks:", "  PreToolUse:", '    - matcher: "Bash"', "      hooks:",
            "        - type: command", "          command: " + q(guard)]
-    if role == "coder":
-        # El coder escribe codigo, pero nunca archivos .env* (los ambientes los define el humano).
-        out += ['    - matcher: "Edit|Write|NotebookEdit"', "      hooks:", "        - type: command",
-                "          command: " + q(shlex.quote(os.path.join(kit, "escritura.sh")) + " coder")]
-    if role in ("qa", "e2e"):
-        # El QA y el E2E escriben pruebas temporales y capturas, pero SOLO en sus copias de trabajo.
-        out += ['    - matcher: "Edit|Write|NotebookEdit"', "      hooks:", "        - type: command",
-                "          command: " + q(shlex.quote(os.path.join(kit, "escritura.sh")) + " " + role)]
+    # El coder escribe codigo, pero nunca archivos .env* (los ambientes los define el humano).
+    out += ['    - matcher: "Edit|Write|NotebookEdit"', "      hooks:", "        - type: command",
+            "          command: " + q(shlex.quote(os.path.join(kit, "escritura.sh")) + " coder")]
     return out
 
 

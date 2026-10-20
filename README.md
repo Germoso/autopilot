@@ -2,7 +2,7 @@
 
 Agentes de IA que **trabajan tus tareas solos** mientras tú revisas y mergeas.
 
-Tú pones tareas en el tablero (a mano, desde la app web o con cualquier integración que las traiga de
+Tú pones tareas en el tablero (a mano o con cualquier integración que las traiga de
 afuera). El autopilot las toma una por una:
 
 ```
@@ -12,7 +12,7 @@ afuera). El autopilot las toma una por una:
 ```
 
 - Funciona con **Claude Code**, **OpenCode** y **pi** (pi-coding-agent).
-- Cada tarea tiene **su propia rama** (`bug-140123`, `task-login_social`). **Nunca hace push**: eso lo haces tú. El merge a la base lo haces tú también (desde la app web con un botón, a mano, o activás `AUTO_MERGE=true` y el kit lo hace por vos al aprobar, solo local y sin push).
+- Cada tarea tiene **su propia rama** (`bug-140123`, `task-login_social`). **Nunca hace push**: eso lo haces tú. El merge a la base lo haces tú también (a mano, o activás `AUTO_MERGE=true` y el kit lo hace por vos al aprobar, solo local y sin push).
 - **Nunca toca producción.** Solo usa los ambientes de QA que tú le das.
 - Todo queda guardado en la base de la tarea: qué hizo el coder, qué probó el QA, capturas. El `.md` de cada tarea solo muestra el bug original y sus adjuntos originales.
 
@@ -64,7 +64,7 @@ ambiguo; después propone las tareas (con criterios de aceptación que el QA pue
 ellas) y, cuando las apruebas, las crea en `new/`. El plan queda en `.workitems/planes/`. Si una tarea
 depende de otra, el autopilot no la empieza hasta que mergees la otra y la marques como revisada.
 
-Las tareas también entran al tablero por la app web (*Nueva tarea*), con `wi.sh autopilot.env add-task ...` o
+Las tareas también entran al tablero con `wi.sh autopilot.env add-task ...` o
 poniendo un `.md` en `.workitems/new/`. Cómo llegan es cosa tuya: si vienen de un tracker, una
 integración las carga por esos mismos caminos (hay una de ejemplo para Azure DevOps en
 [integraciones/azure](integraciones/azure/README.md)).
@@ -140,35 +140,23 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
 > Si cierras Claude Code / OpenCode / pi, el autopilot se detiene. Al volver, escribe `/autopilot` otra vez.
 
 > Las tareas se guardan en una base (`.workitems/autopilot.db`); los `.md` se generan solos a partir
-> de ella para que puedas leerlas. Mover un `.md` de carpeta o crear uno nuevo sigue funcionando; para
-> editar una tarea usa la app web. La primera vez que actualizas el kit, el tablero se pasa solo a la
+> de ella para que puedas leerlas. Mover un `.md` de carpeta o crear uno nuevo sigue funcionando.
+> La primera vez que actualizas el kit, el tablero se pasa solo a la
 > base y los `.md` originales quedan de respaldo en `.workitems/.respaldo-md-<fecha>/`.
 
-### App web
+### Tablero de tareas de Orca (agnóstico)
 
 ```sh
-~/.local/share/autopilot-kit/autopilot-web          # solo en esta PC: http://localhost:8765
-~/.local/share/autopilot-kit/autopilot-web --lan    # también desde el celular u otra PC de tu red
+~/.local/share/autopilot-kit/orca-board                  # CLI: runs y tareas por estado
+~/.local/share/autopilot-kit/orca-board web              # web: http://localhost:8766
+~/.local/share/autopilot-kit/orca-board web --lan        # también desde el celular u otra PC
 ```
 
-Desde el cliente puedes usar la skill **`/autopilot-web`**: arranca la web por ti (desacoplada
-del cliente), y si ya está corriendo te dice en qué URL y PID, y pregunta si quieres detenerla
-o rearrancarla en otro modo (`/autopilot-web lan`, `/autopilot-web puerto 9000`,
-`/autopilot-web detener`).
-
-Muestra todos tus proyectos del autopilot:
-
-- **Tablero** por estado, con búsqueda y filtros; **detalle** de cada tarea con descripción,
-  criterio, el historial de cada intento (notas del coder, reportes de QA y E2E) y los **adjuntos
-  agrupados por paso**: tarea original, subidos por ti, y coder / QA / E2E de cada intento, con
-  botones para ver solo los de un agente.
-- **Gestionar:** panel Git (diff, mergear a la base, push, crear PR en GitHub o Azure DevOps), dar feedback y devolver una tarea revisada al coder, a QA o a E2E, devolver a QA o a E2E, detener, marcar revisada, cambiar prioridad, pausar el autopilot.
-- **Crear y editar** tareas y subirles capturas.
-- **Correr** el health check y las pruebas guardadas, viendo la salida.
-- El **log** de actividad y los reportes de `run-tests`.
-
-Con `--lan` pide una clave, que está en `~/.config/autopilot-kit/web.env` (se crea sola). Va sin
-HTTPS: úsalo solo en una red de confianza. Nunca muestra valores de los `.env`.
+`orca-board` lee las tareas de orquestación de Orca (`orca orchestration task-list`) y las muestra
+como tarjetas por estado (lista / en curso / completada / fallida / bloqueada). Es **agnóstico de
+agente**: funciona con cualquier cliente (Claude Code, OpenCode, pi, codex...) y desde cualquier
+dispositivo; Orca sigue siendo la única fuente de verdad. En la web, cada tarea tiene un botón
+**Iniciar** que ejecuta `worker-start`.
 
 ---
 

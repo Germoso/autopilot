@@ -56,8 +56,8 @@ Si no existe, este proyecto **no participa** del sistema. No preguntes, no asuma
 - **Clave de la tarea = `<tipo>-<id>`** (`task-123`, `bug-login_social`). El `<id>` lo da quien crea la
   tarea: número o texto (minúsculas, dígitos y `_`). Es también el **nombre de su rama**. Es lo que se le
   pasa a `wi.sh`.
-- **Cómo llegan las tareas es externo al autopilot**: `wi.sh add-task`, un `.md` en `.workitems/new/` o la
-  app web. Cualquier integración (un tracker, un script) usa esos mismos puntos de entrada; el autopilot
+- **Cómo llegan las tareas es externo al autopilot**: `wi.sh add-task` o un `.md` en `.workitems/new/`.
+  Cualquier integración (un tracker, un script) usa esos mismos puntos de entrada; el autopilot
   solo trabaja lo que hay en el board.
 - Cada tarea tiene estado, prioridad, intento, rama, repo(s), origen, descripción, criterio, adjuntos,
   repos modificados, resultado, motivo de stopped y un **historial por intento** (notas del desarrollador,
@@ -133,7 +133,7 @@ servicio; al volver, `--inicio` las respeta (no las marca huérfanas) y el watch
   No lo reintentes: lo resuelve el humano (creando o corrigiendo `.env.autopilot`).
 - Tú nunca ejecutas nada contra ambientes.
 - **Motivo de `stopped`: en Markdown y con saltos de línea**, nunca todo en una línea (el humano lo lee en
-  la app web y en Telegram). Una línea de título con la causa, cada punto en su línea `- ...` y la
+  la app de Telegram). Una línea de título con la causa, cada punto en su línea `- ...` y la
   recomendación en su propio párrafo. Pasa los saltos dentro de las comillas:
   ```
   $W "$E" stopped <clave> "NO CERTIFICABLE (E2E): falta lo siguiente
@@ -431,8 +431,7 @@ Si la misma tarea vuelve a bloquearse por lo mismo después de un `--bloqueo`, a
 `notas-dev`, `reporte-qa` y `reporte-e2e` copian toda imagen que aparezca en el texto (y las de
 `--imagenes <carpeta>`) a `adjuntos/<clave>/coder-intentoN/`, `qa-intentoN/` o `e2e-intentoN/`. En el
 texto, cada ruta queda como `📷 <nombre>` (sin incrustar) y al final del intento va una sola línea
-`📎 N capturas → [<paso>-intentoN/](...)`. La app web (`autopilot-web`) muestra esas imágenes en una galería
-plegable bajo el intento al que pertenecen, y cada `📷` abre la suya. Los videos que mencionen (`.mp4`,
+`📎 N capturas → [<paso>-intentoN/](...)`. Los videos que mencionen (`.mp4`,
 `.webm`...) también se copian y quedan enlazados. `validar-e2e` cuenta los `📷` de cada criterio.
 Pásales siempre el texto tal cual, con las rutas completas. Las tareas viejas se convierten solas la primera
 vez que corre el kit nuevo (o con `$W "$E" limpiar-imagenes [--simular]`).
@@ -556,9 +555,9 @@ ambient en `.pi/extensions/` del proyecto).
 - Marcar `stopped` sin escribir el motivo.
 - Editar o mover los `.md` del board sin `wi.sh`.
 - Mover tareas a `reviewed`: eso lo hace solo el humano, después de revisar las de `done`.
-- Usar `pedir-cambios`: es el botón "Feedback y devolver" del humano en la app web para devolver una
+- Usar `pedir-cambios`: es la forma en que el humano devuelve una
   tarea revisada al coder, a QA o a E2E. Cuando una tarea llega así, el `Último feedback` empieza con
   `FEEDBACK DEL HUMANO` (o `CAMBIOS PEDIDOS`, el nombre viejo): inclúyelo tal cual en el encargo del
   puesto que la toma.
-- Usar `merge --humano`, `push`, `pull-bases` o `pr`: son los botones del panel Git de la app web, solo del humano.
+- Usar `merge --humano`, `push`, `pull-bases` o `pr`: son operaciones solo del humano.
 - Inventar que hiciste algo que no hiciste.

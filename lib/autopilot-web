@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# autopilot-web — app web para ver y gestionar los tableros del autopilot
-#   autopilot-web                 solo en esta maquina: http://localhost:8765
-#   autopilot-web --lan           tambien desde la red local (celular, otra PC), con clave
-#   autopilot-web --port 9000     otro puerto
-DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-exec python3 "$DIR/web/servidor.py" "$@"

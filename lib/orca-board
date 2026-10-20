@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# orca-board — tablero agnostico de tareas de Orca (CLI + web)
+#   orca-board                  lista runs y tareas por estado
+#   orca-board --run <id>       solo esa run
+#   orca-board web [--port N]   servidor web: http://localhost:8766
+#   orca-board web --lan        tambien desde la red local
+DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+exec python3 "$DIR/orca-board.py" "$@"
