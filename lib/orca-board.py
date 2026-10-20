@@ -454,6 +454,11 @@ main{padding:16px 20px;display:flex;gap:16px;flex-wrap:wrap;align-items:flex-sta
 <label>Base branch (opcional)<br><input id="pop-base" placeholder="dev" style="width:100%"></label><br><br>
 <button id="pop-ok">Iniciar worker-start</button> <button id="pop-no" class="ghost">Cancelar</button>
 <div id="pop-out" style="font-size:12px;margin-top:8px"></div></div></div>
+<div id="det" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);align-items:center;justify-content:center">
+<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;max-width:760px;width:92%;max-height:86vh;overflow:auto">
+<h3 id="det-t" style="margin-top:0"></h3>
+<div id="det-body" style="font-size:13px;white-space:pre-wrap;word-break:break-word"></div>
+<br><button id="det-ok" class="ghost">Cerrar</button></div></div>
 <script>
 const $=s=>document.querySelector(s);
 const ESTADOS=["pending","ready","dispatched","completed","failed","blocked"];
@@ -463,7 +468,7 @@ let DATOS=null,AGENTES=["opencode","claude","pi","codex"];
 async function api(p,rb){const r=await fetch(p);return r.ok?await r.json():null}
 async function cargar(){
   const d=await api("/api/tareas");
-  if(!d)return;$("#tab").innerHTML="";
+  if(!d)return;DATOS=d;$("#tab").innerHTML="";
   for(const r of d.runs){
     const secc=document.createElement("section");secc.className="col";secc.style.cssText="flex:1 1 100%";
     const h=document.createElement("h2");h.textContent=r.objective||r.id;secc.appendChild(h);
@@ -477,7 +482,8 @@ async function cargar(){
         const d=document.createElement("div");d.className="card";d.style.borderLeftColor=COLOR[est]||"#888";
         d.innerHTML="<b>"+esc(t.task_title||t.id)+'</b> <span class="id">'+t.id+"</span>"
           +"<p>"+esc((t.spec||"").slice(0,200))+"</p>"
-          +'<div class="acc"><button class="ghost" data-id="'+t.id+'" data-t="'+esc(t.task_title||"")+'">Iniciar</button></div>';
+          +'<div class="acc"><button class="ghost" data-id="'+t.id+'" data-t="'+esc(t.task_title||"")+'" data-ver="1">Ver</button> '
+          +'<button class="ghost" data-id="'+t.id+'" data-t="'+esc(t.task_title||"")+'">Iniciar</button></div>';
         c.appendChild(d);
       }
       cols.appendChild(c);
@@ -486,6 +492,34 @@ async function cargar(){
   }
 }
 function esc(s){return s.replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
+function tareaPorId(id){
+  for(const r of (DATOS||[])){const t=(r.tasks||[]).find(x=>x.id===id);if(t)return {run:r,task:t}}
+  return null;
+}
+function fmtLista(s){
+  if(Array.isArray(s))return s.join(", ");
+  if(typeof s==="string"&&/^\\[/.test(s.trim())){try{return JSON.parse(s).join(", ")}catch(e){}}
+  return s||"";
+}
+function verDetalle(id){
+  const f=tareaPorId(id);if(!f)return;
+  const t=f.task,r=f.run;
+  const est=t.status||"?";
+  const dep=fmtLista(t.deps);
+  let b="";
+  b+="[estado: "+esc(est)+"]\n";
+  b+="run:       "+esc(r.id)+"  "+esc(r.objective||"")+"\n";
+  b+="id:        "+esc(t.id)+"\n";
+  if(t.parent_id)b+="padre:     "+esc(t.parent_id)+"\n";
+  if(t.created_at)b+="creada:    "+esc(t.created_at)+"\n";
+  if(t.completed_at)b+="fin:       "+esc(t.completed_at)+"\n";
+  b+="deps:      "+esc(dep||"(ninguna)")+"\n";
+  if(t.result)b+="resultado: \n"+esc(t.result)+"\n";
+  b+="\nDESCRIPCION:\n"+esc(t.spec||"(sin spec)");
+  $("#det-t").textContent="Detalle: "+(t.task_title||t.id);
+  $("#det-body").textContent=b;
+  $("#det").style.display="flex";
+}
 async function iniciar(id,ag,base){
   const r=await fetch("/api/iniciar",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({id,agente:ag,base:base||null})});
@@ -494,11 +528,14 @@ async function iniciar(id,ag,base){
 }
 $("#tab").addEventListener("click",e=>{
   const b=e.target.closest("button[data-id]");if(!b)return;
+  if(b.dataset.ver){verDetalle(b.dataset.id);return;}
   $("#pop").style.display="flex";$("#pop-t").textContent="Iniciar: "+b.dataset.t;
   $("#pop-ag").innerHTML=AGENTES.map(a=>"<option>"+a+"</option>").join("");
   $("#pop-base").value="";$("#pop-out").textContent="";
   $("#pop").dataset.id=b.dataset.id;
 });
+$("#det-ok").onclick=()=>$("#det").style.display="none";
+$("#det").onclick=e=>{if(e.target.id==="det")$("#det").style.display="none"};
 $("#pop-ok").onclick=()=>iniciar($("#pop").dataset.id,$("#pop-ag").value,$("#pop-base").value);
 $("#pop-no").onclick=()=>$("#pop").style.display="none";
 $("#ref").onclick=cargar;
