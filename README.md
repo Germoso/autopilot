@@ -144,25 +144,6 @@ proyecto. Cada tarea se ve como un archivo `.md` y **la carpeta donde está te d
 > La primera vez que actualizas el kit, el tablero se pasa solo a la
 > base y los `.md` originales quedan de respaldo en `.workitems/.respaldo-md-<fecha>/`.
 
-### Tablero de tareas de Orca (agnóstico)
-
-```sh
-~/.local/share/autopilot-kit/orca-board                    # TUI interactiva (menús, se queda corriendo)
-~/.local/share/autopilot-kit/orca-board tui                # fuerza la TUI
-~/.local/share/autopilot-kit/orca-board web                # web: http://localhost:8766
-~/.local/share/autopilot-kit/orca-board web --lan          # también desde el celular u otra PC
-```
-
-`orca-board` lee las tareas de orquestación de Orca (`orca orchestration task-list`) y las muestra
-como tarjetas por estado (lista / en curso / completada / fallida / bloqueada). Es **agnóstico de
-agente**: funciona con cualquier cliente (Claude Code, OpenCode, pi, codex...) y desde cualquier
-dispositivo; Orca sigue siendo la única fuente de verdad. Por defecto abre una **TUI interactiva**
-que se queda corriendo: panel de runs a la izquierda, tareas por estado a la derecha, `Tab` para
-cambiar de panel, flechas para moverte, `Enter` para ver el detalle (spec completa) e `i` para
-iniciar la tarea (`worker-start`); `s` filtra por estado, `r` refresca, `q` sale. Con `--json` o
-en un pipe muestra la lista simple (para scripts). La web (`orca-board web`) tiene el botón
-**Iniciar** por tarea.
-
 ---
 
 ## Qué hace cada agente

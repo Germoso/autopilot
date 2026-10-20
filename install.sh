@@ -3,7 +3,7 @@
 #  install.sh — instala el kit para OpenCode, Claude Code y/o pi
 #
 #  Que instala:
-#    - scripts (board, guardas de git, tablero de Orca) en
+#    - scripts (board, guardas de git) en
 #      ~/.local/share/autopilot-kit/   (compartidos por todos los clientes)
 #    - skills autopilot, autopilot-init, autopilot-plan, ponytail y tdd en la carpeta de skills de cada cliente
 #    - agente coder, generado desde agents/*.md
@@ -12,9 +12,6 @@
 #      (en Claude Code y pi las skills ya son esos comandos)
 #    - (pi) extension de guard (pi-guard-*.mjs) que cancela push/merge, lo que toque
 #      un ambiente sin aenv.sh y la escritura de .env* / fuera de las copias de trabajo
-#
-#  El tablero visual de tareas es agnostico de agente: orca-board (TUI + web)
-#  lee las tareas de orquestacion de Orca (orca orchestration task-list).
 #
 #  Que NO hace:
 #    - No pisa archivos que no genero el kit.
@@ -118,8 +115,8 @@ fi
 # ------------------------------------------------------------------
 echo "==> Scripts en $KIT"
 mkdir -p "$KIT"
-cp "$KIT_DIR"/lib/*.py "$KIT_DIR"/lib/*.sh "$KIT_DIR"/lib/*.cjs "$KIT_DIR"/lib/*.dart "$KIT_DIR"/lib/*.mjs "$KIT_DIR/lib/run-tests" "$KIT_DIR/lib/health-check" "$KIT_DIR/lib/orca-board" \
-  "$KIT_DIR/clients/render.py" "$KIT/" && chmod +x "$KIT"/*.sh "$KIT"/*.py "$KIT/run-tests" "$KIT/health-check" "$KIT/orca-board"
+cp "$KIT_DIR"/lib/*.py "$KIT_DIR"/lib/*.sh "$KIT_DIR"/lib/*.cjs "$KIT_DIR"/lib/*.dart "$KIT_DIR"/lib/*.mjs "$KIT_DIR/lib/run-tests" "$KIT_DIR/lib/health-check" \
+  "$KIT_DIR/clients/render.py" "$KIT/" && chmod +x "$KIT"/*.sh "$KIT"/*.py "$KIT/run-tests" "$KIT/health-check"
 say "$(ls "$KIT" | tr '\n' ' ')"
 
 # ------------------------------------------------------------------
@@ -156,6 +153,6 @@ if [[ " ${CLIENTES[*]} " == *" pi "* && " ${CLIENTES[*]} " != *" opencode "* ]];
 else
   echo "  Comandos:  /autopilot-init  /autopilot-plan  /autopilot"
 fi
-echo "  Tablero Orca (agnostico):  $KIT/orca-board | $KIT/orca-board web"
+echo "  Tablero:  el board en .workitems/ (wi.sh, watcher.sh) — carpetas + .md"
 echo "  Proyecto:  $0 --init /ruta/al/proyecto"
 echo "  Docs:      $KIT_DIR/README.md"

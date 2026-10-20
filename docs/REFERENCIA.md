@@ -895,28 +895,7 @@ uso: wi.sh <env> <comando> [args]
 
 Otros scripts en `~/.local/share/autopilot-kit/`: `aenv.sh [--e2e] <repo> -- <cmd>` (corre con
 `.env.autopilot` validado), `e2e.sh --help` (herramientas del agente E2E), `e2e-setup.sh`,
-`vigia.py <env> --simular`, `orca-board` (tablero de tareas de Orca, CLI o `web`).
-
----
-
-## Tablero de tareas de Orca (`orca-board`)
-
-`orca-board` (`lib/orca-board.py`) lee las tareas de orquestación de Orca directamente del CLI
-(`orca orchestration task-list` / `run-list`), así que es **agnóstico de agente**: funciona con
-cualquier cliente (Claude Code, OpenCode, pi, codex...) y desde cualquier dispositivo. Orca sigue
-siendo la única fuente de verdad; el tablero solo la muestra.
-
-- **TUI interactiva (por defecto):** `orca-board` abre una interfaz que se queda corriendo en el
-  terminal: panel de **runs** a la izquierda y **tareas** por estado a la derecha (colores).
-  `Tab`/flechas para moverte entre paneles y elementos, `Enter` abre el detalle de la tarea
-  (spec completa, con scroll), `i` inicia la tarea (`worker-start`, pidiendo agente y base branch),
-  `s` cicla el filtro por estado, `r` refresca, `q`/`Esc` sale. Auto-refresco cada 10 s.
-- **Lista simple:** `orca-board --run <id>` / `--status <est>` / `--json` (sin TTY o con pipe) para
-  scripts y otros agentes.
-- **Web:** `orca-board web [--port N]` sirve `http://localhost:8766` con tarjetas por estado
-  (lista / en curso / completada / fallida / bloqueada), auto-refresco y un botón **Iniciar** por
-  tarea que ejecuta `orca orchestration worker-start` (agente y base branch opcionales). Con
-  `--lan` escucha en la red local (sin HTTPS: solo red de confianza). Sin dependencias (stdlib).
+`vigia.py <env> --simular`.
 
 ---
 
@@ -928,7 +907,6 @@ dotenvs/
 ├── lib/                        # -> ~/.local/share/autopilot-kit/  (compartido por ambos clientes)
 │   ├── workitems.py            # el board (unica implementacion); vistas .md y migracion
 │   ├── almacen.py              # la base SQLite del board (autopilot.db)
-│   ├── orca-board, orca-board.py # tablero agnostico de tareas de Orca (TUI + web, stdlib)
 │   ├── wi.sh                   # unica via de escritura del board + ramas
 │   ├── watcher.sh              # sensor: lee el board y retorna
 │   ├── init.py                 # prepara un repo o workspace (lo usa /autopilot-init)
