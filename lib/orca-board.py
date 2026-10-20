@@ -371,7 +371,19 @@ def _tarea_popup(std, binario, run, t, st):
     cuerpo.append("run:      %s  %s" % (run["id"], cortar(run.get("objective"), 56)))
     cuerpo.append("estado:   %s" % est)
     deps = t.get("deps") or []
+    if isinstance(deps, str):
+        deps = [d for d in deps.strip("[]").split(",") if d.strip()]
     cuerpo.append("deps:     %s" % (", ".join(deps) if deps else "(ninguna)"))
+    if t.get("parent_id"):
+        cuerpo.append("padre:    %s" % t["parent_id"])
+    if t.get("created_at"):
+        cuerpo.append("creada:   %s" % t["created_at"])
+    if t.get("completed_at"):
+        cuerpo.append("fin:      %s" % t["completed_at"])
+    res = t.get("result")
+    if res:
+        cuerpo.append("resultado:")
+        cuerpo += ["  " + l for l in str(res).splitlines()]
     cuerpo.append("spec:")
     spec = (t.get("spec") or "(sin spec)").splitlines() or ["(sin spec)"]
     cuerpo += ["  " + l for l in spec]
