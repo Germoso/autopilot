@@ -6,16 +6,17 @@ asi funciona con CUALQUIER agente (pi, opencode, claude, codex...) y desde cualq
 dispositivo. Orca sigue siendo la unica fuente de verdad; esto solo la muestra.
 
 Uso:
-  orca-board                     lista todas las runs y sus tareas por estado
-  orca-board --run <id>          solo esa run
+  orca-board                     TUI interactiva (si el terminal lo permite); si no, lista
+  orca-board tui                 fuerza la TUI interactiva
+  orca-board --run <id>          fija la run con la que arranca la TUI (o filtra la lista)
   orca-board --status <est>      filtra por estado (ready, dispatched, completed, ...)
   orca-board --json              salida JSON cruda (para scripts / otros agentes)
   orca-board web [--port N]      servidor web: tarjetas por estado + iniciar tarea
   orca-board web --lan           expuesto a la red local (celular, otra PC)
   orca-board --orca <ruta>       usa otro binario de orca (por defecto: el del PATH)
 
-Sin dependencias: solo stdlib. El binario de orca se busca en el PATH, en ORCA_CLI_BIN_DIR
-o en ~/.orca/cli/bin/orca.
+Sin dependencias: solo stdlib (curses para la TUI). El binario de orca se busca en el
+PATH, en ORCA_CLI_BIN_DIR o en ~/.orca/cli/bin/orca.
 """
 import argparse
 import html
@@ -24,6 +25,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -110,6 +112,298 @@ def cli(args):
         print()
     if ninguna:
         print("No hay tareas que mostrar" + (" (filtro: --status %s)" % args.status if args.status else ""))
+    return 0
+
+
+# ---------------------------------------------------------------- TUI
+
+
+def _cargar(binario, solo_run=None, filtro=None):
+    """Lista de {run, tasks} (salta runs legacy y aplica filtro de estado)."""
+    todo = []
+    for r in runs(binario):
+        if r.get("legacy"):
+            continue
+        if solo_run and r["id"] != solo_run:
+            continue
+        ts = tareas(binario, r["id"])
+        if filtro:
+            ts = [t for t in ts if t.get("status") == filtro]
+        todo.append({"run": r, "tasks": ts})
+    return todo
+
+
+def _tui_loop(std, binario, solo_run, filtro_inicial):
+    import curses
+    curses.curs_set(0)
+    curses.use_default_colors()
+    curses.start_color()
+    for i, est in enumerate(ESTADOS, 1):
+        curses.init_pair(i, int(COLOR[est]), -1)
+    PAR = {e: curses.color_pair(i) for i, e in enumerate(ESTADOS, 1)}
+    RESALT = curses.A_REVERSE
+    A = {"title": curses.A_BOLD | curses.color_pair(4)}
+
+    st = {"filtro": filtro_inicial, "idx_run": 0, "idx_task": 0, "foco": "runs",
+          "datos": [], "msj": "", "inicio": None}
+
+    def an(y, x, s, n=None, attr=0):
+        """addnstr seguro: no pisa el borde derecho (evita el scroll por la ultima celda)."""
+        _m, mx = std.getmaxyx()
+        if x >= mx:
+            return
+        if n is None:
+            n = mx - x
+        std.addnstr(y, x, s, max(0, min(n, mx - x - (1 if y == _m - 1 else 0))), attr)
+
+    def recargar():
+        st["datos"] = _cargar(binario, solo_run, st["filtro"])
+        st["idx_run"] = min(st["idx_run"], max(0, len(st["datos"]) - 1))
+        st["idx_task"] = 0
+        st["msj"] = "Refrescado %s" % time.strftime("%H:%M:%S")
+
+    def lanzar(tid):
+        def correr():
+            cmd = [binario, "orchestration", "worker-start", "--task", tid, "--json"]
+            if st["inicio"].get("agente"):
+                cmd += ["--agent", st["inicio"]["agente"]]
+            if st["inicio"].get("base"):
+                cmd += ["--base-branch", st["inicio"]["base"]]
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                salida = (proc.stdout.strip() or proc.stderr.strip() or "(sin salida)")
+                if proc.returncode == 0:
+                    try:
+                        salida = json.dumps(json.loads(salida), ensure_ascii=False)
+                    except Exception:
+                        pass
+                    st["msj"] = "OK: %s" % cortar(salida, 180)
+                else:
+                    st["msj"] = "ERROR: %s" % cortar(salida, 180)
+            except Exception as e:
+                st["msj"] = "ERROR: %s" % e
+            st["inicio"] = None
+        st["inicio"] = {"tid": tid}
+        st["msj"] = "Iniciando %s..." % tid
+        threading.Thread(target=correr, daemon=True).start()
+
+    def linea(prompt, por_defecto):
+        """Input de una linea en la barra inferior. Devuelve str (vacia = cancelar)."""
+        curses.curs_set(1)
+        curses.echo()
+        try:
+            std.addstr(std.getmaxyx()[0] - 1, 0, prompt + por_defecto)
+            std.clrtoeol()
+            std.refresh()
+            buf = ""
+            while True:
+                ch = std.getch()
+                if ch in (curses.KEY_ENTER, 10, 13):
+                    break
+                if ch == 27:  # Esc
+                    buf = ""
+                    break
+                if ch == curses.KEY_BACKSPACE or ch == 127:
+                    buf = buf[:-1]
+                elif 32 <= ch < 127:
+                    buf += chr(ch)
+                std.addstr(std.getmaxyx()[0] - 1, 0, prompt + por_defecto)
+                std.clrtoeol()
+                std.addstr(std.getmaxyx()[0] - 1, 0, prompt + buf)
+                std.refresh()
+            return buf
+        finally:
+            curses.noecho()
+            curses.curs_set(0)
+
+    recargar()
+    ultimo_poll = time.time()
+    while True:
+        maxy, maxx = std.getmaxyx()
+        if maxy < 8 or maxx < 40:
+            std.erase()
+            std.addstr(0, 0, "Terminal muy chica (min 40x8)")
+            std.refresh()
+            ch = std.getch()
+            if ch in (ord("q"), 27):
+                return
+            continue
+        std.erase()
+
+        # --- cabecera
+        an(0, 0, "ORCA BOARD", None, A["title"])
+        if st["datos"]:
+            r = st["datos"][st["idx_run"]]["run"]
+            an(0, 12, "%s  %s" % (r["id"], cortar(r.get("objective"), maxx - 46)))
+        an(0, maxx - 14, "filtro: %s" % (st["filtro"] or "todos"))
+        std.hline(1, 0, "-", maxx)
+
+        # --- panel izquierdo: runs
+        ancho_run = 34
+        y = 2
+        an(y, 0, "RUNS (%d)" % len(st["datos"]), None, curses.A_BOLD)
+        y += 1
+        for i, d in enumerate(st["datos"]):
+            if y >= maxy - 3:
+                break
+            r = d["run"]
+            linea_txt = " %s %s" % (r["id"], cortar(r.get("objective"), ancho_run - 8))
+            attr = RESALT if (st["foco"] == "runs" and i == st["idx_run"]) else 0
+            an(y, 0, linea_txt, ancho_run, attr)
+            y += 1
+        std.vline(2, ancho_run, "|", maxy - 4)
+
+        # --- panel derecho: tareas
+        x = ancho_run + 2
+        if not st["datos"]:
+            an(2, x, "Sin runs de orquestacion (orca orchestration run-create ...)")
+        else:
+            d = st["datos"][st["idx_run"]]
+            run_id = d["run"]["id"]
+            an(2, x, "TAREAS  %s" % run_id, None, curses.A_BOLD)
+            y = 3
+            # items planos: (tipo, payload); navegables solo las tareas
+            items = []
+            for est in ESTADOS:
+                grp = [t for t in d["tasks"] if t.get("status") == est]
+                if not grp:
+                    continue
+                items.append(("header", est, None))
+                for t in grp:
+                    items.append(("task", est, t))
+            st["idx_task"] = min(st["idx_task"], max(0, sum(1 for it in items if it[0] == "task") - 1))
+            idx_t = -1
+            for it in items:
+                if y >= maxy - 3:
+                    break
+                tipo, est, t = it
+                if tipo == "header":
+                    an(y, x, "  %s (%d)" % (ETIQUETA[est],
+                        sum(1 for q in items if q[0] == "task" and q[1] == est)), None,
+                        curses.A_BOLD | PAR[est])
+                else:
+                    idx_t += 1
+                    sel = (st["foco"] == "tasks" and idx_t == st["idx_task"])
+                    attr = PAR[est] | (RESALT if sel else 0)
+                    txt = "  %s  %s" % (t.get("id", "?"), cortar(t.get("task_title"), maxx - x - 2))
+                    an(y, x, txt, maxx - x - 1, attr)
+                y += 1
+
+        # --- barra inferior
+        std.hline(maxy - 2, 0, "-", maxx)
+        if st["inicio"]:
+            msj = "worker-start en curso para %s..." % st["inicio"]["tid"]
+        else:
+            msj = st["msj"]
+        an(maxy - 2, 0, msj)
+        an(maxy - 1, 0, "[Tab] panel   [Up/Dn] mover   [Enter] ver   [i] iniciar   [s] filtro   [r] refrescar   [q] salir")
+        std.refresh()
+
+        # --- entrada
+        std.timeout(500)
+        ch = std.getch()
+        if ch == -1:
+            if st["inicio"] is None and time.time() - ultimo_poll > 10:
+                ultimo_poll = time.time()
+                recargar()
+            continue
+        ultimo_poll = time.time()
+        if ch == ord("q") or ch == 27:
+            return
+        if ch == ord("r"):
+            recargar()
+        elif ch == ord("s"):
+            orden = [None] + ESTADOS
+            st["filtro"] = orden[(orden.index(st["filtro"]) + 1) % len(orden)]
+            recargar()
+        elif ch == 9 or ch == curses.KEY_RIGHT or ch == curses.KEY_LEFT:  # Tab
+            st["foco"] = "tasks" if st["foco"] == "runs" else "runs"
+        elif ch == curses.KEY_UP or ch == ord("k"):
+            if st["foco"] == "runs":
+                st["idx_run"] = max(0, st["idx_run"] - 1)
+            else:
+                st["idx_task"] = max(0, st["idx_task"] - 1)
+        elif ch == curses.KEY_DOWN or ch == ord("j"):
+            if st["foco"] == "runs":
+                n = max(0, len(st["datos"]) - 1)
+                st["idx_run"] = min(n, st["idx_run"] + 1)
+            else:
+                st["idx_task"] += 1
+        elif ch in (curses.KEY_ENTER, 10, 13) and st["foco"] == "tasks" and st["datos"]:
+            d = st["datos"][st["idx_run"]]
+            items = [it for it in (
+                (est, t) for est in ESTADOS for t in d["tasks"] if t.get("status") == est)]
+            if st["idx_task"] < len(items):
+                _tarea_popup(std, binario, d["run"], items[st["idx_task"]][1], st)
+        elif ch == ord("i") and st["foco"] == "tasks" and st["datos"]:
+            d = st["datos"][st["idx_run"]]
+            items = [it for it in (
+                (est, t) for est in ESTADOS for t in d["tasks"] if t.get("status") == est)]
+            if st["idx_task"] < len(items):
+                tid = items[st["idx_task"]][1]["id"]
+                ag = linea("agente [opencode]: ", "") or "opencode"
+                if ag:
+                    base = linea("base branch (enter = omite): ", "")
+                    st["inicio"] = {"tid": tid, "agente": ag, "base": base or None}
+                    lanzar(tid)
+
+
+def _tarea_popup(std, binario, run, t, st):
+    """Popup con el detalle de la tarea: spec completa + acciones."""
+    import curses
+    maxy, maxx = std.getmaxyx()
+    ah = min(maxy - 2, 22)
+    aw = min(maxx - 2, 100)
+    x0 = max(0, (maxx - aw) // 2)
+    y0 = max(0, (maxy - ah) // 2)
+
+    def borde(attr=0):
+        std.addnstr(y0, x0, "+" + "-" * (aw - 2) + "+", 0, attr)
+        for yy in range(y0 + 1, y0 + ah - 1):
+            std.addnstr(yy, x0, "|", 0, attr)
+            std.addnstr(yy, x0 + aw - 1, "|", 0, attr)
+        std.addnstr(y0 + ah - 1, x0, "+" + "-" * (aw - 2) + "+", 0, attr)
+
+    est = t.get("status", "?")
+    titulo = " %s  %s " % (t.get("id", "?"), cortar(t.get("task_title"), aw - 18))
+
+    cuerpo = []
+    cuerpo.append("run:      %s  %s" % (run["id"], cortar(run.get("objective"), 56)))
+    cuerpo.append("estado:   %s" % est)
+    deps = t.get("deps") or []
+    cuerpo.append("deps:     %s" % (", ".join(deps) if deps else "(ninguna)"))
+    cuerpo.append("spec:")
+    spec = (t.get("spec") or "(sin spec)").splitlines() or ["(sin spec)"]
+    cuerpo += ["  " + l for l in spec]
+    cuerpo.append("")
+    cuerpo.append("  [q] cerrar   (inicia desde la lista con i)")
+    despl = 0
+    visibles = ah - 3
+    while True:
+        borde()
+        std.addnstr(y0, x0 + 2, titulo, aw - 4, curses.A_BOLD)
+        std.addnstr(y0, x0 + aw - len(est) - 2, "[%s]" % est, 0)
+        yy = y0 + 1
+        for l in cuerpo[despl: despl + visibles]:
+            std.addstr(yy, x0 + 1, l[: aw - 2])
+            yy += 1
+        if len(cuerpo) > visibles:
+            std.addnstr(y0 + ah - 1, x0 + 1, "(arriba/abajo para desplazar)")
+        std.refresh()
+        std.timeout(-1)
+        ch = std.getch()
+        if ch == ord("q") or ch == 27:
+            break
+        if ch == curses.KEY_UP:
+            despl = max(0, despl - 1)
+        if ch == curses.KEY_DOWN:
+            despl = min(max(0, len(cuerpo) - visibles), despl + 1)
+
+
+def tui(args):
+    binario = buscar_orca(args.orca)
+    import curses
+    curses.wrapper(_tui_loop, binario, args.run, args.status)
     return 0
 
 
@@ -285,6 +579,9 @@ def main():
     if a.modo == "web":
         web(a)
         return 0
+    if a.modo == "tui" or (a.modo == "cli" and not a.json and sys.stdout.isatty()):
+        # Sin flags y con terminal interactivo: TUI; con --json o pipe: lista simple.
+        return tui(a)
     return cli(a)
 
 

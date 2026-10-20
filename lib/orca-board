@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# orca-board — tablero agnostico de tareas de Orca (CLI + web)
-#   orca-board                  lista runs y tareas por estado
-#   orca-board --run <id>       solo esa run
+# orca-board — tablero agnostico de tareas de Orca (TUI + CLI + web)
+#   orca-board                  TUI interactiva (menus, flechas, detalle, iniciar)
+#   orca-board tui              fuerza la TUI
+#   orca-board --run <id>       arranca la TUI con esa run (o filtra la lista)
+#   orca-board --json           salida JSON (para scripts)
 #   orca-board web [--port N]   servidor web: http://localhost:8766
 #   orca-board web --lan        tambien desde la red local
 DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"

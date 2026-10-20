@@ -13,7 +13,7 @@
 #    - (pi) extension de guard (pi-guard-*.mjs) que cancela push/merge, lo que toque
 #      un ambiente sin aenv.sh y la escritura de .env* / fuera de las copias de trabajo
 #
-#  El tablero visual de tareas es agnostico de agente: orca-board (CLI + web)
+#  El tablero visual de tareas es agnostico de agente: orca-board (TUI + web)
 #  lee las tareas de orquestacion de Orca (orca orchestration task-list).
 #
 #  Que NO hace:

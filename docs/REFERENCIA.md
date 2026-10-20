@@ -906,8 +906,13 @@ Otros scripts en `~/.local/share/autopilot-kit/`: `aenv.sh [--e2e] <repo> -- <cm
 cualquier cliente (Claude Code, OpenCode, pi, codex...) y desde cualquier dispositivo. Orca sigue
 siendo la única fuente de verdad; el tablero solo la muestra.
 
-- **CLI:** `orca-board` lista las runs y sus tareas por estado (colores en tty, filtros
-  `--run <id>`, `--status <est>`, `--json` para scripts).
+- **TUI interactiva (por defecto):** `orca-board` abre una interfaz que se queda corriendo en el
+  terminal: panel de **runs** a la izquierda y **tareas** por estado a la derecha (colores).
+  `Tab`/flechas para moverte entre paneles y elementos, `Enter` abre el detalle de la tarea
+  (spec completa, con scroll), `i` inicia la tarea (`worker-start`, pidiendo agente y base branch),
+  `s` cicla el filtro por estado, `r` refresca, `q`/`Esc` sale. Auto-refresco cada 10 s.
+- **Lista simple:** `orca-board --run <id>` / `--status <est>` / `--json` (sin TTY o con pipe) para
+  scripts y otros agentes.
 - **Web:** `orca-board web [--port N]` sirve `http://localhost:8766` con tarjetas por estado
   (lista / en curso / completada / fallida / bloqueada), auto-refresco y un botón **Iniciar** por
   tarea que ejecuta `orca orchestration worker-start` (agente y base branch opcionales). Con
@@ -923,7 +928,7 @@ dotenvs/
 ├── lib/                        # -> ~/.local/share/autopilot-kit/  (compartido por ambos clientes)
 │   ├── workitems.py            # el board (unica implementacion); vistas .md y migracion
 │   ├── almacen.py              # la base SQLite del board (autopilot.db)
-│   ├── orca-board, orca-board.py # tablero agnostico de tareas de Orca (CLI + web, stdlib)
+│   ├── orca-board, orca-board.py # tablero agnostico de tareas de Orca (TUI + web, stdlib)
 │   ├── wi.sh                   # unica via de escritura del board + ramas
 │   ├── watcher.sh              # sensor: lee el board y retorna
 │   ├── init.py                 # prepara un repo o workspace (lo usa /autopilot-init)
