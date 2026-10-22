@@ -233,6 +233,10 @@ worker_done,escalation,question`) o esperándote a ti. Nunca deja de escuchar.
    define para el repo); si falla (repo no registrado) → `## Motivo de stopped` en el
    `.md` y a `stopped/`; si el worktree ya existe (tarea devuelta), lo reusa;
 2. mover el `.md` a `working/`;
+3. **cargar el rol del coder en `AGENTS.md`** en la raíz del worktree: contenido =
+   `$K/agents/coder.md` (marca `<!-- autopilot-coder-role … -->`); si ya existe un
+   `AGENTS.md` del humano sin marca, no lo pises (agrega el rol al final); pi, Claude
+   Code y opencode leen `AGENTS.md` y el coder sigue ahí las convenciones; no se commitea;
 4. `orca orchestration worker-start --spec "<encargo>" --worktree <clave> --agent <n> --json`
    (o un subagente `coder` del cliente en el worktree si no hay agente de orca);
 5. respetando `MAX_CODERS`/`PARALLEL`.

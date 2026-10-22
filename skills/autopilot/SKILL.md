@@ -220,7 +220,23 @@ Para cada tarea en `new/` que no tenga ya un coder trabajando:
  solo). Si el worktree **ya existe** (tarea devuelta por cambios), reúsalo:
  es la misma rama.
 2. Mueve el `.md` de la tarea de `new/` a `working/`.
-3. Despacha al coder: `orca orchestration worker-start --spec "<especificación>"  --worktree <clave> --agent <agente-disponible> --json` (o, si no hay agente de
+3. **Carga el rol del coder en `AGENTS.md`** en la raíz del worktree, para que el
+   agente que despaches sepa qué hacer y siga las convenciones antes de empezar:
+   - Contenido = `$K/agents/coder.md` (el rol canónico del kit local, donde
+     `«K_DIR»` ya está resuelto a `$K`). Escribelo en `<ruta del worktree>/AGENTS.md`.
+   - Los clientes leen `AGENTS.md` (y `CLAUDE.md`) en la raíz del proyecto de trabajo:
+     pi, Claude Code y opencode cargan sus reglas y el rol va incluido ahí.
+   - Marca de bloque del autopilot, al principio del archivo:
+     `<!-- autopilot-coder-role: generado por el orquestador; no editar a mano -->`.
+   - Si `<worktree>/AGENTS.md` **ya existe SIN la marca** (es del repo/humano, p. ej.
+     viene de la rama base): **no lo pises**; agrega el rol al final tras un separador
+     claro (`\n---\n## Rol del coder (autopilot)\n`). Lo del humano queda arriba y
+     manda.
+   - Si ya existe **CON la marca** (de un lanzamiento previo de la misma tarea):
+     regenera solo la sección del rol con la versión actual de `$K/agents/coder.md`.
+   - El `AGENTS.md` del autopilot **no se commitea** (es del kit, no de la tarea):
+     díselo al coder si hace falta; la regla 7 del rol ya lo impide.
+4. Despacha al coder: `orca orchestration worker-start --spec "<especificación>"  --worktree <clave> --agent <agente-disponible> --json` (o, si no hay agente de
  orca, lanza el subagente `coder` del cliente en ese worktree). La especificación
  cumple el contrato de orca (Target / Change / Constraints / Ownership /
  Observable acceptance) y contiene el **encargo del coder** (más abajo).
@@ -232,7 +248,7 @@ Para cada tarea en `new/` que no tenga ya un coder trabajando:
  esta misma carpeta). No dependas de ningún agente `coder` de tu config global:
  si tu cliente registra el agente local por nombre, úsalo; si no, pasa el
  contenido de `$K/agents/coder.md` como instrucciones del subagente (pi).
-4. Si hay `MAX_CODERS` coders en vuelo (`PARALLEL=false` → 1), no lances más.
+5. Si hay `MAX_CODERS` coders en vuelo (`PARALLEL=false` → 1), no lances más.
 
 ### B. Terminó el coder (worker_done de orca, o aviso de subagente)
 
