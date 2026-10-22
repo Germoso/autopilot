@@ -16,6 +16,12 @@
 #    - .claude/       skills+agents de Claude Code    (cliente claude)
 #    - .gitignore     + bloque "# autopilot-kit (local)": nada se commitea
 #
+#  Reinstalar SIEMPRE sobreescribe las copias viejas del kit dentro del proyecto
+#  (aunque les falte la marca interna de la v2) y limpia los restos de la v1
+#  (pi-guard*.mjs, comandos de pi, wi.sh, watcher, carpetas de estado viejas
+#  del board: in-progress/bug-fix/reviewed/qa). Asi nunca queda corriendo una
+#  version vieja.
+#
 #  El resto de la maquinaria (worktrees, lanzar al coder, vigilar, notificar)
 #  la maneja Orca (orca orchestration + orca worktree), no scripts del kit.
 #
@@ -260,6 +266,34 @@ if [[ ! -d "$PROY/.git" && ! -f "$PROY/../../.git" ]]; then
   warn "no veo un repo git en $PROY: igual lo dejo, pero el autopilot necesita repos (autopilot.env + board)."
 fi
 
+# 0) Limpiar restos de versiones VIEJAS del kit dentro del proyecto (si existen).
+#    La v1 del kit dejaba en el proyecto: pi-guard*.mjs (protegian subagentes),
+#    comandos de pi, scripts wi.sh/watcher y carpetas de estado del board ya
+#    inexistentes (in-progress/bug-fix/reviewed/qa).
+for f in "$PROY"/.pi/extensions/pi-guard*.mjs; do
+  [[ -f "$f" ]] && { rm -f "$f"; say "resto viejo: $f"; }
+done
+rm -f "$PROY"/.pi/commands/autopilot.md "$PROY"/.pi/commands/autopilot-init.md "$PROY"/.pi/commands/autopilot-plan.md "$PROY"/.pi/commands/azure-sync.md 2>/dev/null
+rm -f "$PROY/wi.sh" "$PROY/watcher" 2>/dev/null
+
+# Carpetas de estado VIEJAS del board (v1: in-progress/bug-fix/reviewed/qa, dentro de
+# .workitems/ o en la raiz). Si tienen tareas se avisa (migralas a new/working/done/
+# stopped); si estan vacias se eliminan. La purga deja .workitems/ recreado por el init.
+limpiar_carpeta() {  # $1 = ruta completa
+  local p="$1"
+  [[ -d "$p" ]] || return 0
+  if ls -A "$p" 2>/dev/null | grep -q .; then
+    warn "board viejo: $p/ tiene tareas -> movelas a .workitems/new..stopped"
+  else
+    rmdir "$p" 2>/dev/null && say "board viejo: $p eliminada (vacia)"
+  fi
+}
+for p in in-progress bug-fix reviewed qa; do
+  limpiar_carpeta "$PROY/.workitems/$p"
+  limpiar_carpeta "$PROY/$p"
+done
+rmdir "$PROY/.workitems" 2>/dev/null   # si quedo vacia tras purgar las carpetas viejas
+
 # 1) Validadores de "nunca contra produccion" (aenv.sh + entorno.py), locales al proyecto
 mkdir -p "$KIT"
 cp "$KIT_DIR/skills/autopilot/aenv.sh" "$KIT_DIR/skills/autopilot/entorno.py" "$KIT/" && \
@@ -301,7 +335,7 @@ for c in "${CLIENTES[@]}"; do
   for s in "${SKILLS[@]}"; do
     dst="$base/$s"
     if [[ -d "$dst" && ! -f "$dst/$MARCA" ]]; then
-      warn "skill $s ya existe ahi y no es del kit, no se toco"; continue
+      warn "skill $s existia (version vieja del kit, sin la marca): se sobreescribe con la actual"
     fi
     rm -rf "$dst"; cp -r "$KIT/skills/$s" "$dst"; touch "$dst/$MARCA"
     say "skill $s"
