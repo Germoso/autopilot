@@ -57,6 +57,14 @@ Si `orca account list` no muestra ninguna cuenta, corre `orca account add` una v
 `orca account list`; si no hubiera ninguno, usa el **subagente `coder`** del propio
 cliente (Claude Code / OpenCode / pi) dentro del worktree que creó Orca.
 
+**Usa la skill de orca (`orchestration`).** Orca carga esa skill para el orquestador
+(patrón *worker supervised*): es el contrato de `orca orchestration`
+(`run-create` → `worker-start` → `check --wait` → `reply` → `worker-release` /
+`worker-stop`). Cárgala en tu cliente si la expone (pi: `/skill:orchestration`) y,
+sobre todo, **no inventes un protocolo propio**: seguí el ciclo y los comandos que
+define esa skill. Este documento trabaja sobre ese mismo contrato; ante cualquier
+duda entre este texto y la skill de orca, manda la skill de orca.
+
 ## El board
 
 ```
