@@ -75,7 +75,7 @@ def test_ignore_dirs_salta_los_ya_sincronizados(pasada, tmp_path):
     (tmp_path / "archivo" / "sprint1").mkdir(parents=True)
     (tmp_path / "archivo" / "sprint1" / "task-2-viejo.md").write_text("x")
     (tmp_path / "otro").mkdir()
-    (tmp_path / "otro" / "bug-4.md").write_text("x")
+    (tmp_path / "otro" / "bug-4-viejo.md").write_text("x")
     r = pasada([1, 2, 3, 4], "IGNORE_DIRS=archivo, otro\n", con_board=("1",))
     assert [a["id"] for a in r["added"]] == [3]
     razones = {s["id"]: s["reason"] for s in r["skipped"]}

@@ -17,8 +17,9 @@ def sync(tmp_path, monkeypatch):
         m = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(m)
         conf = tmp_path / "azure-sync.env"
-        pares = ["--config", str(conf), "--set", *pares]
-        monkeypatch.setattr(sys, "argv", ["azure-sync.py", *pares])
+        # v2: --set es una pareja KEY=VALUE por flag (repetible)
+        argv = ["azure-sync.py", "--config", str(conf)] + [a for p in pares for a in ("--set", p)]
+        monkeypatch.setattr(sys, "argv", argv)
         return m, conf
     return do
 
@@ -29,6 +30,7 @@ def test_set_crea_desde_el_ejemplo(sync, tmp_path):
         "AZURE_PROJECT=Konectame_App_Clientes",
         "AZURE_ITERATION=@current",
         "SYNC.Konectame_App_Clientes=Konectame_App_Clientes|@current")
+    m.main()
     assert conf.exists()
     txt = conf.read_text()
     assert "AZURE_ORG=codikasrl" in txt
@@ -40,6 +42,7 @@ def test_set_crea_desde_el_ejemplo(sync, tmp_path):
 
 def test_set_pisa_valor_existente(sync, tmp_path):
     m, conf = sync("AZURE_PROJECT=Viejo", "AZURE_PROJECT=Nuevo")
+    m.main()
     assert conf.read_text().count("AZURE_PROJECT=Nuevo\n") == 1
 
 
