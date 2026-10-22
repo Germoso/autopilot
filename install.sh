@@ -16,8 +16,7 @@
 #    - .claude/       skills+agents de Claude Code    (cliente claude)
 #    - .gitignore     + bloque "# autopilot-kit (local)": nada se commitea
 #    - .pi/settings.json   si instalas con pi: declara las extensiones
-#                          npm:@juicesharp/rpiv-ask-user-question y
-#                          npm:pi-background-tasks (pi install --local),
+#                          listadas en pi-extensions.conf (pi install --local),
 #                          SOLO cuando pi esta entre los clientes
 #
 #  Reinstalar SIEMPRE sobreescribe las copias viejas del kit dentro del proyecto
@@ -96,6 +95,24 @@ K_DIR() { case "$1" in opencode) echo ".opencode";; claude) echo ".claude";; pi)
 # Carpetas de skills por cliente dentro del proyecto (opencode usa singular).
 KSUBS() { case "$1" in opencode) echo "skill";; claude) echo "skills";; pi) echo "skills";; esac; }
 
+# Extensiones de pi declaradas por el kit: lista editable en $KIT_DIR/pi-extensions.conf
+# (una spec npm: por linea; '#' comenta). Se usa tanto en la instalacion local
+# (pi install --local --approve -> .pi/settings.json) como en el --uninstall --local
+# (pi remove --local --approve). La clave de deteccion se deriva de la spec.
+PI_EXT_FILE="$KIT_DIR/pi-extensions.conf"
+PI_EXT=()
+if [[ -f "$PI_EXT_FILE" ]]; then
+  while IFS= read -r fuente; do
+    fuente="${fuente%%#*}"                   # quita comentario (y lineas '#' enteras)
+    fuente="${fuente//[[:space:]]/}"
+    [[ -z "$fuente" ]] && continue
+    PI_EXT+=("$fuente|${fuente#npm:}")       # fuente|clave
+  done < "$PI_EXT_FILE"
+  [[ ${#PI_EXT[@]} -eq 0 ]] && warn "pi-extensions.conf esta vacio: no se instalan extensiones de pi"
+else
+  warn "no existe $PI_EXT_FILE: no se instalan extensiones de pi (revisa el kit)"
+fi
+
 # ------------------------------------------------------------------
 # --uninstall --local <carpeta>: quita SOLO la instalacion LOCAL de esa carpeta
 # ------------------------------------------------------------------
@@ -114,7 +131,8 @@ if [[ "$UNINSTALL" == 1 && "$LOCAL_MODE" == 1 ]]; then
     python3 "$RENDER" local-uninstall "$c" "$PROY"
     # quita las extensiones de pi que instalo el kit (si pi es cliente): local, .pi/settings.json
     if [[ "$c" == "pi" ]] && command -v pi >/dev/null 2>&1; then
-      for fuente in "npm:@juicesharp/rpiv-ask-user-question" "npm:pi-background-tasks"; do
+      for espec in "${PI_EXT[@]}"; do
+        fuente="${espec%%|*}"
         (cd "$PROY" && pi remove --local --approve "$fuente" >/dev/null 2>&1) \
           && say "pi: extension ${fuente#npm:} retirada (.pi/settings.json)"
       done
@@ -382,14 +400,10 @@ if ! grep -q "# --- autopilot-kit (local) ---" "$GI"; then
   say "gitignore: bloque del kit local (nada de esto se commitea)"
 fi
 
-# 6) Extensiones de pi (solo si pi es cliente): rpiv-ask-user-question (preguntas del
-#    coder) y pi-background-tasks (tareas de shell durables de fondo del orquestador).
+# 6) Extensiones de pi (solo si pi es cliente): se leen de pi-extensions.conf
+#    (la lista editable en la raiz del kit; el array PI_EXT ya se cargo arriba).
 #    `pi install --local` las declara en .pi/settings.json del PROYECTO (nada en el home).
 #    Idempotente: si ya estan declaradas, no vuelve a instalarlas.
-PI_EXT=(
-  "npm:@juicesharp/rpiv-ask-user-question|rpiv-ask-user-question"
-  "npm:pi-background-tasks|pi-background-tasks"
-)
 if [[ " ${CLIENTES[*]} " == *" pi "* ]]; then
   if command -v pi >/dev/null 2>&1; then
     for espec in "${PI_EXT[@]}"; do

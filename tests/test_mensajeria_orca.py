@@ -34,6 +34,7 @@ SKILL = _norm(_leer("skills", "autopilot", "SKILL.md"))
 REF = _norm(_leer("docs", "REFERENCIA.md"))
 COD = _norm(_leer("agents", "coder.md"))
 INSTALL = _norm(_leer("install.sh"))
+PI_EXT = _norm(_leer("pi-extensions.conf"))
 
 
 def _contiene(doc, *fragmentos):
@@ -84,11 +85,13 @@ def test_redaccion_vieja_eliminada():
 
 
 def test_instalador_declara_las_extensiones_pi_con_approve():
-    # el kit declara ambas extensiones pi --local en .pi/settings.json
-    # (--approve porque la 2a exige confianza del proyecto) y las retira en uninstall
-    _contiene(INSTALL, "npm:pi-background-tasks", "npm:@juicesharp/rpiv-ask-user-question")
+    # las extensiones pi viven en pi-extensions.conf (archivo editable del kit):
+    # la instalacion las aplica con pi install --local --approve (.pi/settings.json)
+    # y el uninstall las retira con pi remove --local --approve.
+    _contiene(PI_EXT, "npm:pi-background-tasks", "npm:@juicesharp/rpiv-ask-user-question", "npm:pi-thinking-steps")
     assert "pi install --local --approve" in INSTALL
     assert "pi remove --local --approve" in INSTALL
+    assert "pi-extensions.conf" in INSTALL
 
 
 if __name__ == "__main__":
