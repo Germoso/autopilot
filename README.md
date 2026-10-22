@@ -33,7 +33,7 @@ del proyecto** donde lo corras: no toca tu config global (por eso solo funciona
 donde se instaló). Baja el repo del kit una vez y úsalo para instalar en cada proyecto:
 
 ```sh
-git clone https://github.com/Germoso/azure_devops_coding_autopilot.git ~/code/autopilot
+git clone https://github.com/Germoso/autopilot.git ~/code/autopilot
 cd ~/code/autopilot
 ./install.sh --local ~/code/konectame   # o: cd ~/code/konectame && bash ~/code/autopilot/install.sh
 ```
@@ -41,6 +41,25 @@ cd ~/code/autopilot
 Dentro del proyecto se crea `.autopilot/` (validadores `aenv.sh`+`entorno.py`, skills,
 agente fuente) y el enrutado por cliente `.pi/`, `.opencode/` y/o `.claude/`. Nada se
 commitea. Otras carpetas siguen sin autopilot.
+
+**Opcional — comando global** (si no quieres andar escribiendo la ruta del kit):
+
+```sh
+cd ~/code/autopilot && ./install.sh --cli     # crea ~/.local/bin/autopilot (ruta: AUTOPILOT_BIN_DIR)
+```
+
+Queda un **launcher fino** que delega en el instalador del kit, no instala nada más en
+tu sistema:
+
+```sh
+autopilot install <proyecto> [--pi|--claude|--opencode]   # igual que --local
+autopilot uninstall <proyecto>                            # quita la instalacion local
+autopilot azure ...                                       # integracion de Azure DevOps
+autopilot upgrade                                         # git pull del kit + refresca el CLI
+```
+
+El kit en sí sigue siendo **local por proyecto**: el comando global solo te ahorra
+memorizar la ruta de `install.sh`.
 
 **2. Preparar tu proyecto.** Abre Claude Code, OpenCode o pi **en la carpeta del proyecto** y escribe:
 
@@ -228,6 +247,7 @@ Para evitar esperas, planificá tareas independientes que no toquen los mismos a
 - **[docs/REFERENCIA.md](docs/REFERENCIA.md)** — todo el detalle: estados, variables, el
   bucle del orquestador, cómo crear tareas desde afuera, trabajo en paralelo, Orca por
   dentro y estructura del kit.
-- Actualizar el kit de un proyecto: `cd ~/code/autopilot && git pull && ./install.sh --local ~/code/konectame` (re-usa la misma ruta).
-- Desinstalar de un proyecto (solo esa carpeta): `cd ~/code/autopilot && ./install.sh --uninstall --local ~/code/konectame`.
+- Actualizar el kit de un proyecto: `cd ~/code/autopilot && git pull && ./install.sh --local ~/code/konectame` (re-usa la misma ruta). Con el CLI global: `autopilot upgrade` refresca el repo y el comando.
+- Desinstalar de un proyecto (solo esa carpeta): `cd ~/code/autopilot && ./install.sh --uninstall --local ~/code/konectame`, o `autopilot uninstall ~/code/konectame`.
 - Quitar una copia GLOBAL vieja (de versiones anteriores del kit): `./install.sh --uninstall`.
+- Quitar el comando global: `./install.sh --uninstall --cli` (las instalaciones locales no se tocan).

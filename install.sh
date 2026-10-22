@@ -23,10 +23,14 @@
 #    ./install.sh                       # LOCAL en la carpeta actual (clientes: los 3)
 #    ./install.sh --local <carpeta>     # LOCAL en <carpeta>
 #    ./install.sh --opencode --claude --pi   # elige clientes (default: los 3)
+#    ./install.sh --cli                  # instala el comando GLOBAL "autopilot" (launcher fino)
+#                                        #  en ~/.local/bin (otra ruta: AUTOPILOT_BIN_DIR)
+#    ./install.sh --cli --local <carpeta>   # CLI global + instalacion local de un proyecto
 #    ./install.sh --azure                # SOLO la integracion de Azure DevOps (apart)
 #    ./install.sh --uninstall            # desinstala la copia GLOBAL heredada
 #                                        #  (la que instalan versiones viejas del kit)
 #    ./install.sh --uninstall --local <carpeta>   # quita la instalacion LOCAL de <carpeta>
+#    ./install.sh --uninstall --cli      # quita el comando GLOBAL "autopilot"
 # ============================================================
 
 set -uo pipefail
@@ -46,9 +50,9 @@ RESTO=(); SOLO_AZURE=0
 for a in "$@"; do [[ "$a" == --azure ]] && SOLO_AZURE=1 || RESTO+=("$a"); done
 [[ "$SOLO_AZURE" == 1 ]] && exec "$KIT_DIR/integraciones/azure/instalar.sh" "${RESTO[@]}"
 
-WANT_OC=0; WANT_CC=0; WANT_PI=0; UNINSTALL=0; LOCAL_MODE=0; PROY=""
+WANT_OC=0; WANT_CC=0; WANT_PI=0; UNINSTALL=0; LOCAL_MODE=0; CLI=0; PROY=""
 for a in "$@"; do
-  [[ "$a" == -h || "$a" == --help ]] && { sed -n '3,40p' "$0"; exit 0; }
+  [[ "$a" == -h || "$a" == --help ]] && { sed -n '3,50p' "$0"; exit 0; }
 done
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -56,6 +60,7 @@ while [[ $# -gt 0 ]]; do
     --claude)       WANT_CC=1 ;;
     --pi)           WANT_PI=1 ;;
     --local)        LOCAL_MODE=1; PROY="${2:-}"; shift ;;
+    --cli)          CLI=1 ;;
     --uninstall)    UNINSTALL=1 ;;
     -h|--help)      sed -n '3,40p' "$0"; exit 0 ;;
     *) echo "opcion desconocida: $1 (ver --help). Si preparas un proyecto usa /autopilot-init (crea autopilot.env + board)." >&2; exit 1 ;;
@@ -123,6 +128,95 @@ PY
   fi
   echo; echo "==> Listo. Esta carpeta quedo sin autopilot. Otras instalaciones y tu config global no se tocaron."
   exit 0
+fi
+
+# ------------------------------------------------------------------
+# --uninstall --cli: quita el comando GLOBAL "autopilot"
+# ------------------------------------------------------------------
+BIN_DIR="${AUTOPILOT_BIN_DIR:-$HOME/.local/bin}"
+if [[ "$UNINSTALL" == 1 && "$CLI" == 1 ]]; then
+  if [[ -f "$BIN_DIR/autopilot" ]]; then
+    rm -f "$BIN_DIR/autopilot"
+    say "cli: $BIN_DIR/autopilot quitado"
+  else
+    warn "cli: no habia nada en $BIN_DIR/autopilot"
+  fi
+  echo; echo "==> Listo. Las instalaciones LOCALES de cada proyecto no se tocaron."
+  exit 0
+fi
+
+# ------------------------------------------------------------------
+# --cli: instala (o actualiza) el comando GLOBAL "autopilot".
+# Es SOLO un launcher fino que delega en este mismo instalador; el kit
+# sigue siendo LOCAL por proyecto. Nada mas se escribe fuera de $BIN_DIR.
+# ------------------------------------------------------------------
+if [[ "$CLI" == 1 ]]; then
+  mkdir -p "$BIN_DIR"
+  LAUNCHER_TMP="$BIN_DIR/autopilot.tmp"
+  cat > "$LAUNCHER_TMP" <<'LAUNCHER'
+#!/usr/bin/env bash
+# autopilot — CLI global del kit (un launcher fino).
+# El kit es LOCAL por proyecto; este comando solo delega en su instalador.
+KIT_DIR="__KIT_DIR__"
+INSTALL="$KIT_DIR/install.sh"
+
+usage() {
+  cat <<'HELP'
+autopilot — instalador del kit de desarrollo autonomo (por proyecto).
+
+Uso:
+  autopilot install <proyecto> [--pi|--claude|--opencode]  instala el kit DENTRO del proyecto
+  autopilot uninstall <proyecto>                           quita la instalacion local de un proyecto
+  autopilot uninstall --global                             quita la copia GLOBAL vieja (herencia)
+  autopilot azure ...                                      integracion de Azure DevOps (ver su ayuda)
+  autopilot upgrade                                        actualiza el kit (git pull) y re-instala el CLI
+  autopilot --help                                         esta ayuda
+
+El kit nunca toca tu config global: solo crea .autopilot/, .pi/, .opencode/, .claude/
+y un bloque en .gitignore DENTRO del proyecto donde lo instalas.
+HELP
+}
+
+case "${1:-}" in
+  install)
+    shift
+    [[ $# -ge 1 ]] || { echo "usa: autopilot install <proyecto> [--pi|--claude|--opencode]" >&2; exit 1; }
+    exec bash "$INSTALL" --local "$@"
+    ;;
+  uninstall)
+    shift
+    if [[ "${1:-}" == "--global" || "${1:-}" == "-g" ]]; then
+      shift; exec bash "$INSTALL" --uninstall "$@"
+    fi
+    [[ $# -ge 1 ]] || { echo "usa: autopilot uninstall <proyecto>  (o --global)" >&2; exit 1; }
+    exec bash "$INSTALL" --uninstall --local "$@"
+    ;;
+  azure)
+    shift; exec bash "$KIT_DIR/integraciones/azure/instalar.sh" "$@"
+    ;;
+  upgrade)
+    git -C "$KIT_DIR" pull --ff-only || { echo "! no se pudo actualizar el repo del kit ($KIT_DIR)" >&2; exit 1; }
+    exec bash "$INSTALL" --cli
+    ;;
+  -h|--help|"")
+    usage; exit 0
+    ;;
+  *)
+    echo "! subcomando desconocido: ${1:-} (usa: autopilot --help)" >&2
+    exit 1
+    ;;
+esac
+LAUNCHER
+  sed "s|__KIT_DIR__|$KIT_DIR|" "$LAUNCHER_TMP" > "$BIN_DIR/autopilot"
+  rm -f "$LAUNCHER_TMP"
+  chmod +x "$BIN_DIR/autopilot"
+  say "cli: $BIN_DIR/autopilot  (llamalo: autopilot install <proyecto>)"
+  case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *) warn "$BIN_DIR no esta en tu PATH: agrega  export PATH=\"\$PATH:$BIN_DIR\"  a tu shell, o usa AUTOPILOT_BIN_DIR" ;;
+  esac
+  [[ "$LOCAL_MODE" == 0 ]] && { echo; echo "==> Listo. Comando global: autopilot --help"; exit 0; }
+  echo "    (ademas, sigue la instalacion local pedida con --local)"
 fi
 
 # ------------------------------------------------------------------
