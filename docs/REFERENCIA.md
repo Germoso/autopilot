@@ -144,30 +144,36 @@ visibles en la tarea sin copiarse.
 
 ## Instalación
 
+La instalación es **LOCAL, por proyecto** (no contamina tu setup global). Baja el
+repo del kit una vez y úsalo para instalar en cada proyecto que quieras:
+
 ```sh
-git clone https://github.com/Germoso/azure_devops_coding_autopilot.git ~/code/dotenvs
-cd ~/code/dotenvs
-./install.sh
+git clone https://github.com/Germoso/azure_devops_coding_autopilot.git ~/code/autopilot
+cd ~/code/autopilot
+./install.sh --local ~/code/konectame    # o: cd ~/code/konectame && bash ~/code/autopilot/install.sh
 ```
 
-Instala, para cada cliente detectado (o `--opencode --claude --pi`):
+Instala **dentro de la carpeta del proyecto** (no escribe nada en `~/.config/opencode`,
+`~/.claude`, `~/.pi/agent` ni `~/.local/share/`):
 
-- **validadores** en `~/.local/share/autopilot-kit/`: `aenv.sh` y `entorno.py`
-  (los que ejecutan los agentes para no tocar producción; compartidos);
-- **skills** `autopilot`, `autopilot-init`, `autopilot-plan`, `ponytail`, `tdd`;
-- **agente `coder`** generado desde `agents/*.md` con las reglas de permisos de cada
-  cliente;
+- `.autopilot/`: validadores `aenv.sh` y `entorno.py` (nunca contra producción),
+  skills y el agente fuente `agents/coder.md` (con `K` = `<proyecto>/.autopilot`);
+- enrutado por cliente en la misma carpeta: `.pi/skills/`, `.opencode/{skill,agent,
+  command}/`, `.claude/{skills,agents}/`;
 - en OpenCode, además, los **comandos** `/autopilot-init`, `/autopilot-plan`,
   `/autopilot` (en Claude Code y pi las skills ya son esos comandos).
+- un bloque en `.gitignore` (nada del kit se commitea).
 
-No pisa archivos que no generó el kit (archivos con la marca `.autopilot-kit`).
-`entorno.py` se valida al final con `python3 -m py_compile`.
+No pisa archivos que no generó el kit (marca `.autopilot-kit`). `entorno.py` se valida
+al final con `python3 -m py_compile`. Otras carpetas quedan sin autopilot: solo
+funciona donde se instaló.
 
 ### Desinstalar
 
-`./install.sh --uninstall` borra skills, comandos y agente del kit de cada cliente y
-`~/.local/share/autopilot-kit/`. No toca tus proyectos (`autopilot.env`, board,
-`.env*`, config de azure).
+- De un proyecto (solo esa carpeta): `./install.sh --uninstall --local <proyecto>`.
+- Copia GLOBAL vieja (la de versiones anteriores del kit que sí iba a tu config de
+  usuario): `./install.sh --uninstall`. Nunca toca los proyectos (`autopilot.env`,
+  board, `.env*`, config de azure).
 
 ## Configurar un proyecto
 
@@ -343,7 +349,7 @@ salida y la instrucción de terminar con `NOTAS DEL DESARROLLADOR` + `RESULTADO`
 autopilot/
 ├── README.md                esta guía
 ├── docs/REFERENCIA.md       este documento
-├── install.sh               instala validadores + skills + agente coder
+├── install.sh               instala el kit LOCAL (validadores + skills + agente coder)
 ├── agents/coder.md          el programador (fuente única, por-cliente se genera)
 ├── clients/render.py        genera el agente y los comandos según el cliente
 ├── skills/

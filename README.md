@@ -27,13 +27,19 @@ lanza al coder; cuando termina, tú revisas:
 
 ## Empezar (una sola vez)
 
-**1. Instalar el kit**
+**1. Instalar el kit (LOCAL, por proyecto).** El kit se instala **dentro de la carpeta
+del proyecto** donde lo corras: no toca tu config global (por eso solo funciona
+donde se instaló). Baja el repo del kit una vez y úsalo para instalar en cada proyecto:
 
 ```sh
-git clone https://github.com/Germoso/azure_devops_coding_autopilot.git ~/code/dotenvs
-cd ~/code/dotenvs
-./install.sh
+git clone https://github.com/Germoso/azure_devops_coding_autopilot.git ~/code/autopilot
+cd ~/code/autopilot
+./install.sh --local ~/code/konectame   # o: cd ~/code/konectame && bash ~/code/autopilot/install.sh
 ```
+
+Dentro del proyecto se crea `.autopilot/` (validadores `aenv.sh`+`entorno.py`, skills,
+agente fuente) y el enrutado por cliente `.pi/`, `.opencode/` y/o `.claude/`. Nada se
+commitea. Otras carpetas siguen sin autopilot.
 
 **2. Preparar tu proyecto.** Abre Claude Code, OpenCode o pi **en la carpeta del proyecto** y escribe:
 
@@ -161,8 +167,11 @@ Está bloqueado de verdad, no es solo una instrucción (reglas de permisos de ca
 Revisar si un repo está bien configurado (no muestra valores):
 
 ```sh
-~/.local/share/autopilot-kit/entorno.py Konectame_BackOffice_BE
+<proyecto>/.autopilot/entorno.py Konectame_BackOffice_BE
 ```
+
+(El coder usa `$K/aenv.sh` y `$K/entorno.py` con `$K = <proyecto>/.autopilot`, el kit
+local de esa carpeta.)
 
 ¿Un servicio externo que no tiene versión de QA (p. ej. una pasarela de pagos de pruebas)?
 Permítelo a propósito en tu `.env.autopilot`: `AUTOPILOT_PERMITIR=AZUL_PAYMENT_URL`.
@@ -216,5 +225,6 @@ Para evitar esperas, planificá tareas independientes que no toquen los mismos a
 - **[docs/REFERENCIA.md](docs/REFERENCIA.md)** — todo el detalle: estados, variables, el
   bucle del orquestador, cómo crear tareas desde afuera, trabajo en paralelo, Orca por
   dentro y estructura del kit.
-- Actualizar el kit: `cd ~/code/dotenvs && git pull && ./install.sh`.
-- Desinstalar: `./install.sh --uninstall` (no toca tus proyectos).
+- Actualizar el kit de un proyecto: `cd ~/code/autopilot && git pull && ./install.sh --local ~/code/konectame` (re-usa la misma ruta).
+- Desinstalar de un proyecto (solo esa carpeta): `cd ~/code/autopilot && ./install.sh --uninstall --local ~/code/konectame`.
+- Quitar una copia GLOBAL vieja (de versiones anteriores del kit): `./install.sh --uninstall`.

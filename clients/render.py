@@ -159,11 +159,73 @@ def uninstall(cliente, cfg):
                 print("  - %s" % p)
 
 
+# ----------------------------------------------------------------------
+# Instalacion LOCAL (por proyecto). El kit vive en <proy>/.autopilot/ y
+# cada cliente enruta dentro de la propia carpeta del proyecto. Nada global.
+# ----------------------------------------------------------------------
+
+def inyectar_k(cuerpo, kit):
+    # K apunta al kit LOCAL del proyecto: lo usa el coder para $K/aenv.sh.
+    return 'K="%s"\n\n' % kit + cuerpo
+
+
+def local_instalar_agente(proy, kit):
+    # Agente fuente (canonica) en .autopilot/agents: la usa el orquestador para
+    # lanzar al coder via subagente SIN depender de agentes globales.
+    for src in sorted(glob.glob(os.path.join(os.path.dirname(AQUI), "agents", "*.md"))):
+        meta, cuerpo = leer_agente(src)
+        escribir(os.path.join(proy, ".autopilot", "agents", meta["name"] + ".md"),
+                 front_pi(meta), inyectar_k(cuerpo, kit))
+
+
+def local_install(cliente, proy, kit):
+    local_instalar_agente(proy, kit)
+    if cliente == "opencode":
+        for src in sorted(glob.glob(os.path.join(os.path.dirname(AQUI), "agents", "*.md"))):
+            meta, cuerpo = leer_agente(src)
+            escribir(os.path.join(proy, ".opencode", "agent", meta["name"] + ".md"),
+                     front_opencode(meta), inyectar_k(cuerpo, kit))
+        for nombre, desc in COMANDOS.items():
+            cuerpo = ('Carga la skill `%s` y sigue su seccion "Arranque" en ESTE proyecto, '
+                      "paso por paso. Es la unica fuente de instrucciones.\n\n$ARGUMENTS\n" % nombre)
+            escribir(os.path.join(proy, ".opencode", "command", nombre + ".md"),
+                     [MARCA, "description: " + q(desc)], cuerpo)
+    elif cliente == "claude":
+        for src in sorted(glob.glob(os.path.join(os.path.dirname(AQUI), "agents", "*.md"))):
+            meta, cuerpo = leer_agente(src)
+            escribir(os.path.join(proy, ".claude", "agents", meta["name"] + ".md"),
+                     front_claude(meta), inyectar_k(cuerpo, kit))
+    # pi: skills en .pi/skills (lo copia install.sh) y agente via .autopilot/agents (embed).
+
+
+def local_uninstall(cliente, proy):
+    quita = []
+    if cliente == "opencode":
+        quita += [os.path.join(proy, ".opencode", "agent")]
+        quita += [os.path.join(proy, ".opencode", "command")]
+    elif cliente == "claude":
+        quita += [os.path.join(proy, ".claude", "agents")]
+    for raiz in quita:
+        for p in glob.glob(os.path.join(raiz, "*.md")):
+            if MARCA in open(p, encoding="utf-8").read():
+                os.remove(p)
+                print("  - %s" % p)
+    # agente fuente canónico: se quita una sola vez
+    p = os.path.join(proy, ".autopilot", "agents", "coder.md")
+    if os.path.exists(p) and MARCA in open(p, encoding="utf-8").read():
+        os.remove(p)
+        print("  - %s" % p)
+
+
 def main(a):
     if len(a) >= 4 and a[0] == "install":
         install(a[1], a[2], a[3])
     elif len(a) >= 3 and a[0] == "uninstall":
         uninstall(a[1], a[2])
+    elif len(a) >= 4 and a[0] == "local-install":
+        local_install(a[1], a[2], a[3])
+    elif len(a) >= 3 and a[0] == "local-uninstall":
+        local_uninstall(a[1], a[2])
     else:
         print(__doc__, file=sys.stderr)
         return 1

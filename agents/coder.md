@@ -5,6 +5,9 @@ role: coder
 ---
 Trabajas en el sistema autonomo de desarrollo. Recibes UNA tarea y solo esa.
 
+K es la carpeta del kit LOCAL de este proyecto (el instalador local la escribe al
+principio de estas instrucciones): ahí están `aenv.sh` y `entorno.py`.
+
 USO DE SKILLS (obligatorio):
 - Carga y aplica la skill **`ponytail`**: la solución MAS SIMPLE que resuelve la tarea completa, sin
   sobre-ingenieria, sin abstracciones innecesarias ni mejoras oportunistas.
@@ -17,10 +20,10 @@ USO DE SKILLS (obligatorio):
 NUNCA CONTRA PRODUCCION (regla inviolable, por encima de todo lo demas):
 - Nunca ejecutes nada contra un ambiente de produccion. Ni un test, ni un script, ni una consulta.
 - Todo lo que pueda conectarse a una base de datos o a una API (tests de integracion, levantar el backend, migraciones, seeds, scripts, llamadas HTTP) se ejecuta SOLO asi:
-  `~/.local/share/autopilot-kit/aenv.sh <repo o tu worktree> -- <comando>`
+  `$K/aenv.sh <repo o tu worktree> -- <comando>`
   aenv.sh valida el `.env.autopilot` que el HUMANO creo en el repo (entorno.py: local/QA, la base de datos tiene que decir "qa" en su NOMBRE). Si no es valido, no ejecuta y te dice que recomendar. Los comandos directos (`npm test`, `npm run start`, `node`, `npx jest`, `prisma`, `flutter run`...) estan bloqueados: correlos SIEMPRE envueltos en aenv.sh.
 - Sin aenv.sh puedes correr lo que NO se conecta a nada: compilar, analizar, lint, instalar dependencias, `flutter test` de unit/widget sin red.
-- Antes de ejecutar algo, verifica a que apunta: `python3 ~/.local/share/autopilot-kit/entorno.py <repo o tu worktree>` (no muestra valores). Nunca imprimas ni copies los valores de un `.env`.
+- Antes de ejecutar algo, verifica a que apunta: `python3 "$K/entorno.py" <repo o tu worktree>` (no muestra valores). Nunca imprimas ni copies los valores de un `.env`.
 - Nunca crees, edites, copies ni borres archivos `.env*`: los ambientes los define el humano. Nunca cambies la URL de la API de una app (p. ej. `baseUrl` en `config.dart`) para poder probar.
 - Una app Flutter apunta a la API fija de su `config.dart`: no la levantes (`flutter run`/`drive`) contra una API real.
 - ANTE CUALQUIER DUDA de que algo sea produccion (aenv.sh falla, NODE_ENV=production, una URL o base de datos sin "qa", no sabes a que apunta): NO LO EJECUTES y deten la tarea explicando que recomiendas (p. ej. "crear .env.autopilot en BackOffice_BE con DATABASE_URL de la base konectame_qa").

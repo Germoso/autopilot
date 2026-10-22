@@ -16,21 +16,21 @@ ejemplo para escribir una integración con otro tracker.
 ## Instalar
 
 ```sh
-./install.sh                                   # primero el kit del autopilot (raíz del repo)
-./install.sh --azure                           # o SOLO Azure, sin el kit del autopilot
-integraciones/azure/instalar.sh                # skill /azure-sync + scripts
-integraciones/azure/instalar.sh --with-mcp <org>   # además registra el MCP de Azure DevOps
-integraciones/azure/instalar.sh --uninstall
+./install.sh --local <proyecto>                  # primero el kit local del autopilot
+./install.sh --azure --local <proyecto>           # o SOLO Azure, sin el kit del autopilot
+integraciones/azure/instalar.sh --local <proyecto>     # skill /azure-sync + scripts
+integraciones/azure/instalar.sh --local <proyecto> --with-mcp <org>  # además registra el MCP
+integraciones/azure/instalar.sh --uninstall --local <proyecto>
 ```
 
-Con `./install.sh --azure` no hace falta el kit: `azure-sync.py` es autocontenido (escribe directo los
-`.md` del board), así que se instala solo `/azure-sync`, sin board del kit, ni skills ni agentes del
-autopilot.
+La instalación es **local al proyecto** (no toca tu config global). Con `--azure` no hace falta el kit:
+`azure-sync.py` es autocontenido (escribe directo los `.md` del board), así que se instala solo
+`/azure-sync` enrutado en la carpeta del proyecto.
 
-Las dos formas instalan además el comando `azure-sync` en `~/.local/bin`, para usarlo desde la terminal.
-
-Los scripts quedan en `~/.local/share/autopilot-kit/integraciones/azure/`. `./install.sh --uninstall`
-del kit también desinstala la integración.
+Los scripts quedan en `<proyecto>/.autopilot/integraciones/azure/`. El MCP de Azure DevOps se registra
+solo en el proyecto: `.opencode/opencode.json` (OpenCode) o `.mcp.json` (Claude Code). Nada se commitea
+(bloque del kit en tu `.gitignore`). `./install.sh --uninstall` quita la copia GLOBAL de la versión
+vieja; `--uninstall --local <proyecto>` quita la de esa carpeta.
 
 ## Configurar un proyecto
 

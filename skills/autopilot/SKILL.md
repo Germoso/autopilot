@@ -146,8 +146,8 @@ devuelve `orca worktree create`). Nunca en la copia principal del repo.
 - Nadie (tú ni el coder) ejecuta nada contra producción.
 - Lo que se conecta a una base de datos o API (tests de integración, levantar un
   backend, migraciones, seeds, scripts, HTTP) corre **solo** con
-  `$K/aenv.sh <repo o worktree> -- <comando>` (`$K` = `~/.local/share/autopilot-kit`,
-  donde instaló el kit `aenv.sh` y `entorno.py`). Valida el **`.env.autopilot`** que
+  `$K/aenv.sh <repo o worktree> -- <comando>` (`$K` = `«K_DIR»`,
+  donde el instalador LOCAL dejó `aenv.sh` y `entorno.py`). Valida el **`.env.autopilot`** que
   el humano creó y, si no es `ok`, **NO ejecuta** (salida 3) y dice qué hacer.
 - Sin `aenv.sh` solo se corren cosas que **no se conectan a nada**: compilar,
   analizar, lint, instalar dependencias, tests de unit/widget sin red.
@@ -197,6 +197,11 @@ Para cada tarea en `new/` o `bug-fix/` que no tenga ya un coder trabajando:
    orca, lanza el subagente `coder` del cliente en ese worktree). La especificación
    cumple el contrato de orca (Target / Change / Constraints / Ownership /
    Observable acceptance) y contiene el **encargo del coder** (más abajo).
+   El `coder` de ESTE proyecto es local: su definición está en `$K/agents/coder.md`
+   (y, según cliente, en `.opencode/agent/coder.md` o `.claude/agents/coder.md` de
+   esta misma carpeta). No dependas de ningún agente `coder` de tu config global:
+   si tu cliente registra el agente local por nombre, úsalo; si no, pasa el
+   contenido de `$K/agents/coder.md` como instrucciones del subagente (pi).
 5. Si hay `MAX_CODERS` coders en vuelo (`PARALLEL=false` → 1), no lances más.
 
 ### B. Terminó el coder (worker_done de orca, o aviso de subagente)
@@ -270,7 +275,7 @@ completos — **no resumidos**); la **ruta de su worktree** (la de `orca worktre
 create`: ahí trabaja, nunca en la copia principal), el repo, la rama y `<BASE>`;
 si es un **workspace** y la tarea puede tocar otro repo, la lista de repos
 disponibles (y que abra la misma rama ahí con `orca worktree create --name <clave>
---repo <carpeta> --base-branch <base>`); dónde está `$K` (`~/.local/share/autopilot-kit`)
+--repo <carpeta> --base-branch <base>`); dónde está `$K` (`«K_DIR»`)
 con `aenv.sh` y `entorno.py`; y la **ruta de salida**
 (`<board>/.autopilot/resultados/<clave>.md`). Pídele que trabaje **solo** la tarea,
 commitee en la rama y termine escribiendo `NOTAS DEL DESARROLLADOR` + `RESULTADO`

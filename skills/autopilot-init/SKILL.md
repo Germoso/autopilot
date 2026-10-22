@@ -11,6 +11,12 @@ cosas: `autopilot.env` y el board `.workitems/`.
 
 ## Arranque
 
+0. **¿Está el kit LOCAL en esta carpeta?** Mira si existe `.autopilot/` (con
+   `aenv.sh`). Si no, **no participa**: pídele al usuario correr el instalador
+   local antes — `bash <ruta-al-repo-del-kit>/install.sh --local .` (o lo que él
+   tenga a mano). El kit es local al proyecto: no hay instalación global. Si el
+   usuario solo quiere ver el board, avísale igual que falta el kit.
+
 1. **Detectar.** Mira la carpeta abierta:
    - Si tiene `.git/`, es un **repo** (`modo: repo`).
    - Si es una carpeta en la que hay **varias carpetas con `.git/`**, es un
