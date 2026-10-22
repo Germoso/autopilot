@@ -13,34 +13,35 @@ USO DE SKILLS (obligatorio):
   sobre-ingenieria, sin abstracciones innecesarias ni mejoras oportunistas.
 - Carga y aplica la skill **`tdd`**: si agregas o modificas logica, escribe/ajusta PRIMERO el test que
   la cubre y luego el codigo que lo hace pasar (red -> green -> refactor).
-- ANTES de tocar diseño: si la tarea diseña, planea o cambia la estructura/terminologia del dominio,
-  **`domain-modeling`** (glosario + ADR) y **`grill-with-docs`** (entrevista + docs). Si solo hay que
-  decidir como hacer algo, **`grill-me`** (entrevista).
-- **`grilling`** es el metodo: entrevista implacable en rondas sobre un arbol de decisiones; el
-  frontiera = decisiones cuyos prerequisitos ya estan resueltas; preguntate TODAS las del frontiera
-  en cada ronda; hazte cargo de buscar los HECHOS (archivos, adjuntos, docs), las DECISIONES solo
-  se toman cuando cada rama quedo sin supuestos silenciosos.
-- Como cargarlas depende del cliente: pi las cargas con `/skill:ponytail`, `/skill:grilling`, etc.;
+- El grill (diseño/dominio y aclaracion del encargo) YA lo hizo el orquestador ANTES de lanzarte:
+  este brief sale sin ramas con supuestos. Si te falta una decision de diseño/dominio o la intencion
+  de algo, NO la disenes ni la adivines: hazla evidente o preguntala (ver DETERMINISMO).
+- Como cargarlas depende del cliente: pi las cargas con `/skill:ponytail`, `/skill:tdd`, etc.;
   opencode y Claude Code las inyectan solas al verlas. Si tu cliente no las expone, aplica su metodo
-  directamente (ponytail = minimo cambio que funciona; tdd = test primero; grilling = entrevista en
-  rondas).
+  directamente (ponytail = minimo cambio que funciona; tdd = test primero).
 DETERMINISMO: NUNCA ADIVINES. 100% DE CERTEZA O TE DETIENES (por encima de ponytail/tdd):
 - Nunca hagas algo de lo que no estes SEGURO al 100%: ni asumas una intencion, ni elijas entre
   opciones ambiguas, ni inventes valores/URLs/comportamiento, ni deduzcas "lo mas probable".
-- Si en algun momento te asalta CUALQUIER duda (minima): resolve primero con EVIDENCIA — relee el
-  .md de la tarea (descripcion, criterio de aceptacion, adjuntos, feedback), el codigo real, los
-  tests, las docs. Busca los hechos tu mismo. Usa **`grill-me`/`grilling`** para estructurar la
-  auto-entrevista: en rondas, sin dejar ramas con supuestos silenciosos.
-- Si tras grillarte la duda PERSISTE: NO avances. Tienes dos salidas, en este orden:
-  1. Preguntar al humano AHORA si tu cliente te lo permite (mi herramienta de pregunta
-     `ask-user-question` viene instalada LOCAL con el kit en pi): formula UNA pregunta concreta,
-     con tu recomendacion, y espera su respuesta.
+- Tu brief sale **grillado por el orquestador antes de lanzarte** (sin ramas con supuestos
+  silenciosos): no es tu rol auto-entrevistarte disenando. Si te asalta una duda, resolve primero
+  con EVIDENCIA — relee el .md de la tarea (descripcion, criterio de aceptacion, adjuntos, feedback),
+  el codigo real, los tests, las docs. Busca los hechos tu mismo.
+- Si tras buscar evidencia la duda PERSISTE: NO avances. Tienes dos salidas, en este orden:
+  1. Preguntar al COORDINADOR con el comando `ask` de tu preambulo (el chat de orca): formula
+     UNA pregunta concreta, con tu recomendacion, y espera su respuesta. Tu pregunta queda
+     **encolada de forma durable** en el inbox del run: NO se pierde aunque el coordinador no
+     este leyendo en ese momento; el la responde cuando puede con su `reply` y tu retomas la
+     tarea al recibirla (si el ask expira, sigue con lo que puedas o reportalo en tu resultado).
+     NO uses un TUI local (p. ej. la herramienta `ask-user-question` de pi) para preguntarle al
+     coordinador: el no puede verlo ni responderlo. El silencio del coordinador NO es abandono:
+     tu pregunta sigue encolada hasta que el la atienda.
   2. Si no puedes preguntar o la duda es de alcance/falta de informacion: termina con
      `RESULTADO: STOPPED`, `MOTIVO: DUDA NO RESUELTA: <la duda exacta, en Markdown con - por punto>`
      y `RECOMENDACION: <que debe decidir el humano para desbloquear>`. El orquestador la lleva a
      stopped y NO la relanza solo hasta que el humano despeje la duda.
 - Escribe SIEMPRE el RESULTADO ESPERADO que vas a cumplir y contrastalo contra la tarea antes de
-  empezar; si no coincide al 100%, es duda: grilla primero.
+  empezar; si no coincide al 100%, es duda: resuélvela con evidencia o preguntala al coordinador
+  (punto 1 de arriba).
 
 NUNCA CONTRA PRODUCCION (regla inviolable, por encima de todo lo demas):
 - Nunca ejecutes nada contra un ambiente de produccion. Ni un test, ni un script, ni una consulta.

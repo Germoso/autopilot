@@ -38,7 +38,8 @@ bucle:
 
 1. procesa lo que llegó (resultado de un coder, revisión del humano);
 2. lanza coders para las tareas listas (`new/`);
-3. queda a la espera de Orca (`truth orchestration check --wait`) o del humano.
+3. queda a la escucha de Orca (`check` sin `--wait` drena el inbox; `check --wait` si no
+   hay otra lectura en vuelo) o del humano.
 
 Toda la ejecución (worktrees, procesos, agentes) la maneja **Orca**; todo el estado
 (qué tarea está en qué estado, qué hizo el coder, qué pidió el humano) vive en el
@@ -223,8 +224,23 @@ Sin variables de ranuras, E2E ni Telegram: ya no existen.
 
 ## El bucle del orquestador
 
-Siempre una de dos: está esperando a un coder (`orca orchestration check --wait --types
-worker_done,escalation,question`) o esperándote a ti. Nunca deja de escuchar.
+Los mensajes de un coder (`question`/`escalation`/`worker_done`) quedan **encolados de
+forma durable** en el inbox del Run: **no se pierden** aunque no estés leyendo en ese
+momento. **Cualquier** `orca orchestration check` (con o sin `--wait`) entrega lo pendiente
+en orden (FIFO); `--wait` solo evita el polling (recibe al instante, bloqueando hasta que
+llega algo o vence el timeout). El bucle es **resumible**, no eterno:
+
+- al empezar cada vuelta (o al despertar por un nudge "You have N orchestration messages"),
+  corri `check` **sin `--wait`** y procesa **TODAS** las deliveries pendientes **antes de
+  acusar** (`check --ack <delivery_id>`); una delivery NO acusada se re-entrega en el
+  próximo check;
+- recién después, y **si no hay otro `check` en vuelo**, lanzá `check --wait` (nunca dos
+  lecturas simultáneas del mismo run desde el mismo orquestador);
+- el nudge es solo **atención** ("hay N mensajes"), no el contenido: el contenido se lee
+  con `check`;
+- si te ausentás o terminás el turno con mensajes sin acusar, **no se pierden**: al volver
+  (misma sesión o la siguiente, mismo run/terminal), un `check` drena el inbox y procesás
+  lo que quedó, reconciliando con `worker-list`.
 
 **A. Lanzar coders** — por cada tarea en `new/` sin coder activo:
 
@@ -263,11 +279,19 @@ worker_done,escalation,question`) o esperándote a ti. Nunca deja de escuchar.
 - resolver una `stopped` → la mueves de `stopped/` a `new/` (o directamente al flujo)
   cuando puedas.
 
-**D. Escalaciones de orca** — `escalation`/`question` en el `check`: responder por
-`orca orchestration reply --id <id> --body "…"` o decidir; si un worker no responde,
-`worker-stop`/`worker-abandon`, `## Motivo de stopped` en el `.md` y `stopped/`.
-Worktrees huérfanos:
-`orca worktree rm --worktree <clave>`.
+**D. Escalaciones, preguntas y mensajes de orca** — `escalation`/`question` en el `check`:
+
+- **Ciclo ask/reply encolado:** cuando un coder pregunta con su `ask`, la pregunta quedó
+  **encolada**; podés atenderla aunque no haya un `check --wait` activo en ese instante.
+  Responder por `orca orchestration reply --id <id> --body "…"` o decidir; el coder retoma
+  al recibir la respuesta. Si no respondés, la pregunta sigue encolada: no se pierde.
+- **Mensajes stale:** una `question`/`escalation` de un dispatch ya settle (failed/exited)
+  NO es un bloqueo activo ni señal de relanzar: verificá el supuesto con evidencia real
+  (git del worktree, `worker-list`), respondé/descartá, acusá y seguí. Nunca relances,
+  detengas ni liberes por un mensaje stale sin evidencia positiva.
+- Si un worker no responde: `worker-stop`/`worker-abandon`, `## Motivo de stopped` en el
+  `.md` y `stopped/`.
+- Worktrees huérfanos: `orca worktree rm --worktree <clave>`.
 
 ## Nunca contra producción
 
@@ -346,7 +370,9 @@ El kit delega en la CLI de Orca toda la ejecución. Comandos que usa el orquesta
 | Limpiar worktree | `orca worktree rm --worktree <clave>` |
 | Run de la sesión (una vez) | `orca orchestration run-create --objective "<resumen>"` → devuelve `run_id` |
 | Despachar al coder | `orca orchestration worker-start --spec "<encargo>" --worktree <clave> --agent <n> --json` |
-| Esperar eventos | `orca orchestration check --wait --types worker_done,escalation,question --timeout-ms <ms>` |
+| Leer mensajes encolados | `orca orchestration check --run <run> --types worker_done,escalation,question --json` (sin `--wait`: entrega lo pendiente en FIFO) |
+| Esperar eventos | `orca orchestration check --wait --types worker_done,escalation,question --timeout-ms <ms>` (solo comodidad: evita el polling) |
+| Acusar una delivery | `orca orchestration check --ack <delivery_id> --run <run> --json` (SOLO tras procesar sus mensajes) |
 | Responder a un coder | `orca orchestration reply --id <message_id> --body "…"` |
 | Ver vivos | `orca orchestration worker-list --run <run_id> --json` / `worker-show` |
 | Detener worker | `orca orchestration worker-stop` / `worker-abandon` |

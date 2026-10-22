@@ -62,8 +62,9 @@ cliente (Claude Code / OpenCode / pi) dentro del worktree que creó Orca.
 
 **Usa la skill de orca (`orchestration`).** Orca carga esa skill para el orquestador
 (patrón *worker supervised*): es el contrato de `orca orchestration`
-(`run-create` → `worker-start` → `check --wait` → `reply` → `worker-release` /
-`worker-stop`). Cárgala en tu cliente si la expone (pi: `/skill:orchestration`) y,
+(`run-create` → `worker-start` → `check` (con o sin `--wait`: entrega los mensajes
+encolados del inbox del run) → `reply` → `worker-release` / `worker-stop`). Cárgala en tu
+cliente si la expone (pi: `/skill:orchestration`) y,
 sobre todo, **no inventes un protocolo propio**: seguí el ciclo y los comandos que
 define esa skill. Este documento trabaja sobre ese mismo contrato; ante cualquier
 duda entre este texto y la skill de orca, manda la skill de orca.
@@ -144,9 +145,27 @@ Una tarea se ve así (las secciones las van añadiendo el coder y el humano):
 El **coder siempre trabaja dentro del worktree de Orca** de su tarea (la ruta que
 devuelve `orca worktree create`). Nunca en la copia principal del repo.
 
-## REGLA DE ORO: el bucle nunca queda sin escuchar
+## REGLA DE ORO: la escucha nunca pierde un mensaje
 
-1. **No inventes que hay un coder trabajando si no lo hay.** Orca dice la verdad
+Los mensajes de un coder (`question`/`escalation`/`worker_done`) quedan **encolados de
+forma durable** en el inbox del Run: **no se pierden** aunque no estés leyendo en ese
+momento. **Cualquier** `orca orchestration check` (con o sin `--wait`) entrega lo
+pendiente en orden (FIFO); `--wait` es solo comodidad (evita el polling, bloqueando
+hasta que llega algo o vence el timeout). El bucle es **resumible**, no eterno:
+
+- Al empezar cada vuelta (o al despertar por un nudge "You have N orchestration
+  messages"), corre `check` **sin `--wait`** y procesa **TODAS** las deliveries pendientes
+  **antes de acusar** (`check --ack <delivery_id>`). Una delivery NO acusada se
+  **re-entrega** en el próximo check.
+- Recién después, y **si no hay otro `check` en vuelo**, lanza `check --wait` para esperar
+  el siguiente evento sin polling. **Nunca dos lecturas simultáneas** del mismo run desde
+  el mismo orquestador.
+- El nudge es solo **atención** ("hay N mensajes"), no el contenido: el contenido se lee
+  con `check`.
+- Si te ausentás o terminás el turno con mensajes sin acusar, **no se pierden**: al volver
+  (misma sesión o la siguiente, mismo run/terminal), un `check` drena el inbox y procesás
+  lo que quedó, reconciliando con `worker-list`.
+- **No inventes que hay un coder trabajando si no lo hay.** Orca dice la verdad
  (`worker-list`, `worker-show`); si un worktree quedó sin efecto, velo.
 
 ## NUNCA CONTRA PRODUCCIÓN (por encima de todo)
@@ -172,17 +191,22 @@ resuelve el humano (creando o corrigiendo `.env.autopilot`).
 línea (el humano lo lee). Título con la causa, cada punto en su línea `- …` y la
 recomendación en su propio párrafo.
 
-## Determinismo: el coder nunca adivina
+## Determinismo: grilla ANTES de despachar
 
-El coder trabaja con 100% de certeza o se detiene. Ante CUALQUIER duda mínima usa la skill
-**`grill-me`** (que invoca **`grilling`**: entrevista en rondas sobre un árbol de decisiones, sin
-dejar ramas con supuestos silenciosos) y **`domain-modeling`/`grill-with-docs`** cuando la tarea
-implica diseño o terminología del dominio. Esas skills (más `ponytail` y `tdd`) quedan **instaladas
-LOCAL** en el cliente con el kit; pi las expone como `/skill:grill-me`, `/skill:grilling`, etc.
+**Tú grillás la tarea antes de lanzar al coder** — el grill no es rango del coder, es tuyo y es
+pre-dispatch. Usa **`grill-me`** (que invoca **`grilling`**: entrevista en rondas sobre un árbol de
+decisiones, sin dejar ramas con supuestos silenciosos) y **`domain-modeling`/`grill-with-docs`**
+cuando la tarea implica diseño o terminología del dominio. Esas skills (más `ponytail` y `tdd`)
+quedan **instaladas LOCAL** con el kit; pi las expone como `/skill:grill-me`, `/skill:grilling`, etc.
 
-- Si tras grillarse la duda persiste, o pregunta al humano (la herramienta local
-  `ask-user-question` viene con el kit en pi) o termina con `RESULTADO: STOPPED` +
-  `MOTIVO: DUDA NO RESUELTA: …` + `RECOMENDACIÓN: …`. Nunca entrega algo con una suposición.
+- Grillá cada tarea de `new/` hasta que no quede rama con supuestos: decisiones de
+  diseño/dominio, alcance e intención resueltas ANTES de `worker-start`. El encargo (spec) se lo
+  lleva **ya aclarado**.
+- El coder arranca de ese brief aclarado y trabaja con 100% de certeza o se detiene. Si pese a todo
+  le queda una duda, la resuelve con evidencia y, si persiste, te pregunta con su `ask` (queda
+  encolada durable; le respondes con `reply` cuando puedas; nunca con un TUI local que no puedes
+  ver ni responder) o termina con `RESULTADO: STOPPED` + `MOTIVO: DUDA NO RESUELTA: …` +
+  `RECOMENDACIÓN: …`. Nunca entrega algo con una suposición.
 - Cuando te llegue un `STOPPED` por `DUDA NO RESUELTA`, muévelo a `stopped/` con `## Motivo de
   stopped` y la duda explicada. **No lo reintentes**: lo desbloquea el humano respondiendo la duda.
 - Tú, como orquestador, tampoco adivines: si una orden del humano es ambigua, la misma regla
@@ -205,9 +229,11 @@ un `bug-140123` rechazado por el humano se sigue corrigiendo en `bug-140123`.
 
 ## El bucle
 
-Cada vuelta del orquestador: (1) procesa lo que llegó (resultado de un coder,
-feedback del humano), (2) lanza coders para las tareas listas, (3) queda a la
-escucha de Orca o del humano. Relanza siempre.
+Cada vuelta del orquestador: (0) drena el inbox con `check` sin `--wait` y procesa
+todo lo que llegó **antes de acusar** (ver REGLA DE ORO), (1) procesa lo llegado
+(resultado de un coder, feedback del humano), (2) lanza coders para las tareas listas,
+(3) queda a la escucha de Orca (relanzando `check --wait` si no hay otra lectura en
+vuelo) o del humano.
 
 ### A. Lanzar coders (tareas listas)
 
@@ -240,9 +266,10 @@ Para cada tarea en `new/` que no tenga ya un coder trabajando:
  orca, lanza el subagente `coder` del cliente en ese worktree). La especificación
  cumple el contrato de orca (Target / Change / Constraints / Ownership /
  Observable acceptance) y contiene el **encargo del coder** (más abajo).
- Constraint explícito de la tarea: **el coder no adivina** — resuelve dudas con
- evidencia, usa `grill-me`/`grilling` ante cualquier duda mínima y puede terminar
- `STOPPED: DUDA NO RESUELTA` o preguntarte a ti/humano en vez de suponer.
+ Constraint explícito de la tarea: **el coder no adivina** — le despachás un brief
+ ya grillado (sin supuestos; el grill es tuyo, antes de lanzar); si le queda una duda
+ resuelve con evidencia y, si persiste, termina `STOPPED: DUDA NO RESUELTA` o te
+ pregunta con su `ask` en vez de suponer.
  El `coder` de ESTE proyecto es local: su definición está en `$K/agents/coder.md`
  (y, según cliente, en `.opencode/agent/coder.md` o `.claude/agents/coder.md` de
  esta misma carpeta). No dependas de ningún agente `coder` de tu config global:
@@ -284,20 +311,31 @@ misma rama, y arregla solo eso.
 - Si el humano pide algo que el coder no puede o un cambio de alcance, negócialo
 con él antes de lanzar.
 
-### D. Atascos y escalaciones de Orca
+### D. Atascos, preguntas y escalaciones de Orca
 
-- Orca reporta en `check` `escalation`/`question` (un coder preguntando o
-atascado): respóndele con `orca orchestration reply --id <message_id> --body "…"`
-(al coder solo por chat de orca) o toma una decisión. Si no responde, termina la
-tarea: `worker-stop`/`worker-abandon` según corresponda, escribe `## Motivo de
-stopped` en el `.md` y muévelo a `stopped/`.
+- **Ciclo ask/reply (preguntas del coder, encoladas):** cuando un coder te pregunta con
+  su `ask` (código `question`/`escalation` en el `check`), la pregunta quedó **encolada**:
+  podés atenderla aunque no haya un `check --wait` activo en ese instante. Respondé con
+  `orca orchestration reply --id <message_id> --body "…"` (al coder solo por chat de orca)
+  o tomá una decisión; el coder retoma al recibir la respuesta. Si no respondés, la
+  pregunta sigue encolada: **no se pierde**.
+- **Mensajes stale de dispatches muertos:** si una `question`/`escalation` llega de un
+  dispatch cuya terminal ya está settle (failed/exited/liveness), NO es un bloqueo activo
+  ni señal de relanzar: verificá el supuesto con **evidencia real** del estado (git del
+  worktree, archivos presentes, `worker-list`), respondé/descartá según corresponda,
+  acusá y seguí. **Nunca** relances, detengas, abandones ni liberes por un mensaje stale
+  sin evidencia positiva (mismas reglas de seguridad que recovery-and-cleanup).
+- Si un worker está atascado y no responde: `worker-stop`/`worker-abandon` según
+  corresponda, escribe `## Motivo de stopped` en el `.md` y muévelo a `stopped/`.
 - Un worktree quedó **sin tarea** (huérfano) → `orca worktree rm --worktree <clave>`
 (no lo dejes acumular).
 - Revisa actividad real con `orca orchestration worker-list --run <run_id> --json`
 si `check` se queda sin novedades rato largo: cada worker debe estar vivo o con
 `worker_done` pendiente de procesar. No lances duplicados.
 
-Después de cada evento, si no hay un `check --wait` corriendo, relánzalo.
+Después de procesar cada evento: corre `check` sin `--wait` para drenar lo que quedó en
+el inbox, acusá (`check --ack <delivery_id>`) solo lo que ya procesaste y, si no hay otra
+lectura en vuelo, relanzá `check --wait`. Ver REGLA DE ORO.
 
 ## Una sola vía de escritura del board
 
