@@ -240,3 +240,4 @@ echo "  Ejecuta:  Orca (orca orchestration + orca worktree) lanza y vigila a los
 echo "  Preparar el proyecto al usarlo: /autopilot-init crea autopilot.env + board."
 echo "  Desinstalar esta carpeta:  ./install.sh --uninstall --local $PROY"
 [[ -f "$OC_DIR/skills/autopilot/$MARCA" ]] && warn "aun existe una copia GLOBAL vieja en opencode: quitala con ./install.sh --uninstall"
+exit 0
