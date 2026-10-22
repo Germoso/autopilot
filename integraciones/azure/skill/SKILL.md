@@ -1,6 +1,6 @@
 ---
 name: azure-sync
-description: Importa tareas de Azure DevOps al board de workitems (carpetas + .md) como new. Usar cuando el usuario mencione azure-sync, sincronizar Azure, importar work items, Work Items de Azure, o /azure-sync. NO usar en proyectos sin azure-sync.env.
+description: 'Importa tareas de Azure DevOps al board de workitems (carpetas + .md) como new. Usar cuando el usuario mencione azure-sync, sincronizar Azure, importar work items, Work Items de Azure, o /azure-sync. NO usar en proyectos sin azure-sync.env.'
 ---
 
 # Azure Sync — importador de Azure DevOps al board de workitems

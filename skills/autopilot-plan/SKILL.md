@@ -1,6 +1,6 @@
 ---
 name: autopilot-plan
-description: Convierte una idea o un documento (PRD, spec, notas, acta, correo, imagenes) en tareas listas para el autopilot. Primero hace un brainstorming con el usuario, pregunta todo lo que haga falta hasta que no quede nada ambiguo, y recien entonces propone el desglose en tareas (con criterios de aceptacion verificables y dependencias) y, con su aprobacion, las crea en el board como .md en new/. Usar cuando el usuario diga /autopilot-plan, "convierte esto en tareas", "arma las tareas de esta idea", "planifica esto para el autopilot", "desglosa este documento" o similar. NO usar en proyectos sin autopilot.env.
+description: 'Convierte una idea o un documento (PRD, spec, notas, acta, correo, imagenes) en tareas listas para el autopilot. Primero hace un brainstorming con el usuario, pregunta todo lo que haga falta hasta que no quede nada ambiguo, y recien entonces propone el desglose en tareas (con criterios de aceptacion verificables y dependencias) y, con su aprobacion, las crea en el board como .md en new/. Usar cuando el usuario diga /autopilot-plan, "convierte esto en tareas", "arma las tareas de esta idea", "planifica esto para el autopilot", "desglosa este documento" o similar. NO usar en proyectos sin autopilot.env.'
 ---
 
 # Autopilot Plan — de una idea o documento a tareas del board

@@ -1,6 +1,6 @@
 ---
 name: autopilot-init
-description: Prepara la carpeta actual para el autopilot. Detecta si es un repo o un workspace con varios repos, y crea autopilot.env y el board (.workitems/ con carpetas). La rama base NO se pide ni se configura: la define Orca (cada worktree nace de la base por defecto del repo). Usar cuando el usuario diga /autopilot-init, "inicializa el autopilot", "prepara este proyecto" o similar, o cuando /autopilot diga que el proyecto no participa y el usuario quiera sumarlo.
+description: 'Prepara la carpeta actual para el autopilot. Detecta si es un repo o un workspace con varios repos, y crea autopilot.env y el board (.workitems/ con carpetas). La rama base NO se pide ni se configura: la define Orca (cada worktree nace de la base por defecto del repo). Usar cuando el usuario diga /autopilot-init, "inicializa el autopilot", "prepara este proyecto" o similar, o cuando /autopilot diga que el proyecto no participa y el usuario quiera sumarlo.'
 ---
 
 # Autopilot Init
