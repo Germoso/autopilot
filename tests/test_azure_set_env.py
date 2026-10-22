@@ -51,3 +51,23 @@ def test_set_sin_igual_falla(sync, tmp_path, capsys):
     assert e.value.code == 2
     err = capsys.readouterr().out
     assert json.loads(err)["message"] == "--set necesita KEY=VALUE (recibido: SIN_IGUAL)"
+
+
+def _cargar(tmp_path, extra=""):
+    spec = importlib.util.spec_from_file_location(
+        "azure_sync", os.path.join(RAIZ, "integraciones", "azure", "azure-sync.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    conf = tmp_path / "azure-sync.env"
+    conf.write_text("AZURE_ORG=o\n" + extra)
+    m.load_config(str(conf))
+    return m
+
+
+def test_pat_en_la_config_se_lee(tmp_path):
+    assert _cargar(tmp_path, "AZURE_DEVOPS_PAT=pat-de-config\n").CFG["pat"] == "pat-de-config"
+
+
+def test_pat_de_variable_gana_al_de_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("AZURE_DEVOPS_PAT", "pat-global")
+    assert _cargar(tmp_path, "AZURE_DEVOPS_PAT=pat-de-config\n").CFG["pat"] == "pat-global"
