@@ -15,8 +15,9 @@
 #    - .opencode/     skill+agent+commands de opencode (cliente opencode)
 #    - .claude/       skills+agents de Claude Code    (cliente claude)
 #    - .gitignore     + bloque "# autopilot-kit (local)": nada se commitea
-#    - .pi/settings.json   si instalas con pi: declara la extension
-#                          npm:@juicesharp/rpiv-ask-user-question (pi install --local),
+#    - .pi/settings.json   si instalas con pi: declara las extensiones
+#                          npm:@juicesharp/rpiv-ask-user-question y
+#                          npm:pi-background-tasks (pi install --local),
 #                          SOLO cuando pi esta entre los clientes
 #
 #  Reinstalar SIEMPRE sobreescribe las copias viejas del kit dentro del proyecto
@@ -111,10 +112,12 @@ if [[ "$UNINSTALL" == 1 && "$LOCAL_MODE" == 1 ]]; then
       [[ -f "$d/$MARCA" ]] && { rm -rf "$d"; say "$c: skill $s"; }
     done
     python3 "$RENDER" local-uninstall "$c" "$PROY"
-    # quita la extension de pi que instalo el kit (si pi es cliente): local, .pi/settings.json
+    # quita las extensiones de pi que instalo el kit (si pi es cliente): local, .pi/settings.json
     if [[ "$c" == "pi" ]] && command -v pi >/dev/null 2>&1; then
-      (cd "$PROY" && pi remove --local npm:@juicesharp/rpiv-ask-user-question >/dev/null 2>&1) \
-        && say "pi: extension rpiv-ask-user-question retirada"
+      for fuente in "npm:@juicesharp/rpiv-ask-user-question" "npm:pi-background-tasks"; do
+        (cd "$PROY" && pi remove --local --approve "$fuente" >/dev/null 2>&1) \
+          && say "pi: extension ${fuente#npm:} retirada (.pi/settings.json)"
+      done
     fi
     # quita carpetas de cliente que quedaron vacias (solo si no tienen contenido propio)
     # quita carpetas de cliente que quedaron vacias (solo si no tienen contenido propio)
@@ -379,23 +382,33 @@ if ! grep -q "# --- autopilot-kit (local) ---" "$GI"; then
   say "gitignore: bloque del kit local (nada de esto se commitea)"
 fi
 
-# 6) Extension de pi: rpiv-ask-user-question (solo si pi es cliente).
-#    pi install --local la declara en .pi/settings.json del PROYECTO (nada en el home),
-#    para que el coder use su herramienta de preguntas. Idempotente: si ya esta, no
-#    vuelve a instalarla.
+# 6) Extensiones de pi (solo si pi es cliente): rpiv-ask-user-question (preguntas del
+#    coder) y pi-background-tasks (tareas de shell durables de fondo del orquestador).
+#    `pi install --local` las declara en .pi/settings.json del PROYECTO (nada en el home).
+#    Idempotente: si ya estan declaradas, no vuelve a instalarlas.
+PI_EXT=(
+  "npm:@juicesharp/rpiv-ask-user-question|rpiv-ask-user-question"
+  "npm:pi-background-tasks|pi-background-tasks"
+)
 if [[ " ${CLIENTES[*]} " == *" pi "* ]]; then
   if command -v pi >/dev/null 2>&1; then
-    if [[ -f "$PROY/.pi/settings.json" ]] && grep -q "rpiv-ask-user-question" "$PROY/.pi/settings.json" 2>/dev/null; then
-      say "extension pi: rpiv-ask-user-question ya declarada (.pi/settings.json)"
-    else
-      if (cd "$PROY" && pi install --local npm:@juicesharp/rpiv-ask-user-question >/dev/null 2>&1); then
-        say "extension pi: instalada rpiv-ask-user-question (.pi/settings.json, local)"
+    for espec in "${PI_EXT[@]}"; do
+      fuente="${espec%%|*}"
+      clave="${espec##*|}"
+      if [[ -f "$PROY/.pi/settings.json" ]] && grep -q "$clave" "$PROY/.pi/settings.json" 2>/dev/null; then
+        say "extension pi: $clave ya declarada (.pi/settings.json)"
       else
-        warn "no se pudo instalar la extension pi rpiv-ask-user-question (pi install --local fallo)"
+        # --approve: pi exige confianza del proyecto para tocar el .pi/settings.json local
+        # (la 1a extension crea el archivo; las siguientes ya lo exigen)
+        if (cd "$PROY" && pi install --local --approve "$fuente" >/dev/null 2>&1); then
+          say "extension pi: instalada $clave (.pi/settings.json, local)"
+        else
+          warn "no se pudo instalar la extension pi $clave (pi install --local fallo)"
+        fi
       fi
-    fi
+    done
   else
-    warn "no encontre 'pi' en el PATH: no instale la extension rpiv-ask-user-question"
+    warn "no encontre 'pi' en el PATH: no instale las extensiones de pi"
   fi
 fi
 
