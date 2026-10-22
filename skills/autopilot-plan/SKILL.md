@@ -6,8 +6,8 @@ description: Convierte una idea o un documento (PRD, spec, notas, acta, correo, 
 # Autopilot Plan — de una idea o documento a tareas del board
 
 Convierte una idea o un documento en tareas que el autopilot puede ejecutar solas:
-un coder las programa en su rama y **tú las revisionas** (moviéndolas de `done` a
-`reviewed` o pidiendo cambios), criterio por criterio. Como **no hay QA**, el trabajo
+un coder las programa en su rama y **tú las revisionas** (dejándolas en `done`,
+o pidiendo cambios para que vuelvan a `new`), criterio por criterio. Como **no hay QA**, el trabajo
 de esta skill es **sacar toda la ambigüedad antes** de crear una sola tarea: el
 criterio tiene que ser observable y verificable para que TÚ lo compruebes al revisar.
 
@@ -55,8 +55,8 @@ retoma donde quedó.
    En Claude Code puedes delegar la búsqueda en subagentes `Explore`, en paralelo; en pi, con
    la herramienta `subagent` (agente `researcher` o `scout`).
    **No preguntes lo que el código ya responde.** Pregunta lo que el código no puede decidir.
-4. **El board.** Lee las carpetas `new/`, `in-progress/`, `bug-fix/`, `done/`,
-   `reviewed/` y `stopped/`: tareas que ya existen, para no duplicarlas y para saber
+4. **El board.** Lee las carpetas de estado `new/`, `working/` y `done/`, y las de
+   apoyo `adjuntos/` y `planes/`: tareas que ya existen, para no duplicarlas y para saber
    qué claves están usadas (el `<id>` de una clave no puede repetirse).
 5. **Devuelve lo que entendiste** en 5 a 10 líneas:
    - qué se quiere lograr y para quién;
@@ -106,7 +106,7 @@ Origen: <idea / ruta del documento>   ·   Estado: brainstorming | definido | ta
   - propone simplificaciones y recortes (un MVP primero);
   - avisa de riesgos: migraciones de datos, compatibilidad y rendimiento.
 - **Piensa en la verificación desde ya.** Si algo no se va a poder probar al revisar (falta un dato, una
-  cuenta, un servicio externo), pregúntalo ahora: el humano dejaría la tarea en `stopped` o el coder no
+  cuenta, un servicio externo), pregúntalo ahora: el humano devolvería la tarea con feedback, o el coder no
   podría terminar.
 
 **La fase termina solo cuando:**
@@ -133,8 +133,8 @@ definir y anótalo en el plan. No crees tareas con puntos abiertos que afecten a
     backend + front de una misma función pueden ir juntos si son pequeños.
   - El repo principal se anota en la tarea (`repo:`); los otros se mencionan en la descripción.
 - **Pocas dependencias.** Una rama nace de la rama base, que solo tiene lo que el humano ya mergeó. Por eso
-  una tarea con `depende:` **no se empieza hasta que sus dependencias estén en `reviewed`**, es decir,
-  revisadas y mergeadas.
+  una tarea con `depende:` **no se empieza hasta que sus dependencias estén en `done`**, es decir,
+  revisadas y aprobadas por el humano.
   - Cada dependencia pone un paso humano en medio: úsalas solo cuando de verdad hacen falta (por ejemplo, una
     migración o un contrato que otras usan).
   - Prefiere tareas independientes, que corren en paralelo.
@@ -220,7 +220,7 @@ solo**, porque el humano lo comprueba uno por uno al revisar:
 
 2. Créalas **en orden de dependencias**: primero las que no dependen de nada; las que
    dependen de otras llevan la clave en `depende=` (no se toman hasta que la dependencia
-   esté en `reviewed`).
+   esté en `done`, aprobada por el humano).
 3. Si el documento traía imágenes o mockups que ayudan a una tarea, cópialos a
    `<board>/adjuntos/<clave>/` y cítalos en la descripción con su ruta.
 4. Si un archivo ya existe con la misma clave, corrige **esa** tarea y reintenta. No borres
@@ -228,8 +228,8 @@ solo**, porque el humano lo comprueba uno por uno al revisar:
 5. Cambia el estado del plan a `tareas creadas` y anota las claves.
 6. **Reporta:**
    - las claves creadas y el orden en que el autopilot las va a tomar;
-   - qué tareas esperan a que mergees otras (quedan en `new` con "depende de", y el coder no
-     las toma hasta que sus dependencias estén en `reviewed`);
+   - qué tareas esperan a que apruebes otras (quedan en `new` con "depende de", y el coder no
+     las toma hasta que sus dependencias estén en `done`);
    - la ruta del plan.
 
    Ofrece `/autopilot` para empezar. No lo arranques si el usuario no lo pide.

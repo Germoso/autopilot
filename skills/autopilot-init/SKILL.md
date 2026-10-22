@@ -51,21 +51,24 @@ cosas: `autopilot.env` y el board `.workitems/`.
    WORKITEMS_DIR=            # vacio = .workitems/ junto a este archivo
    PARALLEL=false            # true = hasta MAX_CODERS coders a la vez
    MAX_CODERS=2
-   AUTO_MERGE=false          # true = el kit mergea la rama solo local al aprobar el humano
+   AUTO_MERGE=false          # true = el autopilot mergea la rama solo local al aprobar el humano
    COMMAND_TIMEOUT=900       # tiempo maximo (s) de lo que corre por aenv.sh
    ```
 
    Si ya existía, conserva el resto de variables que puso el usuario y solo ajusta
    la rama base.
 
-4. **Crear el board.** Crea `.workitems/` (o `$WORKITEMS_DIR`) con las carpetas de
-   estados y las de apoyo, si no existen:
+4. **Crear el board.** Crea `.workitems/` (o `$WORKITEMS_DIR`) con las 3 carpetas
+de estado y las de apoyo, si no existen:
 
    ```
-   .workitems/new/  .workitems/in-progress/  .workitems/bug-fix/
-   .workitems/stopped/  .workitems/done/  .workitems/reviewed/
+   .workitems/new/  .workitems/working/  .workitems/done/
    .workitems/adjuntos/  .workitems/planes/  .workitems/.autopilot/resultados/
    ```
+
+   (Solo estas: los estados son 3. Las devueltas por el humano vuelven a `new/` con
+   `## Feedback del humano`; las detenidas a `new/` con `## Motivo de stopped`,
+   sin relanzarse solas.)
 
 5. **Ignorarlo de git.** Asegúrate de que `.workitems/` esté en el `.gitignore` del
    repo (o, en un workspace, en el de cada repo). Si no está, agrégalo (solo eso).

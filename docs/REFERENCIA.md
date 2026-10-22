@@ -27,16 +27,17 @@ el bucle del orquestador y la estructura del kit.
 ## Cómo funciona
 
 ```
- tarea (new) ──> in-progress ──(el coder termina)──> done ──(el humano)──> reviewed
-                     ↑                                 │
-                     └──── bug-fix <───────────────────┘  (el humano pidió cambios)
+ new ──> working ──(el coder termina)──> done
+   ^         │                            │
+   └─────────┴── el humano pidió cambios: vuelve a new con ## Feedback del humano
+                (una detenida vuelve a new con ## Motivo de stopped y no se relanza sola)
 ```
 
 El **orquestador** (el agente principal que corre `/autopilot`) hace tres cosas en un
 bucle:
 
 1. procesa lo que llegó (resultado de un coder, revisión del humano);
-2. lanza coders para las tareas listas (`new/` y `bug-fix/`);
+2. lanza coders para las tareas listas (`new/`);
 3. queda a la espera de Orca (`truth orchestration check --wait`) o del humano.
 
 Toda la ejecución (worktrees, procesos, agentes) la maneja **Orca**; todo el estado
@@ -48,23 +49,24 @@ Toda la ejecución (worktrees, procesos, agentes) la maneja **Orca**; todo el es
 - **coder**: un programador por tarea. Trabaja en el worktree de Orca de su rama
   (`task-<id>` / `bug-<id>`), commitea, corre sus pruebas y deja sus notas en el archivo de
   resultado `<board>/.autopilot/resultados/<clave>.md`, que el orquestador copia a la tarea.
-- **el humano**: revisa `done`, mergea la rama a la base y la pasa a `reviewed`, o
-  escribe su feedback y la devuelve a `bug-fix`.
+- **el humano**: revisa `done`, mergea su rama, o escribe su feedback y la tarea vuelve a
+  `new/`.
 
 ## El board
 
 ```
-.workitems/                         # xdefinido por WORKITEMS_DIR; NO está en git
+.workitems/                         # definido por WORKITEMS_DIR; NO está en git
 ├── new/          bug-140123-login-falla-con-google.md
-├── in-progress/  task-pagos_modelo.md
-├── bug-fix/
-├── stopped/
-├── done/
-├── reviewed/
+├── working/      task-pagos_modelo.md
+├── done/         task-favoritar-tarjeta.md
 ├── adjuntos/<clave>/               # capturas, imagenes y videos (archivos)
 ├── planes/<slug>.md                # planes de /autopilot-plan
 └── .autopilot/resultados/<clave>.md # (scratch) notas que escribe el coder al terminar
 ```
+
+Solo hay 3 carpetas de estado (`new/`, `working/`, `done/`); `adjuntos/`, `planes/` y
+`.autopilot/resultados/` son de apoyo. Las devueltas por el humano vuelven a `new/` con
+`## Feedback del humano`; las detenidas a `new/` con `## Motivo de stopped` (sin relanzar).
 
 - **El archivo `.md` ES la tarea** (no hay base de datos). El estado es la carpeta
   donde está. El orquestador **no reescribe los `.md`** más que para añadir secciones
@@ -74,7 +76,7 @@ Toda la ejecución (worktrees, procesos, agentes) la maneja **Orca**; todo el es
   lo pone quien crea la tarea (número o texto `[a-z0-9_]` sin `-`). El slug ayuda a
   identificar sin leer; **no** se usa como identificador.
 - **Regla de oro:** cada clave existe una sola vez en el board. Si una clave ya está en
-  `in-progress`, `done`, etc., no se crea otra con ese `id` (se corrige la existente).
+  `new`, `working`, `done`, etc., no se crea otra con ese `id` (se corrige la existente).
 - El board **no va en git** (`.workitems/` está en `.gitignore`): si estuviera
   versionado, al cambiar de rama cambiaría el tablero. Los estados, notas y adjuntos
   son locales a tu copia.
@@ -121,7 +123,7 @@ visibles en la tarea sin copiarse.
   `bug-140123`).
 - **Toda rama sale de la rama base de SU repo** (`REPO.<carpeta>=<rama>` o
   `BASE_BRANCH`). La crea **Orca** (`orca worktree create`), no el orquestador a mano.
-- **NUNCA `git push`.** El merge a la base lo hace **el humano**, o el kit con
+- **NUNCA `git push`.** El merge a la base lo hace **el humano**, o el autopilot con
   `AUTO_MERGE=true` (solo local, sin push; no borra la rama).
 - **NUNCA `git merge`** por parte de los agentes, ni `rebase`, ni borrar ramas, ni
   `reset --hard`.
@@ -211,7 +213,7 @@ Variables del kit. Sin contraseñas (las cuentas van en los `.env.autopilot`).
 | `REPO.<carpeta>=<rama>` | — | Repo del workspace y su rama base. |
 | `PARALLEL` | `false` | `true` = hasta `MAX_CODERS` coders a la vez. |
 | `MAX_CODERS` | `1` | Tope de coders en vuelo con `PARALLEL=true`. |
-| `AUTO_MERGE` | `false` | Al aprobar el humano una tarea de `done`, el kit mergea la(s) rama(s) a la base **solo local** y pasa la tarea a `reviewed`. |
+| `AUTO_MERGE` | `false` | Al aprobar el humano una tarea de `done` (`aprobá <clave>`), el autopilot mergea la(s) rama(s) a la base **solo local** y la tarea queda en `done`. |
 | `COMMAND_TIMEOUT` | `900` | Tope (segundos) de lo que corre `aenv.sh`. |
 
 Sin variables de ranuras, E2E ni Telegram: ya no existen.
@@ -221,12 +223,14 @@ Sin variables de ranuras, E2E ni Telegram: ya no existen.
 Siempre una de dos: está esperando a un coder (`orca orchestration check --wait --types
 worker_done,escalation,question`) o esperándote a ti. Nunca deja de escuchar.
 
-**A. Lanzar coders** — por cada tarea en `new/` o `bug-fix/` sin coder activo:
+**A. Lanzar coders** — por cada tarea en `new/` sin coder activo y sin `## Motivo de
+stopped`:
 
-1. rama base de su repo (`REPO.<c>e...>` o `BASE_BRANCH`);
+1. rama base de su repo (`REPO.<carpeta>=<rama>` o `BASE_BRANCH`);
 2. `orca worktree create --name <clave> --repo <selector> --base-branch <base> [--activate]`
-   (workspace: una por repo de la tarea); si falla → `stopped/` con el motivo;
-3. mover el `.md` a `in-progress/`;
+   (workspace: una por repo de la tarea); si falla → `## Motivo de stopped` en el `.md` y
+   vuelve a `new/`; si el worktree ya existe (tarea devuelta), lo reusa;
+3. mover el `.md` a `working/`;
 4. `orca orchestration worker-start --spec "<encargo>" --worktree <clave> --agent <n> --json`
    (o un subagente `coder` del cliente en el worktree si no hay agente de orca);
 5. respetando `MAX_CODERS`/`PARALLEL`.
@@ -237,23 +241,26 @@ worker_done,escalation,question`) o esperándote a ti. Nunca deja de escuchar.
    `## Notas del desarrollador` en el `.md`;
 2. según `RESULTADO`:
    - `done` (commiteó) → mover a `done/` (añadir `## Repos modificados`);
-   - `EN ESPERA` + `CHOCA CON <otra>` → dejar en `in-progress/` con nota y retomar
+   - `EN ESPERA` + `CHOCA CON <otra>` → dejar en `working/` con nota y retomar
      cuando la otra termine (o volver a `new/`);
-   - `STOPPED` → mover a `stopped/` con el motivo tal cual;
-   - sin `RESULTADO` claro o worker `failed` → `stopped/` con ese motivo;
-3. reportar al humano la/s tarea/s en `done` (y las `stopped`).
+   - `STOPPED` → añadir `## Motivo de stopped` al `.md` y volver a `new/` (no relanzar);
+   - sin `RESULTADO` claro o worker `failed` → igual: `## Motivo de stopped` y `new/`;
+3. reportar al humano la/s tarea/s en `done` (y las detenidas devueltas a `new/`).
 
 **C. Revisión del humano** (mensaje en el chat):
 
-- aprobar (`reviewed`) → mover `done/→reviewed/`; con `AUTO_MERGE=true`, mergear antes
-  (solo local, en cada repo de la tarea); conflicto → base intacta y `stopped/` con el motivo;
-- pedir cambios → `## Feedback del humano` al `.md` + mover de `done/` (o `reviewed/`/
-  `stopped/`) a `bug-fix/` (el coder toma `bug-fix/` antes que `new/`);
-- resolver `stopped` → moverla a `new/` (o que el orquestador la relance).
+- aprobar (`aprobá <clave>`) → la tarea queda en `done/`; con `AUTO_MERGE=true`, mergear
+  antes (solo local, en cada repo de la tarea); conflicto → base intacta y vuelve a `new/`
+  con `## Motivo de stopped`;
+- pedir cambios → `## Feedback del humano` al `.md` + mover de `done/` a `new/` (el coder
+  la retoma antes, en la misma rama);
+- resolver una detenida → atender su `## Motivo de stopped` (borrarlo) para que quede
+  lista de nuevo.
 
 **D. Escalaciones de orca** — `escalation`/`question` en el `check`: responder por
 `orca orchestration reply --id <id> --body "…"` o decidir; si un worker no responde,
-`worker-stop`/`worker-abandon` y `stopped/` con el motivo. Worktrees huérfanos:
+`worker-stop`/`worker-abandon`, `## Motivo de stopped` en el `.md` y vuelve a `new/`.
+Worktrees huérfanos:
 `orca worktree rm --worktree <clave>`.
 
 ## Nunca contra producción
@@ -300,7 +307,7 @@ Secciones que el orquestador añade al `.md` (no reemplaza las del humano/coder)
   `<board>/.autopilot/resultados/<clave>.md`): qué se hizo, por qué, cómo probarlo,
   pruebas corridas, decisiones, riesgos y pendientes.
 - `## Feedback del humano` — cada pedido de cambios (revisión), con lo que no cumple y
-  lo que se espera; va antes de mover a `bug-fix/`.
+  lo que se espera; acompaña a la vuelta de la tarea a `new/`.
 - `## Repos modificados` — al pasar a `done`: por repo, rama, base, commits y resumen.
 - `## Motivo de stopped` — al detener: `POSIBLE PRODUCCIÓN`, bloqueo, atascado o falta
   de herramienta, y la recomendación.
@@ -310,14 +317,15 @@ Secciones que el orquestador añade al `.md` (no reemplaza las del humano/coder)
 1. En `done`: abre el `.md` → *Repos modificados*, *Notas del desarrollador*
    (qué hizo + cómo probarlo + pruebas que corrió). Puedes releer el diff del worktree
    de Orca de la tarea si quieres ver el código.
-2. **Aprobar** → mergea la rama a la base (a mano, o `AUTO_MERGE=true`) y mueve a
-   `reviewed/`. La rama no se borra (a mano o `orca worktree rm` si ya no la necesitas).
+2. **Aprobar** → mergea la rama a la base (a mano, o `AUTO_MERGE=true`). La tarea queda
+   en `done/`. La rama no se borra (a mano o `orca worktree rm` si ya no la necesitas).
 3. **Pedir cambios** → `## Feedback del humano` (qué está mal, qué esperas, dónde) y
-   mover a `bug-fix/`. El coder corrige solo eso, en la misma rama, y la deja otra vez
+   mover a `new/`. El coder corrige solo eso, en la misma rama, y la deja otra vez
    en `done`.
 
-Con `AUTO_MERGE=true` el kit hace el paso 2 a tu imagen al aprobar (merge local sin
-push). Si choca, la base queda intacta y la tarea va a `stopped` con el motivo.
+Con `AUTO_MERGE=true` el autopilot hace el paso 2 al aprobar (merge local sin
+push). Si choca, la base queda intacta y la tarea vuelve a `new/` con `## Motivo de
+stopped`.
 
 ## Orca
 
@@ -353,10 +361,10 @@ autopilot/
 ├── agents/coder.md          el programador (fuente única, por-cliente se genera)
 ├── clients/render.py        genera el agente y los comandos según el cliente
 ├── skills/
-│   ├── autopilot/SKILL.md      corriente: el bucle, estados, reglas
-│   ├── autopilot/SKILL.md      entorno.py + aenv.sh (validadores de producción)
-│   ├── autopilot-plan/SKILL.md de idea/documento a tareas (brainstorming)
-│   └── autopilot-init/SKILL.md prepara un proyecto (autopilot.env + board)
+│   ├── autopilot/SKILL.md         corriente: el bucle, estados, reglas
+│   ├── autopilot/aenv.sh          entorno.py + aenv.sh (validadores de producción)
+│   ├── autopilot-plan/SKILL.md    de idea/documento a tareas (brainstorming)
+│   └── autopilot-init/SKILL.md    prepara un proyecto (autopilot.env + board)
 ├── examples/proyecto/          autopilot.env.example
 └── integraciones/azure/        sync de tareas desde Azure DevOps
 ```

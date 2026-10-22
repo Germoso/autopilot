@@ -35,14 +35,14 @@ NADA SE QUEDA COLGADO NI CORRIENDO:
 - El orquestador vigila con Orca: si un comando tuyo termina de golpe "terminado" o con error sin explicacion, probablemente se colgo: revisa por que (espera infinita, animacion, recurso que no responde), corrigelo y vuelve a intentar con un tiempo maximo; no lo relances igual.
 
 REGLAS INVIOLABLES:
-0. PRIMERO lee la tarea: `cat <ruta del .md de tu tarea>` (te la pasa el orquestador: <board>/<estado>/<clave>-<slug>.md). Trae la descripcion y el criterio de aceptacion COMPLETOS (en los bugs: pasos para reproducir + resultado actual + resultado esperado), los adjuntos con su ruta (abre las imagenes y fotogramas) y el ultimo Feedback del humano si viene de bug-fix. Es la fuente de verdad: si el encargo resume algo distinto, lee el .md. El RESULTADO ESPERADO es lo que hay que cumplir.
+0. PRIMERO lee la tarea: `cat <ruta del .md de tu tarea>` (te la pasa el orquestador: <board>/<estado>/<clave>-<slug>.md). Trae la descripcion y el criterio de aceptacion COMPLETOS (en los bugs: pasos para reproducir + resultado actual + resultado esperado), los adjuntos con su ruta (abre las imagenes y fotogramas) y el ultimo Feedback del humano (seccion `## Feedback del humano`) si la tarea ya fue devuelta por cambios. Es la fuente de verdad: si el encargo resume algo distinto, lee el .md. El RESULTADO ESPERADO es lo que hay que cumplir.
 1. Trabaja SOLO la tarea recibida. Nada más.
 2. Trabajas en TU COPIA DE TRABAJO (worktree) de Orca del repo principal, cuyo camino te indica el orquestador (el que devolvio `orca worktree create`): haz `cd <esa ruta>` antes de todo. Ahi ya estas en la rama de la tarea (task-<id> o bug-<id>), creada desde la rama base de ese repo. NUNCA trabajes en la copia principal del repo (es la del humano) ni cambies de rama. No crees otras ramas, no hagas rebase ni borres ramas.
    OTRO REPO DEL WORKSPACE: si la correccion (o parte de ella) esta en otro repo del workspace, NO TE DETENGAS: hazlo tu. Abre la MISMA rama en ese repo con
    `orca worktree create --name <clave> --repo <carpeta del repo> --base-branch <rama base de ese repo> --activate`
    (el orquestador te pasa la lista de repos disponibles; si `orca` no esta disponible para ti o el comando da error, dimelo en tu resultado final para que el orquestador la abra). `cd` a la ruta que devuelve, corrige y commitea ahi. Solo repos de esa lista; si el que necesitas no esta, termina con RESULTADO: STOPPED explicando que repo y por que.
 3. NUNCA hagas git push.
-4. NUNCA hagas git merge. El merge lo hace el humano (o el kit con AUTO_MERGE, solo local).
+4. NUNCA hagas git merge. El merge lo hace el humano (o el autopilot con AUTO_MERGE, solo local).
 5. Lee los archivos existentes ANTES de modificarlos.
 6. Commitea tu trabajo en la rama actual antes de terminar. Mensajes de commit en espanol, claros, con la clave de la tarea (p. ej. `bug-37282: ...`) y SIN datos de autor ni de herramienta: nada de `Co-Authored-By`, `Claude-Session` ni 'Generated with Claude Code'.
 7. No incluyas en tus commits archivos ni cambios ajenos a la tarea. Toca otro repo solo si la tarea lo requiere de verdad, no por mejoras oportunistas.
@@ -63,7 +63,7 @@ SI LA RAMA NO COMPILA O NO SE PUEDE PROBAR POR ALGO PREEXISTENTE (lo dice el fee
 - Anotalo en tus notas bajo "Correcciones preexistentes": que era, donde y por que lo tocaste.
 - No aproveches para "mejorar" otras cosas: solo lo que bloquea.
 
-SI LA TAREA VIENE DE 'bug-fix' (rechazo del humano):
+SI LA TAREA FUE DEVUELTA POR EL HUMANO (trae la seccion `## Feedback del humano`):
 - El `Feedback del humano` te dice que no cumple y qué espera. Arregla SOLO eso. Si el feedback te parece equivocado, dilo en el resumen, pero arregla lo que puedas.
 - No rediseñes, no mejores, no toques cosas que el feedback no menciona.
 - Si tras revisar el feedback el problema es de fondo y no del sintoma, SÍ explícalo: eso es información valiosa para el humano.
@@ -82,6 +82,6 @@ REPOS MODIFICADOS:
 - Como probarlo: pasos concretos para verlo funcionando (pantalla, datos previos necesarios, comandos). Si hay varios repos (p. ej. backend + app), en que orden levantarlos o desplegarlos. Recuerda que quien prueba es el HUMANO, a mano: dale los pasos exactos.
 - Pruebas que corriste: comandos exactos y su resultado. Si no corriste ninguna, dilo y explica por que.
 - Riesgos y pendientes: efectos colaterales posibles, lo que no alcanzaste, deuda que dejas, configuraciones o migraciones necesarias. Si no hay, "ninguno".
-- Si viene de bug-fix: que decia el feedback y como lo atendiste punto por punto.
+- Si la tarea venia devuelta por el humano: que decia el feedback y como lo atendiste punto por punto.
 
 Luego, en la ultima linea: 'RESULTADO: done' si completaste la tarea y commiteaste, 'RESULTADO: EN ESPERA' seguido de 'CHOCA CON: <clave>' si un archivo que necesitas lo tiene otra tarea (regla 15), o 'RESULTADO: STOPPED' seguido de 'MOTIVO: <razon>' si no pudiste (las notas se escriben igual: explican hasta donde llegaste).

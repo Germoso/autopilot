@@ -7,8 +7,9 @@ traiga de afuera, p. ej. Azure DevOps). **Orca** crea un `git worktree` por tare
 lanza al coder; cuando termina, tú revisas:
 
 ```
- tarea (new) ──> CODER ─────> done ──(revisión tuya)──> reviewed
-                 en su rama   presentada     o pedís cambios ────> bug-fix (el coder corrige)
+ tarea (new) ──> CODER ─────> done
+                 en su rama   presentada   tú la revisas: si está bien, queda;
+                                           si pedís cambios, vuelve a new con feedback
 ```
 
 - Funciona con **Claude Code**, **OpenCode** y **pi** (pi-coding-agent), y con **Orca**
@@ -19,7 +20,7 @@ lanza al coder; cuando termina, tú revisas:
 - **Nunca toca producción.** Lo que se conecta a una BD o API se ejecuta con
   `aenv.sh`, que valida el `.env.autopilot` que tú creaste.
 - **Sin QA ni E2E:** el humano **eres tú**. El coder deja sus notas y las pruebas que
-  corrió; la certificación final es tu revisión al mover la tarea de `done`.
+  corrió; la certificación final es tu revisión de la tarea en `done`.
 - El board son **carpetas + archivos `.md`** (sin base de datos): el estado es la
   carpeta y la tarea, el archivo.
 
@@ -84,7 +85,7 @@ orca account list            # debe haber al menos un agente (si no: orca accoun
 hasta que no quede nada ambiguo; después propone las tareas (con criterios de aceptación
 **que tú puedas verificar** y el orden entre ellas) y, cuando las apruebas, las crea en
 `new/`. El plan queda en `.workitems/planes/`. Si una tarea depende de otra, el autopilot
-no la empieza hasta que la otra esté en `reviewed` (ya la revisaste y mergeaste).
+no la empieza hasta que la otra esté en `done` (aprobada por ti).
 
 Las tareas también entran al tablero poniendo un `.md` en `.workitems/new/`
 (`task-<id>-<slug>.md` o `bug-<id>-<slug>.md`). Cómo llegan es cosa tuya: si vienen de un
@@ -96,12 +97,12 @@ ve como un `.md` y **la carpeta donde está te dice cómo va**:
 
 | Carpeta | Qué significa | ¿Tienes que hacer algo? |
 |---|---|---|
-| `new` | Pendiente | No |
-| `in-progress` | El coder la está programando | No |
-| `bug-fix` | Le pediste cambios al coder; los corrige | No |
-| **`done`** | **El coder terminó. Lista para tu revisión** | **Sí: revísala y mergea su rama** |
-| **`stopped`** | **No se pudo; dice por qué** | **Sí: lee el motivo y resuélvelo** |
-| `reviewed` | Ya la revisaste | No (la mueves tú desde `done`) |
+| `new` | Pendiente (incluye las que vuelves con feedback, y las detenidas con su motivo) | No |
+| `working` | El coder la está programando | No |
+| **`done`** | **El coder terminó. Lista para tu revisión (y estado final si la apruebas)** | **Sí: revísala** |
+
+(Solo son 3 carpetas de estado. Las que no se pudieron vuelven a `new/` con un
+`## Motivo de stopped` y no se relanzan solas: las resuelves tú.)
 
 ### Qué haces tú
 
@@ -110,15 +111,15 @@ ve como un `.md` y **la carpeta donde está te dice cómo va**:
   - *Notas del desarrollador*: qué hizo, por qué y **cómo probarlo**;
   - *Pruebas que corriste*: los comandos y su resultado.
 
-  Si te convence, **mergea la rama** a la base y mueve el `.md` a `reviewed/`. Si no,
-  escribe tu feedback como sección `## Feedback del humano` en el `.md` y muévelo a
-  `bug-fix/`: el coder lo corrige en la misma rama y lo vuelve a dejar en `done`.
+  Si te convence, **mergea la rama** a la base (la tarea queda en `done`, es el estado
+  final). Si no, escribe tu feedback como sección `## Feedback del humano` en el `.md` y
+  muévelo a `new/`: el coder la retoma en la misma rama y la vuelve a dejar en `done`.
 
   **Opcional — `AUTO_MERGE=true`:** si no querés mergear a mano, activá `AUTO_MERGE=true`
-  en `autopilot.env`: cuando **tú** apruebas la tarea de `done`, **el kit mergea la rama a
-  la base por vos** (solo local: nunca hace push ni borra ramas) y deja la tarea en
-  `reviewed` sola. Si el merge no entra limpio (conflicto), la base queda intacta y la
-  tarea va a `stopped` con el motivo.
+  en `autopilot.env`: cuando le digas `aprobá <clave>` a `/autopilot`, el sistema mergea la
+  rama a la base por vos **solo local** (nunca hace push ni borra ramas) y la tarea queda en
+  `done`. Si el merge no entra limpio (conflicto), la base queda intacta y la tarea vuelve a
+  `new/` con `## Motivo de stopped`: lo resuelves tú.
 
 - **Tareas en `stopped`:** el motivo está en el `.md` (*Motivo de stopped*), con lo que
   recomienda hacer. Cuando lo resuelvas, devuélvela a la cola moviéndola a `new/`
@@ -145,9 +146,10 @@ cómo probarlo y qué pruebas corrió. Tres resultados:
 - `EN ESPERA` + `CHOCA CON <otra>` → otro workitem está tocando un archivo que necesita;
   se retoma cuando la otra termine (no cuenta como no-fallo: es colisión de paralelo).
 - `STOPPED` → no pudo (le falta una herramienta, o **posible producción**) y te dice qué.
+  La tarea vuelve a `new/` con `## Motivo de stopped` y **no se relanza sola**: la resuelves tú.
 
-**Tú (revisor)** — Reemplazas al QA: revisas cada criterio de `done`, la merges a la base
-y la marcas `reviewed`, o le pides cambios al coder.
+**Tú (revisor)** — Reemplazas al QA: revisas cada criterio de `done`, mergeas su rama, o le
+pides cambios (la tarea vuelve a `new/` y el coder la retoma con tu feedback).
 
 Los agentes **no pueden** hacer push, merge, borrar ramas ni tocar tus archivos `.env`.
 Está bloqueado de verdad, no es solo una instrucción (reglas de permisos de cada cliente).

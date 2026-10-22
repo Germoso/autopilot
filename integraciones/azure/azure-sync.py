@@ -59,7 +59,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # El board es un juego de carpetas + .md (sin base de datos ni kit).
 # El estado es la carpeta; el archivo ES la tarea. Aqui vive esa logica minima.
-ESTADOS = ("new", "in-progress", "bug-fix", "stopped", "done", "reviewed")
+ESTADOS = ("new", "working", "done")
 RE_ARCHIVO = re.compile(r"^(task|bug)-([A-Za-z0-9_]+)-(.+)\.md$")
 MARCA = ".autopilot-kit"  # solo para no pisar .md ajenos al autopilot en refrescar
 
