@@ -76,6 +76,21 @@ azure-sync                     # importa
 azure-sync --config otra/azure-sync.env --board /otro/board
 ```
 
+**Crear la config desde la terminal** (no esperes a `/azure-sync` ni edites a mano):
+
+```sh
+azure-sync --init            # copia azure-sync.env.example a azure-sync.env para completarla
+azure-sync --set AZURE_ORG=codikasrl \
+           --set AZURE_PROJECT=Konectame_App_Clientes \
+           --set AZURE_ITERATION=@current
+# workspace: una --set por repo, estilo SYNC.<carpeta>=<proyecto>|<sprint o @current>
+azure-sync --set 'SYNC.Konectame_BackOffice=Konectame_BackOffice|@current'
+```
+
+`--init` copia el ejemplo (no pisa si ya existe). Si `azure-sync.env` no existe, `--set` lo crea a
+partir del ejemplo (comentarios incluidos) y activa la línea `SYNC.` correspondiente en vez de
+duplicarla. El PAT **no** va acá: ver abajo.
+
 Importa a `new/` los work items **Task/Bug en estado New** del sprint, con clave `<tipo>-<id del work
 item>` (p. ej. `bug-140123`) y `origen: azure:<proyecto>`. Solo crea, nunca modifica; no gasta tokens;
 deduplica por id (los IDs son únicos en la organización).

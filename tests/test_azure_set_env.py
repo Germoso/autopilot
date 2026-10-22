@@ -1,0 +1,53 @@
+"""azure-sync: --set KEY=VALUE crea o edita azure-sync.env (no toca el board ni el PAT)."""
+import importlib.util
+import json
+import os
+import sys
+
+import pytest
+
+RAIZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+sys.path.insert(0, os.path.join(RAIZ, "lib"))
+
+
+@pytest.fixture
+def sync(tmp_path, monkeypatch):
+    def do(*pares):
+        spec = importlib.util.spec_from_file_location(
+            "azure_sync", os.path.join(RAIZ, "integraciones", "azure", "azure-sync.py"))
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        conf = tmp_path / "azure-sync.env"
+        pares = ["--config", str(conf), "--set", *pares]
+        monkeypatch.setattr(sys, "argv", ["azure-sync.py", *pares])
+        return m, conf
+    return do
+
+
+def test_set_crea_desde_el_ejemplo(sync, tmp_path):
+    m, conf = sync(
+        "AZURE_ORG=codikasrl",
+        "AZURE_PROJECT=Konectame_App_Clientes",
+        "AZURE_ITERATION=@current",
+        "SYNC.Konectame_App_Clientes=Konectame_App_Clientes|@current")
+    assert conf.exists()
+    txt = conf.read_text()
+    assert "AZURE_ORG=codikasrl" in txt
+    assert "AZURE_PROJECT=Konectame_App_Clientes" in txt
+    # la linea SYNC comentada del ejemplo se activa (sin el #)
+    assert "SYNC.Konectame_App_Clientes=Konectame_App_Clientes|@current" in txt
+    assert not any(l.startswith("# SYNC.Konectame_App_Clientes") for l in txt.splitlines())
+
+
+def test_set_pisa_valor_existente(sync, tmp_path):
+    m, conf = sync("AZURE_PROJECT=Viejo", "AZURE_PROJECT=Nuevo")
+    assert conf.read_text().count("AZURE_PROJECT=Nuevo\n") == 1
+
+
+def test_set_sin_igual_falla(sync, tmp_path, capsys):
+    m, conf = sync("SIN_IGUAL")
+    with pytest.raises(SystemExit) as e:
+        m.main()
+    assert e.value.code == 2
+    err = capsys.readouterr().out
+    assert json.loads(err)["message"] == "--set necesita KEY=VALUE (recibido: SIN_IGUAL)"

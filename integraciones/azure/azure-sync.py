@@ -38,6 +38,9 @@ Uso:
   python3 azure-sync.py --config <...> --dry-run
   python3 azure-sync.py --config <...> --status
   python3 azure-sync.py --config <...> --board <carpeta>   (o BOARD_DIR= en azure-sync.env)
+  azure-sync --set AZURE_ORG=<org> --set AZURE_PROJECT=<p> ...  crea o edita azure-sync.env
+  azure-sync --init                        copia azure-sync.env.example a azure-sync.env
+  azure-sync --set SYNC.<carpeta>=<proyecto>|<sprint>            (workspace; puede repetirse)
 """
 import argparse
 import html
@@ -542,6 +545,55 @@ def do_fotogramas():
     return 0
 
 
+def do_init(path):
+    """Crea azure-sync.env copiando azure-sync.env.example (para completarlo a mano o con --set)."""
+    if os.path.exists(path):
+        die("Ya existe %s" % path, "Editalo con azure-sync --set KEY=VALUE (no borra nada)")
+    ejemplo = os.path.join(SCRIPT_DIR, "azure-sync.env.example")
+    if not os.path.exists(ejemplo):
+        die("No encuentro azure-sync.env.example junto a azure-sync.py", "Correlo desde el repo o re-instala la integracion")
+    shutil.copy(ejemplo, path)
+    print(json.dumps({"action": "init", "config": path,
+                      "mensaje": "Copia del ejemplo: completala a mano o con --set"},
+                     ensure_ascii=False, indent=2))
+    return 0
+
+
+def do_set(path, pares):
+    """Crea o edita azure-sync.env con --set KEY=VALUE (repetible). No toca el board ni el PAT.
+    Si el archivo no existe, parte del azure-sync.env.example (comentarios incluidos); una linea
+    comentada con la misma clave se activa (quita el #) en vez de duplicar."""
+    if not os.path.exists(path):
+        ejemplo = os.path.join(SCRIPT_DIR, "azure-sync.env.example")
+        if os.path.exists(ejemplo):
+            shutil.copy(ejemplo, path)
+        else:
+            open(path, "w", encoding="utf-8").close()
+    lineas = open(path, encoding="utf-8").readlines()
+    for par in pares:
+        k, sep, v = par.partition("=")
+        k = k.strip()
+        if not k or not sep:
+            die("--set necesita KEY=VALUE (recibido: %s)" % par)
+        for i, l in enumerate(lineas):
+            l_base = l.strip().lstrip("#").strip()
+            if l_base.startswith(k + "="):
+                lineas[i] = "%s=%s\n" % (k, v)
+                break
+        else:
+            lineas.append("%s=%s\n" % (k, v))  # clave nueva: al final
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(path)) or ".",
+                               prefix=".azure-sync.env.")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("".join(lineas))
+    if os.path.exists(path):
+        os.chmod(tmp, os.stat(path).st_mode & 0o7777)
+    os.replace(tmp, path)
+    print(json.dumps({"action": "set-env", "config": path, "pares": pares},
+                     ensure_ascii=False, indent=2))
+    return 0
+
+
 def do_status():
     already, ignorar = BOARD.numeros(), ignorados()
     fuentes = []
@@ -569,7 +621,16 @@ def main():
                     help="extrae fotogramas de videos ya descargados (tras instalar ffmpeg)")
     ap.add_argument("--board", metavar="DIR",
                     help="carpeta del board donde importar (pisa BOARD_DIR y el WORKITEMS_DIR de autopilot.env)")
+    ap.add_argument("--set", action="append", metavar="KEY=VALUE",
+                    help="crea o edita azure-sync.env (puede repetirse); no importa nada")
+    ap.add_argument("--init", action="store_true",
+                    help="crea azure-sync.env copiando azure-sync.env.example (no importa nada)")
     args = ap.parse_args()
+
+    if args.init:
+        return do_init(args.config)
+    if args.set:
+        return do_set(args.config, args.set)
 
     load_config(args.config)
     if args.board:
