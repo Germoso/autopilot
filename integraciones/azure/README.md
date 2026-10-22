@@ -60,8 +60,11 @@ SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
 - **Ignorar:** `IGNORE_DIRS=<carpeta>[,<carpeta>...]` (relativo a `azure-sync.env`) salta los work items
   que tengan su `<tipo>-<numero>*.md` en esas carpetas o sus subcarpetas: los ya sincronizados que
   sacaste del board. Si una carpeta no existe, el sync no corre (para no re-importarlos).
-- **PAT:** se busca en `AZURE_DEVOPS_PAT`, `azure-sync.secrets.env` (junto al config) y, si no, en el
-  del MCP (`~/.config/autopilot-kit/ado-mcp.secrets.env`). Nunca en un archivo versionado ni en el chat.
+- **PAT:** se busca en la variable `AZURE_DEVOPS_PAT`, en el propio `azure-sync.env`
+  (`AZURE_DEVOPS_PAT=`), en `azure-sync.secrets.env` (junto al config) y, si no, en el del MCP
+  (`~/.config/autopilot-kit/ado-mcp.secrets.env`). Prioridad: variable > `azure-sync.env` >
+  `azure-sync.secrets.env` > MCP. Cuanto más cerca del repo esté el PAT, peor: si lo ponés en
+  `azure-sync.env` no lo commitees (modo un repo: `.git/info/exclude`). Nunca en el chat.
 
 ## Uso
 
@@ -89,7 +92,8 @@ azure-sync --set 'SYNC.Konectame_BackOffice=Konectame_BackOffice|@current'
 
 `--init` copia el ejemplo (no pisa si ya existe). Si `azure-sync.env` no existe, `--set` lo crea a
 partir del ejemplo (comentarios incluidos) y activa la línea `SYNC.` correspondiente en vez de
-duplicarla. El PAT **no** va acá: ver abajo.
+duplicarla. El PAT también podés ponerlo acá con `--set AZURE_DEVOPS_PAT=...` (prioridades y
+advertencias: ver la sección Configurar un proyecto).
 
 Importa a `new/` los work items **Task/Bug en estado New** del sprint, con clave `<tipo>-<id del work
 item>` (p. ej. `bug-140123`) y `origen: azure:<proyecto>`. Solo crea, nunca modifica; no gasta tokens;

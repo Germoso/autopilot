@@ -26,8 +26,8 @@ GARANTIAS (identicas a las del original):
     <tipo>-<numero>*.md en esas carpetas (ya sincronizados, fuera del board).
   - Es idempotente: correrlo N veces crea la tarea una sola vez.
   - Si Azure falla en CUALQUIER fuente, sale con codigo != 0 y NO toca el board.
-  - El PAT se lee del entorno, de azure-sync.secrets.env o del de ado-mcp.
-    NO se hardcodea y no se pasa por linea de comandos (no aparece en `ps`).
+  - El PAT se lee del propio azure-sync.env, del entorno, de azure-sync.secrets.env
+    o del de ado-mcp. NO se hardcodea y no se pasa por linea de comandos (no aparece en `ps`).
 
 El script ORIGINAL (/home/user/sync_workitems.py) NO se modifica.
 
@@ -95,7 +95,7 @@ def leer_env(path):
 
 
 def load_config(path):
-    """Carga azure-sync.env, las fuentes y el PAT (entorno > secrets.env > PAT del MCP)."""
+    """Carga azure-sync.env, las fuentes y el PAT (entorno > azure-sync.env > secrets.env > PAT del MCP)."""
     if not os.path.exists(path):
         die("No existe el archivo de config: %s" % path, "Copia azure-sync.env.example de la integracion a la raiz del proyecto")
     vals = leer_env(path)
@@ -117,7 +117,9 @@ def load_config(path):
     CFG["fuentes"] = fuentes
 
     secrets = path[:-4] + ".secrets.env" if path.endswith(".env") else path + ".secrets"
-    for origen in (os.environ, leer_env(secrets) if os.path.exists(secrets) else {},
+    # El PAT puede ir en el propio azure-sync.env (AZURE_DEVOPS_PAT) o fuera de el.
+    for origen in (os.environ, vals,
+                   leer_env(secrets) if os.path.exists(secrets) else {},
                    leer_env(PAT_MCP) if os.path.exists(PAT_MCP) else {}):
         if origen.get("AZURE_DEVOPS_PAT"):
             CFG["pat"] = origen["AZURE_DEVOPS_PAT"]
@@ -649,7 +651,8 @@ def main():
     if faltan:  # sin la carpeta se re-importaria todo lo que debia ignorarse
         die("No existe la carpeta de IGNORE_DIRS: %s" % faltan[0], "Corrige IGNORE_DIRS en %s" % args.config)
     if not CFG["pat"]:
-        die("Falta AZURE_DEVOPS_PAT", "Ponelo en el entorno, en azure-sync.secrets.env o en %s" % PAT_MCP)
+        die("Falta AZURE_DEVOPS_PAT",
+            "Ponelo en azure-sync.env (--set AZURE_DEVOPS_PAT=...), en el entorno, en azure-sync.secrets.env o en %s" % PAT_MCP)
 
     global BOARD
     try:

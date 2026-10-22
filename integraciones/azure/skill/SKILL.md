@@ -24,7 +24,7 @@ Es **aditivo**, igual que el script original `sync_workitems.py`:
 | Ignorados | También salta los que tengan su `*-<id>*.md` en las carpetas de `IGNORE_DIRS` (ya sincronizados, fuera del board) |
 | Idempotente | Correrlo N veces crea la tarea una sola vez. Las otras N-1 son `no-op` |
 | Falla ruidosa | Si Azure falla o el board no existe, sale con código ≠ 0 y no toca el board |
-| El PAT nunca se hardcodea | Se lee del entorno o de `azure-sync.secrets.env` |
+| El PAT nunca se hardcodea | Se lee de `azure-sync.env`, del entorno, de `azure-sync.secrets.env` o del MCP |
 
 **Nunca** mueve, borra ni sobrescribe una tarea existente. **Nunca** borra ni archiva.
 El script original `/home/user/sync_workitems.py` no se modifica.
@@ -37,8 +37,9 @@ instalado), igual que `wi.sh add-task`. El autopilot no sabe que existe Azure.
 1. Verifica que existe `azure-sync.env` en la raíz del proyecto actual. Si no existe, para y
    dile al usuario que este proyecto no importa de Azure (se prepara copiando
    `azure-sync.env.example` de la integración; ver "Configurar un proyecto nuevo"). No lo busques en otro sitio ni lo adivines.
-2. Verifica que hay un PAT: variable `AZURE_DEVOPS_PAT`, `azure-sync.secrets.env` junto al
-   config, o el del MCP (`~/.config/autopilot-kit/ado-mcp.secrets.env`), en ese orden. Si no hay, explica cómo configurarlo y para. **No lo pidas en el chat** ni lo
+2. Verifica que hay un PAT: `AZURE_DEVOPS_PAT` en `azure-sync.env`, la variable `AZURE_DEVOPS_PAT`,
+   `azure-sync.secrets.env` junto al config, o el del MCP (`~/.config/autopilot-kit/ado-mcp.secrets.env`),
+   en ese orden. Si no hay, explica cómo configurarlo y para. **No lo pidas en el chat** ni lo
    escribas en un archivo versionado.
 3. Corre primero en `--dry-run` y muestra el resumen: cuántos hay en New en Azure, cuántos ya
    están en el board y cuáles se importarían.
