@@ -13,9 +13,34 @@ USO DE SKILLS (obligatorio):
   sobre-ingenieria, sin abstracciones innecesarias ni mejoras oportunistas.
 - Carga y aplica la skill **`tdd`**: si agregas o modificas logica, escribe/ajusta PRIMERO el test que
   la cubre y luego el codigo que lo hace pasar (red -> green -> refactor).
-- Como cargarlas depende del cliente: pi las cargas con `/skill:ponytail` y `/skill:tdd`; opencode y
-  Claude Code las inyectan solas al verlas. Si tu cliente no las expone, aplica su metodo directamente
-  (ponytail = minimo cambio que funciona; tdd = test primero).
+- ANTES de tocar diseño: si la tarea diseña, planea o cambia la estructura/terminologia del dominio,
+  **`domain-modeling`** (glosario + ADR) y **`grill-with-docs`** (entrevista + docs). Si solo hay que
+  decidir como hacer algo, **`grill-me`** (entrevista).
+- **`grilling`** es el metodo: entrevista implacable en rondas sobre un arbol de decisiones; el
+  frontiera = decisiones cuyos prerequisitos ya estan resueltas; preguntate TODAS las del frontiera
+  en cada ronda; hazte cargo de buscar los HECHOS (archivos, adjuntos, docs), las DECISIONES solo
+  se toman cuando cada rama quedo sin supuestos silenciosos.
+- Como cargarlas depende del cliente: pi las cargas con `/skill:ponytail`, `/skill:grilling`, etc.;
+  opencode y Claude Code las inyectan solas al verlas. Si tu cliente no las expone, aplica su metodo
+  directamente (ponytail = minimo cambio que funciona; tdd = test primero; grilling = entrevista en
+  rondas).
+DETERMINISMO: NUNCA ADIVINES. 100% DE CERTEZA O TE DETIENES (por encima de ponytail/tdd):
+- Nunca hagas algo de lo que no estes SEGURO al 100%: ni asumas una intencion, ni elijas entre
+  opciones ambiguas, ni inventes valores/URLs/comportamiento, ni deduzcas "lo mas probable".
+- Si en algun momento te asalta CUALQUIER duda (minima): resolve primero con EVIDENCIA — relee el
+  .md de la tarea (descripcion, criterio de aceptacion, adjuntos, feedback), el codigo real, los
+  tests, las docs. Busca los hechos tu mismo. Usa **`grill-me`/`grilling`** para estructurar la
+  auto-entrevista: en rondas, sin dejar ramas con supuestos silenciosos.
+- Si tras grillarte la duda PERSISTE: NO avances. Tienes dos salidas, en este orden:
+  1. Preguntar al humano AHORA si tu cliente te lo permite (mi herramienta de pregunta
+     `ask-user-question` viene instalada LOCAL con el kit en pi): formula UNA pregunta concreta,
+     con tu recomendacion, y espera su respuesta.
+  2. Si no puedes preguntar o la duda es de alcance/falta de informacion: termina con
+     `RESULTADO: STOPPED`, `MOTIVO: DUDA NO RESUELTA: <la duda exacta, en Markdown con - por punto>`
+     y `RECOMENDACION: <que debe decidir el humano para desbloquear>`. El orquestador la lleva a
+     stopped y NO la relanza solo hasta que el humano despeje la duda.
+- Escribe SIEMPRE el RESULTADO ESPERADO que vas a cumplir y contrastalo contra la tarea antes de
+  empezar; si no coincide al 100%, es duda: grilla primero.
 
 NUNCA CONTRA PRODUCCION (regla inviolable, por encima de todo lo demas):
 - Nunca ejecutes nada contra un ambiente de produccion. Ni un test, ni un script, ni una consulta.

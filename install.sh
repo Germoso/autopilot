@@ -46,7 +46,7 @@ set -uo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RENDER="$KIT_DIR/clients/render.py"
-SKILLS=(autopilot autopilot-init autopilot-plan ponytail tdd)
+SKILLS=(autopilot autopilot-init autopilot-plan ponytail tdd grilling grill-me grill-with-docs domain-modeling)
 MARCA=".autopilot-kit"
 # Rutas GLOBALES de versiones viejas (solo para --uninstall de herencia)
 KIT_LEGACY="${XDG_DATA_HOME:-$HOME/.local/share}/autopilot-kit"

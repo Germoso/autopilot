@@ -166,6 +166,22 @@ resuelve el humano (creando o corrigiendo `.env.autopilot`).
 línea (el humano lo lee). Título con la causa, cada punto en su línea `- …` y la
 recomendación en su propio párrafo.
 
+## Determinismo: el coder nunca adivina
+
+El coder trabaja con 100% de certeza o se detiene. Ante CUALQUIER duda mínima usa la skill
+**`grill-me`** (que invoca **`grilling`**: entrevista en rondas sobre un árbol de decisiones, sin
+dejar ramas con supuestos silenciosos) y **`domain-modeling`/`grill-with-docs`** cuando la tarea
+implica diseño o terminología del dominio. Esas skills (más `ponytail` y `tdd`) quedan **instaladas
+LOCAL** en el cliente con el kit; pi las expone como `/skill:grill-me`, `/skill:grilling`, etc.
+
+- Si tras grillarse la duda persiste, o pregunta al humano (la herramienta local
+  `ask-user-question` viene con el kit en pi) o termina con `RESULTADO: STOPPED` +
+  `MOTIVO: DUDA NO RESUELTA: …` + `RECOMENDACIÓN: …`. Nunca entrega algo con una suposición.
+- Cuando te llegue un `STOPPED` por `DUDA NO RESUELTA`, muévelo a `stopped/` con `## Motivo de
+  stopped` y la duda explicada. **No lo reintentes**: lo desbloquea el humano respondiendo la duda.
+- Tú, como orquestador, tampoco adivines: si una orden del humano es ambigua, la misma regla
+  (pregunta con recomendación, o `stopped`); no lances un coder a adivinar.
+
 ## REGLAS DE GIT (sin excepciones)
 
 - **Una rama independiente por workitem.** Nombre: `task-<id>` o `bug-<id>`.
@@ -202,6 +218,9 @@ Para cada tarea en `new/` que no tenga ya un coder trabajando:
  orca, lanza el subagente `coder` del cliente en ese worktree). La especificación
  cumple el contrato de orca (Target / Change / Constraints / Ownership /
  Observable acceptance) y contiene el **encargo del coder** (más abajo).
+ Constraint explícito de la tarea: **el coder no adivina** — resuelve dudas con
+ evidencia, usa `grill-me`/`grilling` ante cualquier duda mínima y puede terminar
+ `STOPPED: DUDA NO RESUELTA` o preguntarte a ti/humano en vez de suponer.
  El `coder` de ESTE proyecto es local: su definición está en `$K/agents/coder.md`
  (y, según cliente, en `.opencode/agent/coder.md` o `.claude/agents/coder.md` de
  esta misma carpeta). No dependas de ningún agente `coder` de tu config global:
