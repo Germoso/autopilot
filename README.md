@@ -97,12 +97,13 @@ ve como un `.md` y **la carpeta donde está te dice cómo va**:
 
 | Carpeta | Qué significa | ¿Tienes que hacer algo? |
 |---|---|---|
-| `new` | Pendiente (incluye las que vuelves con feedback, y las detenidas con su motivo) | No |
+| `new` | Pendiente (incluye las que vuelves con feedback) | No |
 | `working` | El coder la está programando | No |
 | **`done`** | **El coder terminó. Lista para tu revisión (y estado final si la apruebas)** | **Sí: revísala** |
+| **`stopped`** | **No se pudo y dice por qué: necesita tu intervención** | **Sí: lee el `## Motivo de stopped` y resuélvelo** |
 
-(Solo son 3 carpetas de estado. Las que no se pudieron vuelven a `new/` con un
-`## Motivo de stopped` y no se relanzan solas: las resuelves tú.)
+(Solo son 4 carpetas de estado. Las `stopped` no se relanzan solas: las resuelves tú
+y, cuando puedas, las vuelves a `new/`.)
 
 ### Qué haces tú
 
@@ -118,8 +119,8 @@ ve como un `.md` y **la carpeta donde está te dice cómo va**:
   **Opcional — `AUTO_MERGE=true`:** si no querés mergear a mano, activá `AUTO_MERGE=true`
   en `autopilot.env`: cuando le digas `aprobá <clave>` a `/autopilot`, el sistema mergea la
   rama a la base por vos **solo local** (nunca hace push ni borra ramas) y la tarea queda en
-  `done`. Si el merge no entra limpio (conflicto), la base queda intacta y la tarea vuelve a
-  `new/` con `## Motivo de stopped`: lo resuelves tú.
+  `done`. Si el merge no entra limpio (conflicto), la base queda intacta y la tarea pasa a
+  `stopped/` con el motivo del conflicto.
 
 - **Tareas en `stopped`:** el motivo está en el `.md` (*Motivo de stopped*), con lo que
   recomienda hacer. Cuando lo resuelvas, devuélvela a la cola moviéndola a `new/`
@@ -146,7 +147,7 @@ cómo probarlo y qué pruebas corrió. Tres resultados:
 - `EN ESPERA` + `CHOCA CON <otra>` → otro workitem está tocando un archivo que necesita;
   se retoma cuando la otra termine (no cuenta como no-fallo: es colisión de paralelo).
 - `STOPPED` → no pudo (le falta una herramienta, o **posible producción**) y te dice qué.
-  La tarea vuelve a `new/` con `## Motivo de stopped` y **no se relanza sola**: la resuelves tú.
+  La tarea va a `stopped/` con `## Motivo de stopped` y no se relanza sola: la resuelves tú.
 
 **Tú (revisor)** — Reemplazas al QA: revisas cada criterio de `done`, mergeas su rama, o le
 pides cambios (la tarea vuelve a `new/` y el coder la retoma con tu feedback).

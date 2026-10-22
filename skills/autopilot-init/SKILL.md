@@ -58,17 +58,17 @@ cosas: `autopilot.env` y el board `.workitems/`.
    Si ya existía, conserva el resto de variables que puso el usuario y solo ajusta
    la rama base.
 
-4. **Crear el board.** Crea `.workitems/` (o `$WORKITEMS_DIR`) con las 3 carpetas
+4. **Crear el board.** Crea `.workitems/` (o `$WORKITEMS_DIR`) con las 4 carpetas
 de estado y las de apoyo, si no existen:
 
    ```
-   .workitems/new/  .workitems/working/  .workitems/done/
+   .workitems/new/  .workitems/working/  .workitems/done/  .workitems/stopped/
    .workitems/adjuntos/  .workitems/planes/  .workitems/.autopilot/resultados/
    ```
 
-   (Solo estas: los estados son 3. Las devueltas por el humano vuelven a `new/` con
-   `## Feedback del humano`; las detenidas a `new/` con `## Motivo de stopped`,
-   sin relanzarse solas.)
+   (Solo estas: los estados son 4. Las devueltas por el humano vuelven a `new/` con
+   `## Feedback del humano`; lo que no se pudo va a `stopped/` con `## Motivo de
+   stopped`, requiriendo tu intervención.)
 
 5. **Ignorarlo de git.** Asegúrate de que `.workitems/` esté en el `.gitignore` del
    repo (o, en un workspace, en el de cada repo). Si no está, agrégalo (solo eso).

@@ -1,6 +1,6 @@
 ---
 name: autopilot
-description: Sistema autonomo de desarrollo sobre un board de workitems en carpetas y archivos Markdown (.workitems/), ejecutado por Orca: el orquestador crea un worktree por tarea con `orca worktree create`, lanza al coder con `orca orchestration` (worker-start / check) y el humano revisa en done (si pide cambios vuelve a new). Board de 3 estados: new / working / done. Sin QA ni E2E. Usar cuando el usuario mencione el tablero de tareas, el board, workitems, autopilot, /autopilot, o pida trabajo autonomo sobre tareas. NO usar en proyectos que no tengan un archivo autopilot.env.
+description: Sistema autonomo de desarrollo sobre un board de workitems en carpetas y archivos Markdown (.workitems/), ejecutado por Orca: el orquestador crea un worktree por tarea con `orca worktree create`, lanza al coder con `orca orchestration` (worker-start / check) y el humano revisa en done (si pide cambios vuelve a new; lo que no se pudo va a stopped). Board de 4 estados: new / working / done / stopped. Sin QA ni E2E. Usar cuando el usuario mencione el tablero de tareas, el board, workitems, autopilot, /autopilot, o pida trabajo autonomo sobre tareas. NO usar en proyectos que no tengan un archivo autopilot.env.
 ---
 # Sistema Autónomo de Desarrollo (Autopilot)
 
@@ -72,17 +72,19 @@ duda entre este texto y la skill de orca, manda la skill de orca.
 .workitems/                         # WORKITEMS_DIR; NO esta en git
 ├── new/          bug-140123-login-falla-con-google.md   # tarea = archivo .md en la carpeta de su estado
 ├── working/      task-pagos_modelo.md
+├── stopped/      task-pagos_modelo.md                  # no se pudo / necesita intervención tuya
 ├── done/         task-favoritar-tarjeta.md
 ├── adjuntos/<clave>/               # capturas, imagenes y videos (archivos)
 ├── planes/<slug>.md                # planes de /autopilot-plan
 └── .autopilot/resultados/<clave>.md # (scratch) notas que escribe el coder al terminar
 ```
 
-- **Solo hay 3 carpetas de estado** (`new/`, `working/`, `done/`). `adjuntos/`,
- `planes/` y `.autopilot/resultados/` son de **apoyo**, no estados.
-- Donde antes había `bug-fix`/`stopped`/`reviewed`, ahora: las **devueltas por el
- humano** vuelven a `new/` con `## Feedback del humano`; las **detenidas** (bug,
- atascadas) vuelven a `new/` con `## Motivo de stopped` y **no se relanzan solas**.
+- **Solo hay 4 carpetas de estado** (`new/`, `working/`, `done/` y `stopped/`).
+ `adjuntos/`, `planes/` y `.autopilot/resultados/` son de **apoyo**, no estados.
+- Donde antes había `bug-fix`/`reviewed`, ahora: las **devueltas por el humano** vuelven
+a `new/` con `## Feedback del humano` (el coder las retoma); lo que **no se pudo** (bug,
+ atascada, posible producción, falta de herramienta) va a `stopped/` con `## Motivo de
+ stopped`, y **no se relanza solo**: requiere tu intervención.
 
 - **El archivo `.md` ES la tarea** (no hay base de datos). El estado es la carpeta
 donde está. El orquestador **no edita los `.md` a mano** más que para añadir las
@@ -155,10 +157,9 @@ para probar.
 delega al coder (que lo corre con `aenv.sh`).
 - Un coder que se detiene por **posible producción** termina con
 `RESULTADO: STOPPED` + `MOTIVO: POSIBLE PRODUCCIÓN: …` + `RECOMENDACIÓN: …`:
-muévelo a `new/` tal cual, escribiendo al `.md` la sección `## Motivo de stopped`
-con ese motivo. **No lo reintentes**: una tarea en `new/` con `## Motivo de
-stopped` no se relanza sola; lo resuelve el humano (creando o corrigiendo
-`.env.autopilot`).
+muévelo a `stopped/` tal cual, escribiendo al `.md` la sección `## Motivo de stopped`
+con ese motivo. **No lo reintentes**: una tarea en `stopped/` no se relanza sola; lo
+resuelve el humano (creando o corrigiendo `.env.autopilot`).
 - **Motivo de `stopped`: en Markdown y con saltos de línea**, nunca todo en una
 línea (el humano lo lee). Título con la causa, cada punto en su línea `- …` y la
 recomendación en su propio párrafo.
@@ -184,14 +185,13 @@ escucha de Orca o del humano. Relanza siempre.
 
 ### A. Lanzar coders (tareas listas)
 
-Para cada tarea en `new/` que no tenga ya un coder trabajando y **no lleve
-`## Motivo de stopped`** (una detenida no se relanza sola: la resuelve el humano):
+Para cada tarea en `new/` que no tenga ya un coder trabajando:
 
 1. Decide la rama base (<BASE>) de su repo (`REPO.<carpeta>` o `BASE_BRANCH`).
 2. Crea el worktree si no existe: `orca worktree create --name <clave> --repo  <selector> --base-branch <BASE> [--activate]` (en un workspace, uno por repo de la
  tarea). Si falla (rama base inexistente, repo no registrado), escribe el motivo
- como `## Motivo de stopped` en el `.md` y muévelo de vuelta a `new/` (no lo
- relances). Si el worktree **ya existe** (tarea devuelta por cambios), reúsalo:
+ como `## Motivo de stopped` en el `.md` y muévelo a `stopped/` (no lo relances
+ solo). Si el worktree **ya existe** (tarea devuelta por cambios), reúsalo:
  es la misma rama.
 3. Mueve el `.md` de la tarea de `new/` a `working/`.
 4. Despacha al coder: `orca orchestration worker-start --spec "<especificación>"  --worktree <clave> --agent <agente-disponible> --json` (o, si no hay agente de
@@ -219,13 +219,11 @@ Para cada tarea en `new/` que no tenga ya un coder trabajando y **no lleve
    que `<otra>` termine (o devuélvela a `new/` si así prefieres reordenarla). No
    es un fallo.
    - `STOPPED` → escribe en el `.md` la sección `## Motivo de stopped` con el
-   motivo tal cual y muévelo de vuelta a `new/` (con esa sección no se relanza
-   solo).
+   motivo tal cual y muévelo a `stopped/` (no se relanza solo).
    - Sin `RESULTADO` claro o worker con `outcome: failed` → `## Motivo de
-   stopped` en el `.md` y vuelve a `new/`.
+   stopped` en el `.md` y mueve a `stopped/`.
 3. **Reporta al humano**: la tarea que está en `done` listo para revisar (y las
-detenidas devueltas a `new/` con su motivo). Conviene que el humano verifique la
-sesión.
+`stopped/` con su motivo). Conviene que el humano verifique la sesión.
 
 ### C. Revisión del humano (mensaje en el chat)
 
@@ -233,11 +231,10 @@ sesión.
 final). Con **`AUTO_MERGE=true`**, mergea la rama a la base **solo local** (en la
 copia principal del repo: `git merge --no-ff <rama>` en cada repo de la tarea;
 nunca push, nunca borra la rama). Si el merge no entra limpio, deja la base
-intacta y devuelve la tarea a `new/` con `## Motivo de stopped` por el conflicto.
+intacta y mueve la tarea a `stopped/` con `## Motivo de stopped` por el conflicto.
 - **Pedir cambios: `<clave>` con cambios** (o "volvé a mandarla al coder"): añade la
 sección `## Feedback del humano` al `.md` con **exactamente** qué está mal,
-qué esperas y dónde, y mueve la tarea de `done/` (o de `new/` si estaba detenida)
-a `new/` de nuevo. El coder la toma antes que las que no tienen feedback, en la
+qué esperas y dónde, y mueve la tarea de `done/` a `new/`. El coder la toma antes que las que no tienen feedback, en la
 misma rama, y arregla solo eso.
 - Si el humano pide algo que el coder no puede o un cambio de alcance, negócialo
 con él antes de lanzar.
@@ -248,7 +245,7 @@ con él antes de lanzar.
 atascado): respóndele con `orca orchestration reply --id <message_id> --body "…"`
 (al coder solo por chat de orca) o toma una decisión. Si no responde, termina la
 tarea: `worker-stop`/`worker-abandon` según corresponda, escribe `## Motivo de
-stopped` en el `.md` y devuélvelo a `new/`.
+stopped` en el `.md` y muévelo a `stopped/`.
 - Un worktree quedó **sin tarea** (huérfano) → `orca worktree rm --worktree <clave>`
 (no lo dejes acumular).
 - Revisa actividad real con `orca orchestration worker-list --run <run_id> --json`
@@ -268,7 +265,7 @@ El orquestador trata el board como **archivos `.md`**:
 | Añadir notas del coder | sección `## Notas del desarrollador` al `.md`                             |
 | Feedback del humano    | sección `## Feedback del humano` al `.md` (y mover a `new/`)               |
 | Resultado de la tarea  | sección `## Repos modificados` / `## Resultado`                           |
-| Detener                | sección `## Motivo de stopped` (Markdown con saltos) y mover a `new/` (sin relanzar) |
+| Detener                | sección `## Motivo de stopped` (Markdown con saltos) y mover a `stopped/` |
 
 
 No edites ni reescribas los `.md` de otra forma (el humano sí puede moverlos o
@@ -292,23 +289,24 @@ commitee en la rama y termine escribiendo `NOTAS DEL DESARROLLADOR` + `RESULTADO
                           ┌─────────────────────────────────┐
                           │ (el humano revisa en done: si está bien, queda)
 new ──> working ──> done ─┘
-  ^         │
-  └─────────┴──── el humano pidió cambios → vuelve a new con ## Feedback del humano
+  ^         │                │
+  └─────────┴──── no se pudo o necesita tu intervención ──> stopped
+                       el humano pidió cambios → vuelve a new con ## Feedback del humano
                        (la retoma el coder en la MISMA rama, antes que las otras)
-                       una detenida (STOPPED/atascada) vuelve a new con
-                       ## Motivo de stopped y NO se relanza sola: la resuelve el humano
 ```
 
 
-| Carpeta  | Significado                                                                   | Quién actúa |
-| ---------| ----------------------------------------------------------------------------- | ----------- |
-| `new`    | Pendiente. De aquí toma el coder (incluye devueltas con feedback y detenidas con motivo). | —           |
-| `working`| El coder está trabajando (1 por tarea; hasta `MAX_CODERS` a la vez).          | coder       |
+| Carpeta   | Significado                                                                 | Quién actúa |
+| ---------| --------------------------------------------------------------------------- | ----------- |
+| `new`    | Pendiente. De aquí toma el coder (incluye devueltas con feedback).          | —           |
+| `working`| El coder está trabajando (1 por tarea; hasta `MAX_CODERS` a la vez).        | coder       |
+| `stopped`| No se pudo: bloqueo, posible producción, atascada, falta de herramienta, o necesita tu intervención. Motivo escrito en `## Motivo de stopped`. | —           |
 | `done`   | El coder terminó y commiteó. **El humano la revisa aquí**: si está bien queda (final); si pide cambios, vuelve a `new`. | coder → humano |
 
 
-Cuando el humano resuelve una detenida (borra o soluciona su `## Motivo de
-stopped`), queda lista para que el coder la tome de `new/` de nuevo.
+Cuando resuelves una tarea de `stopped/` (corriges `.env.autopilot`, desatas un
+bloqueo o decides), la mueves de vuelta a `new/` (o directamente al flujo): es una
+tarea más.
 
 ## Los agentes
 
@@ -337,8 +335,7 @@ el humano, siempre**, o el autopilot con la variable activa.
 - Crear una rama desde otra que no sea `<BASE>`, o con otro nombre que `task-<n>`/`bug-<n>`.
 - Trabajar en `<BASE>` directamente (ni tú ni el coder: el coder, solo en su worktree).
 - Lanzar dos coders para la misma tarea a la vez.
-- Relanzar sola una tarea de `new/` que tenga `## Motivo de stopped`: eso lo decide
-el humano.
+- Relanzar sola una tarea de `stopped/`: eso requiere tu intervención y lo decides tú.
 - Ejecutar nada contra ambientes tú mismo.
 - Editar los `.md` del board fuera de las secciones y movimientos definidos.
 - Inventar que hiciste algo que no hiciste.

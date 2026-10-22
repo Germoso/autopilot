@@ -30,7 +30,7 @@ el bucle del orquestador y la estructura del kit.
  new ──> working ──(el coder termina)──> done
    ^         │                            │
    └─────────┴── el humano pidió cambios: vuelve a new con ## Feedback del humano
-                (una detenida vuelve a new con ## Motivo de stopped y no se relanza sola)
+       (lo que no se pudo o necesita tu intervención) ──> stopped (con ## Motivo de stopped)
 ```
 
 El **orquestador** (el agente principal que corre `/autopilot`) hace tres cosas en un
@@ -59,14 +59,16 @@ Toda la ejecución (worktrees, procesos, agentes) la maneja **Orca**; todo el es
 ├── new/          bug-140123-login-falla-con-google.md
 ├── working/      task-pagos_modelo.md
 ├── done/         task-favoritar-tarjeta.md
+├── stopped/      task-pagos_modelo.md                  # no se pudo / necesita tu intervención
 ├── adjuntos/<clave>/               # capturas, imagenes y videos (archivos)
 ├── planes/<slug>.md                # planes de /autopilot-plan
 └── .autopilot/resultados/<clave>.md # (scratch) notas que escribe el coder al terminar
 ```
 
-Solo hay 3 carpetas de estado (`new/`, `working/`, `done/`); `adjuntos/`, `planes/` y
-`.autopilot/resultados/` son de apoyo. Las devueltas por el humano vuelven a `new/` con
-`## Feedback del humano`; las detenidas a `new/` con `## Motivo de stopped` (sin relanzar).
+Solo hay 4 carpetas de estado (`new/`, `working/`, `done/`, `stopped/`); `adjuntos/`,
+`planes/` y `.autopilot/resultados/` son de apoyo. Las devueltas por el humano vuelven a
+`new/` con `## Feedback del humano`; lo que no se pudo va a `stopped/` con `## Motivo de
+stopped` (sin relanzar solo), a la espera de tu intervención.
 
 - **El archivo `.md` ES la tarea** (no hay base de datos). El estado es la carpeta
   donde está. El orquestador **no reescribe los `.md`** más que para añadir secciones
@@ -223,13 +225,12 @@ Sin variables de ranuras, E2E ni Telegram: ya no existen.
 Siempre una de dos: está esperando a un coder (`orca orchestration check --wait --types
 worker_done,escalation,question`) o esperándote a ti. Nunca deja de escuchar.
 
-**A. Lanzar coders** — por cada tarea en `new/` sin coder activo y sin `## Motivo de
-stopped`:
+**A. Lanzar coders** — por cada tarea en `new/` sin coder activo:
 
 1. rama base de su repo (`REPO.<carpeta>=<rama>` o `BASE_BRANCH`);
 2. `orca worktree create --name <clave> --repo <selector> --base-branch <base> [--activate]`
    (workspace: una por repo de la tarea); si falla → `## Motivo de stopped` en el `.md` y
-   vuelve a `new/`; si el worktree ya existe (tarea devuelta), lo reusa;
+a `stopped/`; si el worktree ya existe (tarea devuelta), lo reusa;
 3. mover el `.md` a `working/`;
 4. `orca orchestration worker-start --spec "<encargo>" --worktree <clave> --agent <n> --json`
    (o un subagente `coder` del cliente en el worktree si no hay agente de orca);
@@ -243,23 +244,23 @@ stopped`:
    - `done` (commiteó) → mover a `done/` (añadir `## Repos modificados`);
    - `EN ESPERA` + `CHOCA CON <otra>` → dejar en `working/` con nota y retomar
      cuando la otra termine (o volver a `new/`);
-   - `STOPPED` → añadir `## Motivo de stopped` al `.md` y volver a `new/` (no relanzar);
-   - sin `RESULTADO` claro o worker `failed` → igual: `## Motivo de stopped` y `new/`;
-3. reportar al humano la/s tarea/s en `done` (y las detenidas devueltas a `new/`).
+   - `STOPPED` → `## Motivo de stopped` al `.md` y mover a `stopped/` (no relanzar);
+   - sin `RESULTADO` claro o worker `failed` → igual: `## Motivo de stopped` y `stopped/`;
+3. reportar al humano la/s tarea/s en `done` (y las `stopped/` con su motivo).
 
 **C. Revisión del humano** (mensaje en el chat):
 
 - aprobar (`aprobá <clave>`) → la tarea queda en `done/`; con `AUTO_MERGE=true`, mergear
-  antes (solo local, en cada repo de la tarea); conflicto → base intacta y vuelve a `new/`
+  antes (solo local, en cada repo de la tarea); conflicto → base intacta y `stopped/`
   con `## Motivo de stopped`;
 - pedir cambios → `## Feedback del humano` al `.md` + mover de `done/` a `new/` (el coder
   la retoma antes, en la misma rama);
-- resolver una detenida → atender su `## Motivo de stopped` (borrarlo) para que quede
-  lista de nuevo.
+- resolver una `stopped` → la mueves de `stopped/` a `new/` (o directamente al flujo)
+  cuando puedas.
 
 **D. Escalaciones de orca** — `escalation`/`question` en el `check`: responder por
 `orca orchestration reply --id <id> --body "…"` o decidir; si un worker no responde,
-`worker-stop`/`worker-abandon`, `## Motivo de stopped` en el `.md` y vuelve a `new/`.
+`worker-stop`/`worker-abandon`, `## Motivo de stopped` en el `.md` y `stopped/`.
 Worktrees huérfanos:
 `orca worktree rm --worktree <clave>`.
 
@@ -324,8 +325,7 @@ Secciones que el orquestador añade al `.md` (no reemplaza las del humano/coder)
    en `done`.
 
 Con `AUTO_MERGE=true` el autopilot hace el paso 2 al aprobar (merge local sin
-push). Si choca, la base queda intacta y la tarea vuelve a `new/` con `## Motivo de
-stopped`.
+push). Si choca, la base queda intacta y la tarea va a `stopped/` con el motivo.
 
 ## Orca
 
