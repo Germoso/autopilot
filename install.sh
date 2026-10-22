@@ -3,15 +3,15 @@
 #  install.sh — instala el kit para OpenCode, Claude Code y/o pi
 #
 #  Que instala:
-#    - scripts (board, guardas de git) en
-#      ~/.local/share/autopilot-kit/   (compartidos por todos los clientes)
+#    - los validadores de "nunca contra produccion" (aenv.sh, entorno.py)
+#      en ~/.local/share/autopilot-kit/   (compartidos por todos los clientes)
 #    - skills autopilot, autopilot-init, autopilot-plan, ponytail y tdd en la carpeta de skills de cada cliente
 #    - agente coder, generado desde agents/*.md
-#      con los bloqueos de git propios de cada cliente
 #    - (OpenCode) comandos /autopilot-init, /autopilot-plan y /autopilot
 #      (en Claude Code y pi las skills ya son esos comandos)
-#    - (pi) extension de guard (pi-guard-*.mjs) que cancela push/merge, lo que toque
-#      un ambiente sin aenv.sh y la escritura de .env* / fuera de las copias de trabajo
+#
+#  El resto de la maquinaria (worktrees, lanzar al coder, vigilar, notificar)
+#  la maneja Orca (orca orchestration + orca worktree), no scripts del kit.
 #
 #  Que NO hace:
 #    - No pisa archivos que no genero el kit.
@@ -20,8 +20,6 @@
 #  Uso:
 #    ./install.sh                        # detecta los clientes instalados
 #    ./install.sh --opencode --claude --pi  # elige clientes explicitamente
-#    ./install.sh --init /mi/proyecto --base dev        # prepara un repo (o usa /autopilot-init)
-#    ./install.sh --init /mi/workspace --base app=dev  # workspace: carpeta con varios repos
 #    ./install.sh --azure                # SOLO la integracion de Azure DevOps, sin el kit
 #    ./install.sh --uninstall            # deshace todo lo instalado por el kit
 # ============================================================
@@ -44,16 +42,21 @@ for a in "$@"; do [[ "$a" == --azure ]] && SOLO_AZURE=1 || RESTO+=("$a"); done
 [[ "$SOLO_AZURE" == 1 ]] && exec "$KIT_DIR/integraciones/azure/instalar.sh" --sin-kit "${RESTO[@]}"
 
 WANT_OC=0; WANT_CC=0; WANT_PI=0; UNINSTALL=0; PROJ=""; BASES=()
+# Args de la skill /autopilot-init (rama base) via --base/--init: se ignoran aqui sin error.
+for a in "$@"; do
+  [[ "$a" == "--init" || "$a" == "--base" ]] && PROJ_PARAMS=1
+  [[ "$a" == -h || "$a" == --help ]] && { sed -n '3,30p' "$0"; exit 0; }
+done
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --opencode)     WANT_OC=1 ;;
     --claude)       WANT_CC=1 ;;
     --pi)           WANT_PI=1 ;;
     --uninstall)    UNINSTALL=1 ;;
-    --base)         shift; [[ -z "${1:-}" ]] && { echo "--base necesita la rama (o repo=rama)" >&2; exit 1; }; BASES+=(--base "$1") ;;
-    --init)         shift; PROJ="${1:-}";    [[ -z "$PROJ" ]] && { echo "--init necesita una ruta" >&2; exit 1; } ;;
+    --base)         shift ;;
+    --init)         shift ;;
     -h|--help)      sed -n '3,30p' "$0"; exit 0 ;;
-    *) echo "opcion desconocida: $1 (ver --help)" >&2; exit 1 ;;
+    *) echo "opcion desconocida: $1 (ver --help). La preparacion de un proyecto se hace con /autopilot-init" >&2; exit 1 ;;
   esac
   shift
 done
@@ -101,27 +104,24 @@ if [[ "$UNINSTALL" == 1 ]]; then
 fi
 
 # ------------------------------------------------------------------
-# Init de un proyecto
+# Init de un proyecto: lo hace la skill /autopilot-init (crea autopilot.env
+# y el board .workitems/ a mano). Aqui ya no hay init.py.
 # ------------------------------------------------------------------
-if [[ -n "$PROJ" ]]; then
-  [[ -x "$KIT/init.py" ]] || { err "primero instala el kit: $0"; exit 1; }
-  # Misma logica que /autopilot-init. --base <rama> (un repo) o --base <repo>=<rama> (workspace).
-  python3 "$KIT/init.py" "$PROJ" "${BASES[@]}"
-  exit $?
-fi
 
 # ------------------------------------------------------------------
-# 1. Scripts compartidos
+# 1. Validadores de "nunca contra produccion" (aenv.sh + entorno.py)
 # ------------------------------------------------------------------
-echo "==> Scripts en $KIT"
+echo "==> Validadores en $KIT"
 mkdir -p "$KIT"
-cp "$KIT_DIR"/lib/*.py "$KIT_DIR"/lib/*.sh "$KIT_DIR"/lib/*.cjs "$KIT_DIR"/lib/*.dart "$KIT_DIR"/lib/*.mjs "$KIT_DIR/lib/run-tests" "$KIT_DIR/lib/health-check" \
-  "$KIT_DIR/clients/render.py" "$KIT/" && chmod +x "$KIT"/*.sh "$KIT"/*.py "$KIT/run-tests" "$KIT/health-check"
-say "$(ls "$KIT" | tr '\n' ' ')"
+cp "$KIT_DIR/skills/autopilot/aenv.sh" "$KIT_DIR/skills/autopilot/entorno.py" "$KIT/" && \
+  chmod +x "$KIT/aenv.sh"
+say "aenv.sh entorno.py"
 
 # ------------------------------------------------------------------
 # 2. Skills + agentes (+ comandos en OpenCode) por cliente
 # ------------------------------------------------------------------
+(python3 -m py_compile "$KIT/entorno.py" >/dev/null 2>&1) || \
+  warn "entorno.py no compila: revisa skills/autopilot/entorno.py"
 for c in "${CLIENTES[@]}"; do
   cfg="$(cfg_de "$c")"
   echo; echo "==> $c ($cfg)"
@@ -131,7 +131,7 @@ for c in "${CLIENTES[@]}"; do
     if [[ -d "$dst" && ! -f "$dst/$MARCA" ]]; then
       warn "skill $s ya existe y no es del kit, no se toco"; continue
     fi
-    rm -rf "$dst"; cp -r "$KIT_DIR/skills/$s" "$dst"; touch "$dst/$MARCA"
+    rm -rf "$dst"; cp -r "$KIT_DIR/skills/$s" "$dst"; rm -rf "$dst/__pycache__"; touch "$dst/$MARCA"
     say "skill $s"
   done
   python3 "$RENDER" install "$c" "$cfg" "$KIT" || { err "fallo generando agentes para $c"; exit 1; }
@@ -153,6 +153,6 @@ if [[ " ${CLIENTES[*]} " == *" pi "* && " ${CLIENTES[*]} " != *" opencode "* ]];
 else
   echo "  Comandos:  /autopilot-init  /autopilot-plan  /autopilot"
 fi
-echo "  Tablero:  el board en .workitems/ (wi.sh, watcher.sh) — carpetas + .md"
-echo "  Proyecto:  $0 --init /ruta/al/proyecto"
+echo "  Tablero:  el board en .workitems/ (carpetas + .md) — los estados y las notas son archivos"
+echo "  Ejecuta:  Orca (orca orchestration + orca worktree) lanza y vigila a los coders"
 echo "  Docs:      $KIT_DIR/README.md"

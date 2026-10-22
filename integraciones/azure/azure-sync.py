@@ -3,8 +3,8 @@
 azure-sync.py — Importador ADITIVO de Azure DevOps al board de workitems.
 
 COPIA aditiva de /home/user/sync_workitems.py, adaptada para alimentar
-el board del autopilot. Es una integracion EXTERNA: el autopilot no la conoce;
-solo usa la API publica del board (workitems.py del kit instalado).
+el board del autopilot. Es una integracion EXTERNA: el autopilot no la
+conoce; escribe directamente archivos .md del board (no depende del kit).
 
 Cada Work Item se escribe como new/<tipo>-<numero>-<slug>.md, donde tipo es
 task o bug segun System.WorkItemType. <tipo>-<numero> es tambien el nombre de
@@ -44,33 +44,24 @@ Uso:
 """
 import argparse
 import html
+import re
 import shutil
 import tempfile
 from html.parser import HTMLParser
 import json
 import os
-import re
 import subprocess
 import sys
 import time
 import urllib.parse
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# El formato del board vive en el kit del autopilot (workitems.py); se busca en la copia
-# propia de instalar.sh --sin-kit (lib/ junto a este script), en $AUTOPILOT_KIT o el kit
-# instalado, o en el lib/ del repo (si se corre desde el repo).
-KIT = os.environ.get("AUTOPILOT_KIT") or os.path.join(
-    os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "autopilot-kit")
-for d in (os.path.join(SCRIPT_DIR, "lib"), KIT, os.path.join(SCRIPT_DIR, "..", "..", "lib")):  # el ultimo insertado gana
-    if os.path.exists(os.path.join(d, "workitems.py")):
-        sys.path.insert(0, os.path.abspath(d))
-try:
-    import workitems as wi
-except ImportError:
-    print(json.dumps({"action": "error",
-                      "message": "no encuentro workitems.py del autopilot (busque en %s)" % KIT,
-                      "hint": "instala el kit con install.sh o exporta AUTOPILOT_KIT"}, ensure_ascii=False, indent=2))
-    sys.exit(2)
+
+# El board es un juego de carpetas + .md (sin base de datos ni kit).
+# El estado es la carpeta; el archivo ES la tarea. Aqui vive esa logica minima.
+ESTADOS = ("new", "in-progress", "bug-fix", "stopped", "done", "reviewed")
+RE_ARCHIVO = re.compile(r"^(task|bug)-([A-Za-z0-9_]+)-(.+)\.md$")
+MARCA = ".autopilot-kit"  # solo para no pisar .md ajenos al autopilot en refrescar
 
 # Prioridad de Azure (1=alta) -> board
 PRIO_MAP = {1: "Critical", 2: "High", 3: "Medium", 4: "Low"}
@@ -79,7 +70,7 @@ PAT_MCP = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("
                        "autopilot-kit", "ado-mcp.secrets.env")
 
 CFG = {"org": "", "user": "", "pat": "", "fuentes": [], "board": "", "ignore_dirs": []}
-BOARD = None  # wi.Board, se arma en main()
+BOARD = None  # Board (board .md), se arma en main()
 
 
 # ----------------------------------------------------------------- config
@@ -396,6 +387,96 @@ def fetch_detail(project, wid):
 
 
 # ----------------------------------------------------------------- board
+class Board:
+    """Logica minima del board autopilot: carpetas + .md (sin kit ni base de datos).
+    La tarea ES el archivo .md; el estado es la carpeta donde esta."""
+
+    def __init__(self, dir):
+        self.dir = os.path.normpath(os.path.expanduser(dir))
+
+    def _walk(self):
+        """[(estado_dir, ruta_archivo, match)] en todos los estados, de forma estable."""
+        out = []
+        for est in ESTADOS:
+            d = os.path.join(self.dir, est)
+            if not os.path.isdir(d):
+                continue
+            for n in sorted(os.listdir(d)):
+                m = RE_ARCHIVO.match(n)
+                if m and os.path.isfile(os.path.join(d, n)):
+                    out.append((est, os.path.join(d, n), m))
+        return out
+
+    def numeros(self):
+        """{id: estado} de todas las tareas del board (id = el <numero> de la clave)."""
+        return {m.group(2): est for est, _, m in self._walk()}
+
+    def todas(self):
+        """[{id, numero, estado, archivo, origen}] de todas las tareas."""
+        out = []
+        for est, ruta, m in self._walk():
+            origen = ""
+            primera = open(ruta, encoding="utf-8").read(400)
+            og = re.search(r"origen=([^\s>]+)", primera)
+            if og:
+                origen = og.group(1)
+            out.append({"id": m.group(1) + "-" + m.group(2), "numero": m.group(2),
+                        "estado": est, "archivo": ruta, "origen": origen})
+        return out
+
+    @staticmethod
+    def _slug(t):
+        return re.sub(r"[^A-Za-z0-9_]+", "-", t.strip().lower()).strip("-")[:60] or "tarea"
+
+    def crear(self, tipo, numero, prio, title, desc, crit, repo="", origen="", adjuntos=""):
+        """Escribe new/<tipo>-<numero>-<slug>.md y devuelve la ruta. Solo aditivo: nunca reescribe."""
+        clave = "%s-%s" % (tipo, numero)
+        path = os.path.join(self.dir, "new", "%s-%s.md" % (clave, self._slug(title)))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        extra = (" tipo=%s id=%s prioridad=%s" % (tipo, numero, prio))
+        if repo:
+            extra += " repo=%s" % repo
+        if origen:
+            extra += " origen=%s" % origen
+        body = ["<!-- autopilot:%s -->" % extra, "", "# %s" % title, "", "## Descripción", "",
+                desc or "_", "", "## Criterio de aceptación", "", crit or "_"]
+        if adjuntos:
+            body += ["", "## Adjuntos", "", adjuntos]
+        open(path, "w", encoding="utf-8").write("\n".join(body) + "\n")
+        return path
+
+    @staticmethod
+    def _reemplazar_seccion(contenido, seccion, nuevo):
+        if not re.search(r"(?m)^## %s$\n" % re.escape(seccion), contenido):
+            return contenido + "\n## %s\n\n%s\n" % (seccion, nuevo)
+        pat = re.compile(r"(?m)^## %s\n.*?(?=^## |\Z)" % re.escape(seccion), flags=re.S)
+        return pat.sub("## %s\n\n%s\n\n" % (seccion, nuevo), contenido)
+
+    def modificar(self, id_, secs_set):
+        """Reescribe SOLO las secciones indicadas (Descripción/Criterio/Adjuntos) de una tarea ya
+        importada, en el estado en que esté. No cambia estado ni notas ni feedback. Aplica a todas
+        las copias del mismo id (defensa ante un board duplicado)."""
+        ultima = None
+        for _, ruta, m in self._walk():
+            if m.group(1) + "-" + m.group(2) != id_:
+                continue
+            c = open(ruta, encoding="utf-8").read()
+            for sec, nuevo in secs_set.items():
+                c = self._reemplazar_seccion(c, sec, nuevo)
+            open(ruta, "w", encoding="utf-8").write(c)
+            ultima = ruta
+        if ultima is None:
+            raise ValueError("no existe %s en el board" % id_)
+        return ultima
+
+    def bitacora(self, accion, detalle):
+        """Registro local (no reemplaza las notas del board): .autopilot/azure-sync.log"""
+        d = os.path.join(self.dir, ".autopilot")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "azure-sync.log"), "a", encoding="utf-8") as f:
+            f.write("%s  %s  %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), accion, detalle))
+
+
 def tipo_de(f):
     """Bug -> bug; todo lo demas (Task) -> task."""
     return "bug" if (f.get("System.WorkItemType") or "").lower() == "bug" else "task"
@@ -421,7 +502,7 @@ def ignorados():
     for d in CFG["ignore_dirs"]:
         for raiz, _, files in os.walk(d):
             for n in files:
-                m = wi.RE_ARCHIVO.match(n)
+                m = RE_ARCHIVO.match(n)
                 if m:
                     out.setdefault(m.group(2), d)
     return out
@@ -467,7 +548,7 @@ def one_pass(dry_run=False):
             added.append({"id": wid, "clave": clave, "repo": donde, "title": title, "prioridad": prio,
                           "imagenes": sum(e in IMAGEN or e == "" for e in exts),
                           "videos": sum(e in VIDEO for e in exts)})
-            already.add(key)  # evita duplicados en la misma pasada
+            already[key] = "new"  # evita duplicados en la misma pasada
             continue
 
         # Adjuntos ANTES de crear la tarea: el .md nace completo (azure-sync nunca lo reescribe).
@@ -477,25 +558,23 @@ def one_pass(dry_run=False):
             path = BOARD.crear(tipo, wid, prio, title, desc, crit or "_Sin criterio en Azure._",
                                repo=fuente["repo"], origen="azure:%s" % fuente["project"],
                                adjuntos=seccion)
-        except wi.Error as e:
+        except (OSError, ValueError) as e:
             errors.append({"id": wid, "error": str(e)[:200]})
         else:
             entrada = {"id": wid, "clave": clave, "repo": donde, "title": title, "archivo": path}
             if fallidos:
                 entrada["adjuntos_fallidos"] = fallidos
             added.append(entrada)
-            already.add(key)
+            already[key] = "new"
 
     action = "dry-run" if dry_run else ("added" if added else ("partial" if errors else "no-op"))
     result = {"action": action, "added": added, "skipped": skipped, "errors": errors}
 
     if added and not dry_run:
-        BOARD.log("azure-sync importo tareas", "sistema", "deteccion",
-                  ", ".join(a["clave"] for a in added[:5]), "-", "-",
-                  "Importadas %d tarea(s) de Azure DevOps: %s" % (
-                      len(added), ", ".join("%s (%s)" % (a["id"], a["repo"]) for a in added)))
-        BOARD.avisar("📥 %d tarea(s) nueva(s) de Azure DevOps:\n%s" % (
-            len(added), "\n".join("- %s — %s" % (a["clave"], a["title"][:80]) for a in added[:15])))
+        BOARD.bitacora("importo", ", ".join("%s (%s)" % (a["id"], a["repo"]) for a in added))
+        print("📥 %d tarea(s) nueva(s) de Azure DevOps:" % len(added))
+        for a in added[:15]:
+            print("  - %s — %s" % (a["clave"], a["title"][:80]))
     return result
 
 
@@ -514,7 +593,7 @@ def do_refrescar(claves):
             imagenes = []
             desc, crit = textos(item["fields"], imagenes)
             por_img, seccion, fallidos = descargar_adjuntos(item, t["id"], imagenes)
-            BOARD.modificar(t["id"], secs_set={
+            BOARD.modificar(t["id"], {
                 "Descripción": poner_imagenes(desc, por_img) or "-",
                 "Criterio de aceptación": poner_imagenes(crit, por_img) or "_Sin criterio en Azure._",
                 "Adjuntos": seccion or "_Ninguno. Podés dejar imágenes en adjuntos/%s/._" % t["id"]})
@@ -524,8 +603,7 @@ def do_refrescar(claves):
         except Exception as e:
             errores.append({"tarea": t["id"], "error": str(e)[:200]})
     if hechas:
-        BOARD.log("azure-sync refresco tareas", "sistema", "nota", ", ".join(h["tarea"] for h in hechas[:5]), "-", "-",
-                  "Descripcion, criterio y adjuntos actualizados desde Azure: %d tarea(s)" % len(hechas))
+        BOARD.bitacora("refresco", ", ".join(h["tarea"] for h in hechas))
     print(json.dumps({"action": "refrescar", "refrescadas": hechas, "errores": errores}, ensure_ascii=False, indent=2))
     return 0 if not errores else 1
 
@@ -656,19 +734,25 @@ def main():
 
     global BOARD
     try:
-        # El board lo define autopilot.env (misma carpeta): de ahi salen tambien los repos.
-        # --board o BOARD_DIR (azure-sync.env) cambian solo la carpeta donde se importa.
-        env_ap = os.path.join(os.path.dirname(os.path.abspath(args.config)), "autopilot.env")
-        cfg = wi.cargar_config(env_ap if os.path.exists(env_ap) else args.config)
+        # El board lo define autopilot.env (misma carpeta que azure-sync.env): carpetas + .md,
+        # sin kit. --board o BOARD_DIR (azure-sync.env) cambian solo la carpeta donde se importa.
+        base = os.path.dirname(os.path.abspath(args.config))
+        env_ap = os.path.join(base, "autopilot.env")
+        cfg_ap = leer_env(env_ap) if os.path.exists(env_ap) else {}
+        wd = (cfg_ap.get("WORKITEMS_DIR") or ".workitems/").strip()
+        if not os.path.isabs(wd):
+            wd = os.path.join(base, wd)
         if CFG["board"]:
-            cfg["dir"] = os.path.normpath(CFG["board"])
-        BOARD = wi.Board(cfg)
-    except wi.Error as e:
+            wd = CFG["board"]
+        BOARD = Board(wd)
+    except (OSError, ValueError) as e:
         die(str(e))
     if not args.dry_run and not args.status and not os.path.isdir(BOARD.dir):
         die("No existe el board %s" % BOARD.dir, "Crealo con /autopilot-init")
-    if BOARD.cfg["workspace"]:
-        faltan = [f["repo"] for f in CFG["fuentes"] if f["repo"] not in BOARD.cfg["repos"]]
+    workspace = any(k.startswith("REPO.") for k in cfg_ap)
+    if workspace:
+        repos = {k[5:] for k in cfg_ap if k.startswith("REPO.")}
+        faltan = [f["repo"] for f in CFG["fuentes"] if f["repo"] not in repos]
         if faltan:
             die("SYNC.%s no tiene su REPO.%s en autopilot.env" % (faltan[0], faltan[0]),
                 "Cada repo de azure-sync.env debe estar declarado en autopilot.env")

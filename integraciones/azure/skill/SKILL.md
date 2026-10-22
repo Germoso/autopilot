@@ -29,8 +29,9 @@ Es **aditivo**, igual que el script original `sync_workitems.py`:
 **Nunca** mueve, borra ni sobrescribe una tarea existente. **Nunca** borra ni archiva.
 El script original `/home/user/sync_workitems.py` no se modifica.
 
-Es una integración **externa** al autopilot: solo usa la API pública del board (`workitems.py` del kit
-instalado), igual que `wi.sh add-task`. El autopilot no sabe que existe Azure.
+Es una integración **externa** al autopilot: no depende del kit; escribe directamente los
+archivos `.md` del board (como si los hubieras puesto a mano en `new/`). El autopilot no
+sabe que existe Azure.
 
 ## Arranque
 
@@ -103,7 +104,8 @@ Cada work item importado trae sus adjuntos a `<board>/adjuntos/<clave>/`:
   Sin ffmpeg se guarda el video y queda la nota; después: `azure-sync.py --config ... --fotogramas`.
 - Límite de 50 MB por archivo. Un adjunto que falla no frena la importación: queda anotado.
 
-El autopilot le pasa las imágenes y fotogramas al coder, al QA y al agente E2E (`tarea.adjuntos`).
+El autopilot le pasa las imágenes y fotogramas al coder, y quedan citadas en la tarea para
+que tú las veas al revisar (`## Adjuntos` / `📷 …`).
 
 ## Criterio de filtro
 

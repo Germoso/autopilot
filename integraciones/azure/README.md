@@ -1,8 +1,8 @@
 # Integración: Azure DevOps → board del autopilot
 
 El autopilot **no depende de Azure**: trabaja lo que hay en su board. Esta carpeta es una integración
-**opcional y externa** que trae Work Items de Azure DevOps al board, usando la misma API que usarías
-a mano (`workitems.py` del kit: crear tareas en `new/` y guardar sus adjuntos). Sirve también de
+**opcional y externa** que trae Work Items de Azure DevOps al board escribiendo directamente los `.md`
+(crea tareas en `new/` y guarda sus adjuntos), sin depender del kit. Sirve también de
 ejemplo para escribir una integración con otro tracker.
 
 | Archivo | Qué es |
@@ -23,9 +23,9 @@ integraciones/azure/instalar.sh --with-mcp <org>   # además registra el MCP de 
 integraciones/azure/instalar.sh --uninstall
 ```
 
-Con `./install.sh --azure` no hace falta el kit: se instala solo `/azure-sync` y una copia de lo mínimo del board
-(`workitems.py` y `almacen.py` en `integraciones/azure/lib/`), sin skills ni agentes del autopilot. Si
-después instalás el kit, volvé a correr `integraciones/azure/instalar.sh` y se usa el del kit.
+Con `./install.sh --azure` no hace falta el kit: `azure-sync.py` es autocontenido (escribe directo los
+`.md` del board), así que se instala solo `/azure-sync`, sin board del kit, ni skills ni agentes del
+autopilot.
 
 Las dos formas instalan además el comando `azure-sync` en `~/.local/bin`, para usarlo desde la terminal.
 

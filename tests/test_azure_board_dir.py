@@ -6,7 +6,6 @@ import sys
 import pytest
 
 RAIZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.path.insert(0, os.path.join(RAIZ, "lib"))
 
 
 @pytest.fixture
@@ -14,7 +13,7 @@ def sync(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("AZURE_DEVOPS_PAT", "x")
-    (tmp_path / "autopilot.env").write_text("REPO_PATH=%s\nBASE_BRANCH=main\n" % tmp_path)
+    (tmp_path / "autopilot.env").write_text("WORKITEMS_DIR=.workitems\nBASE_BRANCH=main\n")
 
     def correr(extra_env="", *flags):
         spec = importlib.util.spec_from_file_location(
@@ -52,7 +51,7 @@ def pasada(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("AZURE_DEVOPS_PAT", "x")
-    (tmp_path / "autopilot.env").write_text("REPO_PATH=%s\nBASE_BRANCH=main\n" % tmp_path)
+    (tmp_path / "autopilot.env").write_text("WORKITEMS_DIR=.workitems\nBASE_BRANCH=main\n")
 
     def correr(ids, extra_env="", con_board=()):
         spec = importlib.util.spec_from_file_location(
@@ -62,7 +61,7 @@ def pasada(tmp_path, monkeypatch):
         conf = tmp_path / "azure-sync.env"
         conf.write_text("AZURE_ORG=o\nAZURE_PROJECT=P\nAZURE_ITERATION=@current\n" + extra_env)
         mod.load_config(str(conf))
-        mod.BOARD = mod.wi.Board(mod.wi.cargar_config(str(tmp_path / "autopilot.env")))
+        mod.BOARD = mod.Board(str(tmp_path / ".workitems"))
         for n in con_board:
             mod.BOARD.crear("task", n, "Medium", "T", "d", "c")
         monkeypatch.setattr(mod, "fetch_new_workitems", lambda f: list(ids))
@@ -96,11 +95,11 @@ def test_ignore_dirs_inexistente_no_corre(sync, capsys):
 
 
 def test_importar_solo_crea_new(tmp_path, monkeypatch):
-    """Importar no crea las carpetas de estado (qa, e2e...): solo new/ (y adjuntos/ si hay)."""
+    """Importar no crea las carpetas de estado (bug-fix, done...): solo new/ (y adjuntos/ si hay)."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("AZURE_DEVOPS_PAT", "x")
-    (tmp_path / "autopilot.env").write_text("REPO_PATH=%s\nBASE_BRANCH=main\n" % tmp_path)
+    (tmp_path / "autopilot.env").write_text("WORKITEMS_DIR=.workitems\nBASE_BRANCH=main\n")
     spec = importlib.util.spec_from_file_location(
         "azure_sync", os.path.join(RAIZ, "integraciones", "azure", "azure-sync.py"))
     mod = importlib.util.module_from_spec(spec)
@@ -108,15 +107,14 @@ def test_importar_solo_crea_new(tmp_path, monkeypatch):
     conf = tmp_path / "azure-sync.env"
     conf.write_text("AZURE_ORG=o\nAZURE_PROJECT=P\nAZURE_ITERATION=@current\nBOARD_DIR=destino\n")
     mod.load_config(str(conf))
-    cfg = mod.wi.cargar_config(str(tmp_path / "autopilot.env"))
-    cfg["dir"] = mod.CFG["board"]
-    os.makedirs(cfg["dir"])
-    mod.BOARD = mod.wi.Board(cfg)
+    destino = mod.CFG["board"]
+    os.makedirs(destino)
+    mod.BOARD = mod.Board(destino)
     monkeypatch.setattr(mod, "fetch_new_workitems", lambda f: [5, 6])
     monkeypatch.setattr(mod, "fetch_detail", lambda p, wid: {
         "fields": {"System.Title": "t%d" % wid, "System.WorkItemType": "Bug"}, "relations": []})
     r = mod.one_pass()
     assert [a["id"] for a in r["added"]] == [5, 6]
-    carpetas = {e.name for e in os.scandir(cfg["dir"]) if e.is_dir() and not e.name.startswith(".")}
+    carpetas = {e.name for e in os.scandir(destino) if e.is_dir() and not e.name.startswith(".")}
     assert carpetas <= {"new", "adjuntos"} and "new" in carpetas
-    assert sorted(os.listdir(os.path.join(cfg["dir"], "new"))) == ["bug-5-t5.md", "bug-6-t6.md"]
+    assert sorted(os.listdir(os.path.join(destino, "new"))) == ["bug-5-t5.md", "bug-6-t6.md"]

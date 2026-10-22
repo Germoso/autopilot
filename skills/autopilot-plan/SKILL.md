@@ -1,14 +1,15 @@
 ---
 name: autopilot-plan
-description: Convierte una idea o un documento (PRD, spec, notas, acta, correo, imagenes) en tareas listas para el autopilot. Primero hace un brainstorming con el usuario, pregunta todo lo que haga falta hasta que no quede nada ambiguo, y recien entonces propone el desglose en tareas (con criterios de aceptacion verificables y dependencias) y, con su aprobacion, las crea en el board como new. Usar cuando el usuario diga /autopilot-plan, "convierte esto en tareas", "arma las tareas de esta idea", "planifica esto para el autopilot", "desglosa este documento" o similar. NO usar en proyectos sin autopilot.env.
+description: Convierte una idea o un documento (PRD, spec, notas, acta, correo, imagenes) en tareas listas para el autopilot. Primero hace un brainstorming con el usuario, pregunta todo lo que haga falta hasta que no quede nada ambiguo, y recien entonces propone el desglose en tareas (con criterios de aceptacion verificables y dependencias) y, con su aprobacion, las crea en el board como .md en new/. Usar cuando el usuario diga /autopilot-plan, "convierte esto en tareas", "arma las tareas de esta idea", "planifica esto para el autopilot", "desglosa este documento" o similar. NO usar en proyectos sin autopilot.env.
 ---
 
 # Autopilot Plan — de una idea o documento a tareas del board
 
-Convierte una idea o un documento en tareas que el autopilot puede ejecutar solo: un coder las programa en
-su rama y un QA (y, con `E2E=true`, un agente E2E) las certifica **criterio por criterio**, sin poder
-preguntarle nada a nadie. Por eso el trabajo de esta skill es **sacar toda la ambigüedad antes** de crear
-una sola tarea.
+Convierte una idea o un documento en tareas que el autopilot puede ejecutar solas:
+un coder las programa en su rama y **tú las revisionas** (moviéndolas de `done` a
+`reviewed` o pidiendo cambios), criterio por criterio. Como **no hay QA**, el trabajo
+de esta skill es **sacar toda la ambigüedad antes** de crear una sola tarea: el
+criterio tiene que ser observable y verificable para que TÚ lo compruebes al revisar.
 
 Tres fases, en orden:
 
@@ -19,20 +20,19 @@ Tres fases, en orden:
 Tú **no programas**. No creas ramas, no tocas los repos y no arrancas el autopilot.
 
 ```sh
-K=~/.local/share/autopilot-kit
-W=$K/wi.sh
-E=<carpeta abierta>/autopilot.env
+BOARD=<carpeta abierta>/.workitems
 ```
 
 ## Cuándo usar
 
-Solo si la carpeta abierta tiene `autopilot.env`. Si no lo tiene, para y dile al usuario que primero prepare
-el proyecto con `/autopilot-init`.
+Solo si la carpeta abierta tiene `autopilot.env`. Si no lo tiene, para y dile al
+usuario que primero prepare el proyecto con `/autopilot-init`.
 
 ## Arranque
 
-Verifica `autopilot.env` (ver *Cuándo usar*) y sigue las tres fases en orden, desde la Fase 1. Si ya
-existe un plan en `<board>/planes/` para esta idea, léelo y retoma donde quedó.
+Verifica `autopilot.env` (ver *Cuándo usar*) y sigue las tres fases en orden,
+desde la Fase 1. Si ya existe un plan en `<board>/planes/` para esta idea, léelo y
+retoma donde quedó.
 
 ## Fase 1 — Entender
 
@@ -46,9 +46,7 @@ existe un plan en `<board>/planes/` para esta idea, léelo y retoma donde quedó
    cuál es la idea.
 2. **El proyecto.** Lee `autopilot.env` (no tiene secretos):
    - si es un repo o un workspace (`REPO.<carpeta>=<rama base>` por repo);
-   - la rama base de cada repo;
-   - si `E2E=true` y qué frontends consume cada backend (`E2E_CLIENTS`).
-
+   - la rama base de cada repo.
    El board está en `WORKITEMS_DIR`, o en `.workitems/` si no está definido.
 3. **El código.** Explora los repos, solo en modo lectura, en su rama base:
    - stack y estructura, módulos relacionados, qué ya existe y qué falta;
@@ -57,7 +55,9 @@ existe un plan en `<board>/planes/` para esta idea, léelo y retoma donde quedó
    En Claude Code puedes delegar la búsqueda en subagentes `Explore`, en paralelo; en pi, con
    la herramienta `subagent` (agente `researcher` o `scout`).
    **No preguntes lo que el código ya responde.** Pregunta lo que el código no puede decidir.
-4. **El board.** Corre `$W "$E" query`: tareas que ya existen, para no duplicarlas y para saber qué ids están usados.
+4. **El board.** Lee las carpetas `new/`, `in-progress/`, `bug-fix/`, `done/`,
+   `reviewed/` y `stopped/`: tareas que ya existen, para no duplicarlas y para saber
+   qué claves están usadas (el `<id>` de una clave no puede repetirse).
 5. **Devuelve lo que entendiste** en 5 a 10 líneas:
    - qué se quiere lograr y para quién;
    - qué hay hoy en el código;
@@ -87,7 +87,7 @@ Origen: <idea / ruta del documento>   ·   Estado: brainstorming | definido | ta
 ## Errores y casos borde
 ## Seguridad y permisos
 ## Repos afectados     y qué cambia en cada uno
-## Cómo se prueba      datos y cuentas de QA necesarios, qué se verifica en web y en Android
+## Cómo se prueba      pasos y datos necesarios para que el humano pueda verificarlo al revisar
 ## Decisiones          P: pregunta → R: respuesta del usuario (con fecha)
 ## Pendientes          lo que todavía no está claro. La fase termina cuando esto queda vacío.
 ```
@@ -105,9 +105,9 @@ Origen: <idea / ruta del documento>   ·   Estado: brainstorming | definido | ta
   - señala contradicciones y huecos (qué pasa si..., quién puede..., qué se muestra cuando no hay datos...);
   - propone simplificaciones y recortes (un MVP primero);
   - avisa de riesgos: migraciones de datos, compatibilidad y rendimiento.
-- **Piensa en la verificación desde ya.** Si algo no se va a poder probar en QA (falta un dato, una cuenta, un
-  servicio externo), pregúntalo ahora: el QA dejaría la tarea en `stopped`.
-- Mueve cada respuesta a su sección y a *Decisiones*, y actualiza *Pendientes*.
+- **Piensa en la verificación desde ya.** Si algo no se va a poder probar al revisar (falta un dato, una
+  cuenta, un servicio externo), pregúntalo ahora: el humano dejaría la tarea en `stopped` o el coder no
+  podría terminar.
 
 **La fase termina solo cuando:**
 
@@ -123,7 +123,7 @@ definir y anótalo en el plan. No crees tareas con puntos abiertos que afecten a
 
 ### Qué es una buena tarea para el autopilot
 
-- **Una tarea = una rama = un coder, en una sesión.** Que se pueda programar, probar y certificar sola.
+- **Una tarea = una rama = un coder, en una sesión.** Que se pueda programar, probar y revisar sola.
   - Pequeña: pocos archivos por repo.
   - Si el criterio pasa de unos 6 a 8 puntos o mezcla cosas distintas, divídela.
   - Si es trivial, júntala con otra.
@@ -131,17 +131,17 @@ definir y anótalo en el plan. No crees tareas con puntos abiertos que afecten a
   "hacer el endpoint", "hacer la pantalla".
   - En un **workspace**, una tarea puede tocar varios repos: el coder abre la misma rama en cada uno, y
     backend + front de una misma función pueden ir juntos si son pequeños.
-  - El repo principal va en `repo`; los otros se mencionan en la descripción.
+  - El repo principal se anota en la tarea (`repo:`); los otros se mencionan en la descripción.
 - **Pocas dependencias.** Una rama nace de la rama base, que solo tiene lo que el humano ya mergeó. Por eso
-  una tarea con `--depende` **no se empieza hasta que sus dependencias estén en `reviewed`**, es decir,
+  una tarea con `depende:` **no se empieza hasta que sus dependencias estén en `reviewed`**, es decir,
   revisadas y mergeadas.
   - Cada dependencia pone un paso humano en medio: úsalas solo cuando de verdad hacen falta (por ejemplo, una
     migración o un contrato que otras usan).
   - Prefiere tareas independientes, que corren en paralelo.
 - **Tareas paralelas que no pisen los mismos archivos.** Si dos tareas tienen que tocar lo mismo, es mejor que
   una dependa de la otra o que sean una sola.
-- **Autocontenida.** El coder y el QA **no ven esta conversación**: todo lo decidido que afecta a la tarea
-  tiene que estar escrito en ella.
+- **Autocontenida.** El coder **no ve esta conversación**: todo lo decidido que afecta a la tarea tiene que
+  estar escrito en ella.
 
 ### Campos de cada tarea
 
@@ -152,8 +152,8 @@ definir y anótalo en el plan. No crees tareas con puntos abiertos que afecten a
 | `prioridad` | `Critical`, `High`, `Medium` o `Low`. Lo que desbloquea a otras va más alto. |
 | `repo` | Obligatorio en un workspace: la carpeta del repo principal. |
 | título | Qué se consigue, en una línea: "Checkout con tarjeta guardada". |
-| `--depende` | Claves de las que depende, separadas por comas (solo si hace falta). |
-| `--origen` | `plan:<slug>`, para rastrear de qué plan salió. |
+| `depende:` | Claves de las que depende, separadas por comas (solo si hace falta). |
+| `origen:` | `plan:<slug>`, para rastrear de qué plan salió. |
 
 **Descripción** (Markdown), con este esquema:
 
@@ -171,19 +171,17 @@ definir y anótalo en el plan. No crees tareas con puntos abiertos que afecten a
 
 **Depende de:** <clave> — qué necesita de ella. (Si no aplica, omitir.)
 
-**Para probar:** datos o cuentas de QA necesarios, cómo llegar a la pantalla o el endpoint.
+**Para probar:** pasos, datos o cuentas de prueba necesarios para verlo funcionando al revisar.
 ```
 
 **Criterio de aceptación**: una lista numerada. Cada punto tiene que ser **observable y verificable por sí
-solo**, porque el QA lo prueba y lo certifica uno por uno:
+solo**, porque el humano lo comprueba uno por uno al revisar:
 
 - Formato *dado / cuando / entonces*, o una afirmación concreta: "Con el carrito vacío, el botón Pagar está
   deshabilitado y se muestra *Tu carrito está vacío*".
 - Incluye los casos de error y borde decididos, no solo el camino feliz.
 - Nada vago: no "funciona bien", no "es rápido", no "buena UX". Si importa, cuantifícalo.
 - Si el repo tiene tests, añade un punto: "tests automatizados que cubran X".
-- Con `E2E=true`, redacta los puntos de interfaz como el flujo que ve el usuario (el agente E2E los recorre
-  con capturas en web y Android).
 
 ### Revisión con el usuario
 
@@ -198,43 +196,52 @@ solo**, porque el QA lo prueba y lo certifica uno por uno:
 
 ### Crear las tareas
 
-1. Escribe la descripción y el criterio de cada tarea en archivos:
-   - `<board>/planes/<slug>/<id>.descripcion.md`
-   - `<board>/planes/<slug>/<id>.criterio.md`
+1. Escribe cada tarea como un archivo `.md` en `<board>/new/`:
 
-   Así el Markdown largo no pelea con las comillas del shell.
-2. Créalas **en orden de dependencias**: primero las que no dependen de nada, porque `--depende` exige que la
-   otra ya exista.
-
-   ```sh
-   $W "$E" add-task task pagos_modelo High "Modelo de pagos y migración" \
-     @<board>/planes/pagos/pagos_modelo.descripcion.md @<board>/planes/pagos/pagos_modelo.criterio.md \
-     [repo] --origen plan:pagos
-   $W "$E" add-task task pagos_checkout_web Medium "Checkout con tarjeta guardada" \
-     @.../pagos_checkout_web.descripcion.md @.../pagos_checkout_web.criterio.md \
-     [repo] --depende task-pagos_modelo --origen plan:pagos
+   ```
+   <board>/new/task-pagos_modelo-pagos.modelo.md
    ```
 
-3. Si el documento traía imágenes o mockups que ayudan a una tarea, adjúntalos:
-   `$W "$E" adjuntar <clave> <archivo>...`.
-4. Si una creación falla (id repetido, repo inválido, dependencia inexistente), corrige **esa** tarea y
-   reintenta. No borres ni recrees las que ya salieron bien.
+   Nombre de archivo = `<tipo>-<id>-<slug>.md`. El `<id>` es la clave (solo de
+   `[a-z0-9_]`); `<tipo>-<id>` es el nombre de la rama. Contenido:
+
+   ```markdown
+   <!-- autopilot: tipo=task id=pagos_modelo prioridad=High repo=Konectame_BackOffice origen=plan:pagos
+   depende= -->
+   # Modelo de pagos y migración
+
+   ## Descripción
+   ... (esquema de arriba: contexto, qué hay que hacer, decisiones, dónde, fuera de alcance, para probar)
+
+   ## Criterio de aceptación
+   1. ...
+   2. ...
+   ```
+
+2. Créalas **en orden de dependencias**: primero las que no dependen de nada; las que
+   dependen de otras llevan la clave en `depende=` (no se toman hasta que la dependencia
+   esté en `reviewed`).
+3. Si el documento traía imágenes o mockups que ayudan a una tarea, cópialos a
+   `<board>/adjuntos/<clave>/` y cítalos en la descripción con su ruta.
+4. Si un archivo ya existe con la misma clave, corrige **esa** tarea y reintenta. No borres
+   ni recrees las que ya salieron bien.
 5. Cambia el estado del plan a `tareas creadas` y anota las claves.
 6. **Reporta:**
    - las claves creadas y el orden en que el autopilot las va a tomar;
-   - qué tareas esperan a que mergees otras (quedan en `new` con "depende de", y el coder no las toma hasta
-     que sus dependencias estén en `reviewed`);
+   - qué tareas esperan a que mergees otras (quedan en `new` con "depende de", y el coder no
+     las toma hasta que sus dependencias estén en `reviewed`);
    - la ruta del plan.
 
    Ofrece `/autopilot` para empezar. No lo arranques si el usuario no lo pide.
 
-Para cambiar dependencias después: `$W "$E" depende <clave> <clave>[,<clave>...]` (con `-` se quitan).
+Para cambiar dependencias después: edita la línea `depende=` del `.md` de la tarea (o
+dile al orquestador que actualice esa línea, que se encarga de moverla).
 
 ## Lo que NUNCA debes hacer
 
 - Crear tareas antes de que el usuario confirme la definición **y** el desglose.
 - Inventar requisitos, textos, reglas o datos que el usuario no decidió.
 - Programar, crear ramas, hacer commits o modificar los repos.
-- Poner secretos (contraseñas, tokens, valores de `.env`) en las tareas o en el plan. Las cuentas de QA se
-  nombran por rol; el humano las define en `cuentas-e2e.env`.
-- Crear tareas con puntos del criterio que el QA no pueda verificar.
+- Poner secretos (contraseñas, tokens, valores de `.env`) en las tareas o en el plan. Las cuentas de prueba se
+  nombran por rol; los valores los pone el humano en su entorno cuando pruebe.
+- Crear tareas con puntos del criterio que no se puedan verificar al revisar.

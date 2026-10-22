@@ -13,9 +13,9 @@
 #    - (--with-mcp <org>) el MCP azure-devops en cada cliente
 #
 #  Requiere el kit del autopilot ya instalado (install.sh en la raiz del repo),
-#  salvo con --sin-kit (lo usa ./install.sh --azure): instala solo Azure, con su
-#  propia copia de lo minimo del board (workitems.py y almacen.py en
-#  integraciones/azure/lib/), sin skills ni agentes del autopilot.
+#  salvo con --sin-kit (lo usa ./install.sh --azure): azure-sync.py es autocontenido
+#  (escribe directo los .md del board), asi que --sin-kit instala solo Azure sin exigir
+#  el kit, ni skills ni agentes del autopilot.
 #
 #  Instala tambien el comando azure-sync en ~/.local/bin para llamarlo desde la
 #  terminal (lee ./azure-sync.env si no le pasas --config).
@@ -129,7 +129,7 @@ fi
 # ------------------------------------------------------------------
 # Install
 # ------------------------------------------------------------------
-if [[ "$SIN_KIT" == 0 && ! -f "$KIT/workitems.py" ]]; then
+if [[ "$SIN_KIT" == 0 && ! -f "$KIT/aenv.sh" ]]; then
   err "primero instala el kit del autopilot (install.sh en la raiz del repo), o instala solo Azure con ./install.sh --azure"
   exit 1
 fi
@@ -138,13 +138,7 @@ fi
 mkdir -p "$DEST"
 cp "$AQUI/azure-sync.py" "$AQUI/ado-mcp.sh" "$AQUI/instalar.sh" "$AQUI/azure-sync.env.example" "$DEST/" && chmod +x "$DEST"/*.py "$DEST"/*.sh
 say "scripts en $DEST"
-if [[ "$SIN_KIT" == 1 ]]; then  # lo minimo del board para que azure-sync.py funcione sin el kit
-  mkdir -p "$DEST/lib" && cp "$AQUI/../../lib/workitems.py" "$AQUI/../../lib/almacen.py" "$DEST/lib/" \
-    || { err "no encuentro lib/workitems.py del repo: corre --sin-kit desde el repo del kit"; exit 1; }
-  say "board minimo en $DEST/lib (sin el kit del autopilot)"
-else
-  rm -rf "$DEST/lib"  # con el kit instalado se usa el suyo
-fi
+
 
 # Comando global: azure-sync [--dry-run|--status|...] desde cualquier carpeta
 if [[ -e "$BIN" ]] && ! grep -qF "$MARCA_CMD" "$BIN"; then
