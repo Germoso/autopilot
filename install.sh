@@ -275,6 +275,14 @@ if [[ ! -d "$PROY/.git" && ! -f "$PROY/../../.git" ]]; then
   warn "no veo un repo git en $PROY: igual lo dejo, pero el autopilot necesita repos (autopilot.env + board)."
 fi
 
+# El board SIEMPRE respeta la ruta del autopilot.env (WORKITEMS_DIR); si no esta,
+# por defecto .workitems/. Ningun comando del kit usa .workitems/ a secas.
+BD_VAL="$(sed -n 's/^[[:space:]]*WORKITEMS_DIR=[[:space:]]*//p' "$PROY/autopilot.env" 2>/dev/null | tail -1)"
+BD_VAL="${BD_VAL%\"}"; BD_VAL="${BD_VAL#\"}"; BD_VAL="${BD_VAL%\'}"; BD_VAL="${BD_VAL#\'}"
+[[ -z "$BD_VAL" ]] && BD_VAL=".workitems"
+BOARD_DIR="${BD_VAL%/}"; BOARD_DIR="${BOARD_DIR#./}"
+if [[ "$BOARD_DIR" == /* ]]; then BOARD_PATH="$BOARD_DIR"; else BOARD_PATH="$PROY/$BOARD_DIR"; fi
+
 # 0) Limpiar restos de versiones VIEJAS del kit dentro del proyecto (si existen).
 #    La v1 del kit dejaba en el proyecto: pi-guard*.mjs (protegian subagentes),
 #    comandos de pi, scripts wi.sh/watcher y carpetas de estado del board ya
@@ -285,23 +293,24 @@ done
 rm -f "$PROY"/.pi/commands/autopilot.md "$PROY"/.pi/commands/autopilot-init.md "$PROY"/.pi/commands/autopilot-plan.md "$PROY"/.pi/commands/azure-sync.md 2>/dev/null
 rm -f "$PROY/wi.sh" "$PROY/watcher" 2>/dev/null
 
-# Carpetas de estado VIEJAS del board (v1: in-progress/bug-fix/reviewed/qa, dentro de
-# .workitems/ o en la raiz). Si tienen tareas se avisa (migralas a new/working/done/
-# stopped); si estan vacias se eliminan. La purga deja .workitems/ recreado por el init.
+# Carpetas de estado VIEJAS del board (v1: in-progress/bug-fix/reviewed/qa/e2e/ignored,
+# dentro del board real o en la raiz). Si tienen tareas se avisa (migralas a
+# new/working/done/stopped); si estan vacias se eliminan. La purga deja $BOARD_DIR
+# con las 4 carpetas del init. Nunca se mueven/borran tareas: solo aviso.
 limpiar_carpeta() {  # $1 = ruta completa
   local p="$1"
   [[ -d "$p" ]] || return 0
   if ls -A "$p" 2>/dev/null | grep -q .; then
-    warn "board viejo: $p/ tiene tareas -> movelas a .workitems/new..stopped"
+    warn "board viejo: $p/ tiene tareas -> movelas a $BOARD_DIR/new .. stopped"
   else
     rmdir "$p" 2>/dev/null && say "board viejo: $p eliminada (vacia)"
   fi
 }
-for p in in-progress bug-fix reviewed qa; do
-  limpiar_carpeta "$PROY/.workitems/$p"
+for p in in-progress bug-fix reviewed qa e2e ignored; do
+  limpiar_carpeta "$BOARD_PATH/$p"
   limpiar_carpeta "$PROY/$p"
 done
-rmdir "$PROY/.workitems" 2>/dev/null   # si quedo vacia tras purgar las carpetas viejas
+rmdir "$BOARD_PATH" 2>/dev/null   # si quedo vacia tras purgar las carpetas viejas
 
 # 1) Validadores de "nunca contra produccion" (aenv.sh + entorno.py), locales al proyecto
 mkdir -p "$KIT"
@@ -392,7 +401,7 @@ fi
 
 echo
 echo "==> Listo. Kit LOCAL instalado en $PROY (clientes: ${CLIENTES[*]})."
-echo "  Tablero:  el board en .workitems/ (carpetas + .md) — los estados y las notas son archivos."
+echo "  Tablero:  el board en $BOARD_DIR/ (según WORKITEMS_DIR de autopilot.env; carpetas + .md) — los estados y las notas son archivos."
 echo "  Ejecuta:  Orca (orca orchestration + orca worktree) lanza y vigila a los coders."
 echo "  Preparar el proyecto al usarlo: /autopilot-init crea autopilot.env + board."
 echo "  Desinstalar esta carpeta:  ./install.sh --uninstall --local $PROY"

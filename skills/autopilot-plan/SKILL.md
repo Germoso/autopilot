@@ -20,7 +20,9 @@ Tres fases, en orden:
 Tú **no programas**. No creas ramas, no tocas los repos y no arrancas el autopilot.
 
 ```sh
-BOARD=<carpeta abierta>/.workitems
+# El board SIEMPRE es la ruta de autopilot.env: WORKITEMS_DIR (por defecto .workitems/).
+# Si tu autopilot.env dice WORKITEMS_DIR=.board, BOARD=.board (nunca .workitems a secas).
+BOARD=<carpeta abierta>/$(WORKITEMS_DIR de su autopilot.env, o .workitems si no esta definido)
 ```
 
 ## Cuándo usar

@@ -48,20 +48,21 @@ cosas: `autopilot.env` y el board `.workitems/`.
    Si ya existía, conserva el resto de variables que puso el usuario (no
    sobrescribas nada). La rama base no se escribe aquí: la usa Orca.
 
-4. **Crear el board.** Crea `.workitems/` (o `$WORKITEMS_DIR`) con las 4 carpetas
-de estado y las de apoyo, si no existen:
+4. **Crear el board.** El board es `$BOARD` = `$WORKITEMS_DIR` (por defecto `.workitems/`).
+Crea `$BOARD/` con las 4 carpetas de estado y las de apoyo, si no existen:
 
    ```
-   .workitems/new/  .workitems/working/  .workitems/done/  .workitems/stopped/
-   .workitems/adjuntos/  .workitems/planes/  .workitems/.autopilot/resultados/
+   $BOARD/new/  $BOARD/working/  $BOARD/done/  $BOARD/stopped/
+   $BOARD/adjuntos/  $BOARD/planes/  $BOARD/.autopilot/resultados/
    ```
 
    (Solo estas: los estados son 4. Las devueltas por el humano vuelven a `new/` con
    `## Feedback del humano`; lo que no se pudo va a `stopped/` con `## Motivo de
    stopped`, requiriendo tu intervención.)
 
-5. **Ignorarlo de git.** Asegúrate de que `.workitems/` esté en el `.gitignore` del
-   repo (o, en un workspace, en el de cada repo). Si no está, agrégalo (solo eso).
+5. **Ignorarlo de git.** Asegúrate de que `$BOARD/` (la ruta real, p. ej. `.workitems/`
+o `.board/`) esté en el `.gitignore` del repo (o, en un workspace, en el de cada repo).
+Si no está, agrégalo (solo eso).
 
 6. **Reportar** en pocas líneas: qué se creó y los avisos. Avisa si un repo que hiere:  no tiene `.env.autopilot` (lo crea el humano
    copiando `.env` y apuntando BD/URLs a QA/local) — sin él no se ejecuta nada contra
@@ -70,7 +71,8 @@ de estado y las de apoyo, si no existen:
    decíselo.
 
 7. **Siguiente paso**, en una línea: cargar tareas (escribir `.md` en
-   `.workitems/new/`, a mano o con `/autopilot-plan`; también las puede traer una
+   `$BOARD/new/` —`WORKITEMS_DIR`, por defecto `.workitems/`— a mano o con
+   `/autopilot-plan`; también las puede traer una
    integración externa como Azure DevOps) y `/autopilot` para trabajar.
 
 ## Qué NO hace

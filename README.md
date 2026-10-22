@@ -106,12 +106,14 @@ hasta que no quede nada ambiguo; después propone las tareas (con criterios de a
 `new/`. El plan queda en `.workitems/planes/`. Si una tarea depende de otra, el autopilot
 no la empieza hasta que la otra esté en `done` (aprobada por ti).
 
-Las tareas también entran al tablero poniendo un `.md` en `.workitems/new/`
-(`task-<id>-<slug>.md` o `bug-<id>-<slug>.md`). Cómo llegan es cosa tuya: si vienen de un
+Las tareas también entran al tablero poniendo un `.md` en `$BOARD/new/`
+(`$BOARD` = `WORKITEMS_DIR` de tu `autopilot.env`, por defecto `.workitems/`;
+`task-<id>-<slug>.md` o `bug-<id>-<slug>.md`). Cómo llegan es cosa tuya: si vienen de un
 tracker, una integración las carga por esos mismos caminos (hay una de ejemplo para Azure
 DevOps en [integraciones/azure](integraciones/azure/README.md)).
 
-Mientras `/autopilot` corre, mira la carpeta **`.workitems/`** de tu proyecto. Cada tarea se
+Mientras `/autopilot` corre, mira la carpeta **`$BOARD/`** de tu proyecto (la que dice
+`WORKITEMS_DIR`; p. ej. `.board/`, no `.workitems/` si tu env lo indica). Cada tarea se
 ve como un `.md` y **la carpeta donde está te dice cómo va**:
 
 | Carpeta | Qué significa | ¿Tienes que hacer algo? |
@@ -145,7 +147,8 @@ y, cuando puedas, las vuelves a `new/`.)
   recomienda hacer. Cuando lo resuelvas, devuélvela a la cola moviéndola a `new/`
   (o decíselo al orquestador en el chat: la mueve él).
 
-- **Crear una tarea a mano:** pon un `.md` en `.workitems/new/` llamado
+- **Crear una tarea a mano:** pon un `.md` en `$BOARD/new/` (`$BOARD` = `WORKITEMS_DIR`,
+  por defecto `.workitems/`) llamado
   `bug-<id>-<título>.md` o `task-<id>-<título>.md`. El `<id>` lo eliges tú: un número
   (`140123`) o un texto (`login_social`: minúsculas, dígitos y `_`, sin `-`). Es también
   el nombre de la rama.

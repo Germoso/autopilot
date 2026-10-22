@@ -70,8 +70,13 @@ duda entre este texto y la skill de orca, manda la skill de orca.
 
 ## El board
 
+`$BOARD` es la carpeta del board que define el **`autopilot.env`** de este proyecto: el
+valor de **`WORKITEMS_DIR`** (por defecto `.workitems/`). **Todos los comandos de esta
+skill usan `$BOARD` literal según tu `autopilot.env`** — por ejemplo si tu board vive en
+`.board/`, los `<old>`/`<new>` de abajo son `.board/…`, nunca `.workitems/` a secas.
+
 ```
-.workitems/                         # WORKITEMS_DIR; NO esta en git
+$BOARD/                              # WORKITEMS_DIR (default .workitems); NO esta en git
 ├── new/          bug-140123-login-falla-con-google.md   # tarea = archivo .md en la carpeta de su estado
 ├── working/      task-pagos_modelo.md
 ├── stopped/      task-pagos_modelo.md                  # no se pudo / necesita intervención tuya
@@ -98,7 +103,8 @@ minúsculas, dígitos y `_`, sin `-`).
 - **Cómo llegan las tareas es externo al autopilot**: se crea un `.md` en `new/`
 (a mano, con `/autopilot-plan`, o desde una integración como Azure DevOps).
 El autopilot solo trabaja lo que hay en el board.
-- El board **no va en git** (`.workitems/` está en `.gitignore`): si estuviera
+- El board **no va en git** (`$BOARD/` está en el `.gitignore`, según `WORKITEMS_DIR`:
+`.workitems/` por defecto, `.board/` si tu `autopilot.env` lo dice): si estuviera
 versionado, al cambiar de rama cambiaría el tablero.
 
 Una tarea se ve así (las secciones las van añadiendo el coder y el humano):
@@ -284,7 +290,7 @@ El orquestador trata el board como **archivos `.md`**:
 
 | Acción                 | Comando                                                                   |
 | ---------------------- | ------------------------------------------------------------------------- |
-| Mover estado           | `mv .workitems/<old>/<clave>-*.md .workitems/<new>/`                      |
+| Mover estado           | `mv $BOARD/<old>/<clave>-*.md $BOARD/<new>/`                        |
 | Añadir notas del coder | sección `## Notas del desarrollador` al `.md`                             |
 | Feedback del humano    | sección `## Feedback del humano` al `.md` (y mover a `new/`)               |
 | Resultado de la tarea  | sección `## Repos modificados` / `## Resultado`                           |
@@ -297,7 +303,7 @@ editarlos). El nombre del archivo no cambia al moverlo: solo cambia de carpeta.
 ## Encargo del coder (la especificación que le pasas)
 
 Clave y título; la **ruta del board** y la **clave** para leer la tarea
-(`cat .workitems/<estado>/<clave>-<slug>.md`: descripción, criterio y feedback
+(`cat $BOARD/<estado>/<clave>-<slug>.md`: descripción, criterio y feedback
 completos — **no resumidos**); la **ruta de su worktree** (la de `orca worktree create`: ahí trabaja, nunca en la copia principal), el repo, la rama y `<BASE>`;
 si es un **workspace** y la tarea puede tocar otro repo, la lista de repos
 disponibles (y que abra la misma rama ahí con `orca worktree create --name <clave> --repo <carpeta>`); dónde está `$K` (`«K_DIR»`)

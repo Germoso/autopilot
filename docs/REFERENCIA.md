@@ -55,7 +55,7 @@ Toda la ejecución (worktrees, procesos, agentes) la maneja **Orca**; todo el es
 ## El board
 
 ```
-.workitems/                         # definido por WORKITEMS_DIR; NO está en git
+$BOARD/                             # BOARD = WORKITEMS_DIR (default .workitems/); NO está en git
 ├── new/          bug-140123-login-falla-con-google.md
 ├── working/      task-pagos_modelo.md
 ├── done/         task-favoritar-tarjeta.md
@@ -185,8 +185,9 @@ funciona donde se instaló.
 Salvo *workspace*, en la **carpeta del proyecto** (la que abre el cliente):
 
 1. **`/autopilot-init`** detecta repo o workspace y crea `autopilot.env` y el board
-   `.workitems/`. La rama base NO se pide: la define Orca (cada worktree nace de la
-   base por defecto del repo).
+   `$BOARD/` (`WORKITEMS_DIR`, por defecto `.workitems/`; si tu `autopilot.env` dice
+   `WORKITEMS_DIR=.board`, el board es `.board/`). La rama base NO se pide: la define Orca
+   (cada worktree nace de la base por defecto del repo).
 2. **`.env.autopilot`** en cada repo que use BD/API: copia de `.env` con todo apuntando
    a **local o QA** (base con "qa" en el nombre). Sin él, ese repo no ejecuta nada.
 3. **Orca**: `orca repo add --path <ruta>` por repo (o de la carpeta de un workspace) y
@@ -197,8 +198,8 @@ Salvo *workspace*, en la **carpeta del proyecto** (la que abre el cliente):
 - La carpeta abierta es la del proyecto; bajo ella hay repos (subcarpetas con `.git/`).
 - `autopilot.env` se crea en la carpeta del proyecto; los repos se registran en Orca
   (`orca repo add`) y cada worktree nace de la rama base por defecto de su repo.
-- El board `.workitems/` vive en la carpeta del proyecto (una sola lista de tareas para
-  todo el workspace).
+- El board `$BOARD/` (la carpeta `WORKITEMS_DIR`) vive en la carpeta del proyecto (una
+  sola lista de tareas para todo el workspace).
 
 ### Una tarea en varios repos
 
