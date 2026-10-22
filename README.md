@@ -68,8 +68,8 @@ memorizar la ruta de `install.sh`.
 ```
 
 Detecta si es un repo o una carpeta con **varios repos** (`konectame/` con apps, backends
-y BackOffice), te pregunta de qué rama salen las ramas de las tareas y crea `autopilot.env`
-y el board `.workitems/`.
+y BackOffice) y crea `autopilot.env` y el board `.workitems/`. La rama base no se
+pregunta: la define Orca (cada worktree nace de la base por defecto del repo).
 
 **3. Darle un ambiente seguro** a cada repo que use base de datos o APIs (a mano, una vez):
 
@@ -206,10 +206,13 @@ Todo está en **`autopilot.env`**, en la carpeta de tu proyecto. Lo más común:
 
 | Quiero… | Cambia |
 |---|---|
-| Cambiar la rama de la que salen las tareas | `REPO.<repo>=<rama>` (o `BASE_BRANCH=` si es un solo repo) |
 | Más de un coder a la vez | `PARALLEL=true`, y `MAX_CODERS` |
 | Que el kit mergee al aprobar yo | `AUTO_MERGE=true` |
 | Que un comando pueda tardar más | `COMMAND_TIMEOUT=900` (segundos) |
+
+> La rama de la que salen las tareas **no se configura en `autopilot.env`**: la define
+> Orca (la base por defecto de cada repo, registrado con `orca repo add`). Si la
+> cambias, se ajusta en Orca, no acá.
 
 Con 8 GB de RAM y Flutter, lo razonable es **1 coder** (`PARALLEL=false`, el valor por
 defecto). Todas las variables: [docs/REFERENCIA.md](docs/REFERENCIA.md#autopilotenv).
@@ -234,7 +237,7 @@ Para evitar esperas, planificá tareas independientes que no toquen los mismos a
 | Veo… | Qué hago |
 |---|---|
 | `stopped` con *POSIBLE PRODUCCIÓN* o *falta .env.autopilot* | Revisa el `.env.autopilot` de ese repo (la base debe decir "qa") y devuelve la tarea a `new/` |
-| `stopped` con *no existe la rama base* | Corrige `REPO.<repo>=` en `autopilot.env` |
+| `stopped` con *no existe la rama base* | Revisa/registra el repo en **Orca** (`orca repo`) — la base por defecto la define él, no `autopilot.env` |
 | `stopped` con *falta herramienta* | Instala lo que dice (p. ej. `fvm`, `flutter`, `node`) y devuelve la tarea |
 | Nada avanza | ¿Está corriendo `/autopilot` y **Orca** (`orca status`)? Si cerraste el cliente, lánzalo otra vez |
 | El coder no arranca | ¿Hay agente en `orca account list`? ¿El repo está en `orca repo list`? |

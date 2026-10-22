@@ -45,8 +45,8 @@ retoma donde quedó.
    Léelo **completo**. Si algo no se puede leer, dilo y pide otra forma de pasarlo. Si no hay entrada, pregunta
    cuál es la idea.
 2. **El proyecto.** Lee `autopilot.env` (no tiene secretos):
-   - si es un repo o un workspace (`REPO.<carpeta>=<rama base>` por repo);
-   - la rama base de cada repo.
+   - si es un repo o un workspace (los repos se registran en **Orca**;
+     la rama base de cada uno la define él, no `autopilot.env`);
    El board está en `WORKITEMS_DIR`, o en `.workitems/` si no está definido.
 3. **El código.** Explora los repos, solo en modo lectura, en su rama base:
    - stack y estructura, módulos relacionados, qué ya existe y qué falta;

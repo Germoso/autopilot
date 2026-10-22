@@ -37,16 +37,23 @@ NADA SE QUEDA COLGADO NI CORRIENDO:
 REGLAS INVIOLABLES:
 0. PRIMERO lee la tarea: `cat <ruta del .md de tu tarea>` (te la pasa el orquestador: <board>/<estado>/<clave>-<slug>.md). Trae la descripcion y el criterio de aceptacion COMPLETOS (en los bugs: pasos para reproducir + resultado actual + resultado esperado), los adjuntos con su ruta (abre las imagenes y fotogramas) y el ultimo Feedback del humano (seccion `## Feedback del humano`) si la tarea ya fue devuelta por cambios. Es la fuente de verdad: si el encargo resume algo distinto, lee el .md. El RESULTADO ESPERADO es lo que hay que cumplir.
 1. Trabaja SOLO la tarea recibida. Nada más.
-2. Trabajas en TU COPIA DE TRABAJO (worktree) de Orca del repo principal, cuyo camino te indica el orquestador (el que devolvio `orca worktree create`): haz `cd <esa ruta>` antes de todo. Ahi ya estas en la rama de la tarea (task-<id> o bug-<id>), creada desde la rama base de ese repo. NUNCA trabajes en la copia principal del repo (es la del humano) ni cambies de rama. No crees otras ramas, no hagas rebase ni borres ramas.
+2. Trabajas en TU COPIA DE TRABAJO (worktree) de Orca del repo principal, cuyo camino te indica el orquestador (el que devolvio `orca worktree create`): haz `cd <esa ruta>` antes de todo. Ahi ya estas en la rama de la tarea (task-<id> o bug-<id>), creada desde la rama
+base por defecto que Orca define para ese repo. NUNCA trabajes en la copia
+principal del repo (es la del humano) ni cambies de rama. No crees otras ramas, no
+hagas rebase ni borres ramas.
    OTRO REPO DEL WORKSPACE: si la correccion (o parte de ella) esta en otro repo del workspace, NO TE DETENGAS: hazlo tu. Abre la MISMA rama en ese repo con
-   `orca worktree create --name <clave> --repo <carpeta del repo> --base-branch <rama base de ese repo> --activate`
-   (el orquestador te pasa la lista de repos disponibles; si `orca` no esta disponible para ti o el comando da error, dimelo en tu resultado final para que el orquestador la abra). `cd` a la ruta que devuelve, corrige y commitea ahi. Solo repos de esa lista; si el que necesitas no esta, termina con RESULTADO: STOPPED explicando que repo y por que.
+   `orca worktree create --name <clave> --repo <carpeta del repo> --activate`
+   (el orquestador te pasa la lista de repos disponibles; la rama sale de la base
+   por defecto que Orca define para ese repo; si `orca` no esta disponible para ti o
+   el comando da error, dimelo en tu resultado final para que el orquestador la
+   abra). `cd` a la ruta que devuelve, corrige y commitea ahi. Solo repos de esa lista; si el que necesitas no esta, termina con RESULTADO: STOPPED explicando que repo y por que.
 3. NUNCA hagas git push.
 4. NUNCA hagas git merge. El merge lo hace el humano (o el autopilot con AUTO_MERGE, solo local).
 5. Lee los archivos existentes ANTES de modificarlos.
 6. Commitea tu trabajo en la rama actual antes de terminar. Mensajes de commit en espanol, claros, con la clave de la tarea (p. ej. `bug-37282: ...`) y SIN datos de autor ni de herramienta: nada de `Co-Authored-By`, `Claude-Session` ni 'Generated with Claude Code'.
 7. No incluyas en tus commits archivos ni cambios ajenos a la tarea. Toca otro repo solo si la tarea lo requiere de verdad, no por mejoras oportunistas.
-8. Si la tarea depende de algo que NO está en la rama base, NO la hagas: repórtalo como bloqueada.
+8. Si la tarea depende de algo que NO está en la rama base (la base por defecto que
+   Orca define para ese repo), NO la hagas: repórtalo como bloqueada.
 9. Si te falta información para completarla, NO adivines. Repórtalo como bloqueada.
 10. Nunca inventes que hiciste algo que no hiciste.
 11. No toques el board (.workitems/) salvo para leer tu tarea y escribir tu resultado en la ruta de salida que te da el orquestador: `<board>/.autopilot/resultados/<clave>.md`. Los estados los mueve el orquestador.

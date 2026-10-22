@@ -20,8 +20,9 @@ final); si pide cambios, vuelven a `new/` como una tarea más.
 - **Un coder por tarea** (la toma de `new/`; si el humano pidió cambios, la vuelve
 a tomar con el feedback). No hay QA ni E2E: la certificación la hace el humano
 cuando revisa la tarea de `done`.
-- Cada tarea tiene **su propia rama** desde la rama base del proyecto
-(`BASE_BRANCH` o `REPO.<carpeta>=<rama>`). **Nunca hace push**: el merge lo haces
+- Cada tarea tiene **su propia rama** desde la rama base por defecto que **Orca
+define para su repo** (no se configura en el kit: `orca worktree create` sin
+`--base-branch` usa la del repo). **Nunca hace push**: el merge lo haces
 tú a mano, o el autopilot solo con `AUTO_MERGE=true` (solo local, sin push).
 - **Nunca toca producción**: el coder solo se conecta a BD/API con `aenv.sh`, que
 valida el `.env.autopilot` que tú creaste.
@@ -45,8 +46,9 @@ orca repo add --path /ruta/al/repo           # registrar un repo (una vez por re
 orca repo list                    # ver los repos registrados
 ```
 
-En un **workspace** registra cada repo del proyecto. La rama base de cada repo
-viene de `autopilot.env` (ver más abajo). Para lanzar al coder con la orquestación
+En un **workspace** registra cada repo del proyecto. Cada worktree nace de la rama
+base **por defecto** que Orca define para ese repo: aquí no se configura (ver más
+abajo). Para lanzar al coder con la orquestación
 de Orca hace falta un agente disponible:
 
 ```sh
@@ -167,9 +169,11 @@ recomendación en su propio párrafo.
 ## REGLAS DE GIT (sin excepciones)
 
 - **Una rama independiente por workitem.** Nombre: `task-<id>` o `bug-<id>`.
-- **Toda rama sale de la rama base de SU repo** (`BASE_BRANCH` o `REPO.<carpeta>=<rama>`),
-nunca de otra. El worktree y su rama se crean con **`orca worktree create`**:
-  - repo:   `orca worktree create --name <clave> --repo <selector> --base-branch <BASE> [--activate]`
+- **Toda rama sale de la rama base que Orca tiene definida para su repo** (la base
+por defecto; aquí no se configura: `orca worktree create` sin `--base-branch` usa
+la del repo), nunca de otra. El worktree y su rama se crean con **`orca worktree
+create`**:
+  - repo:   `orca worktree create --name <clave> --repo <selector> [--activate]`
   - workspace: una por repo de la tarea con `--repo <carpeta>`.
   Devuelve la ruta del worktree (ahí trabaja el coder).
 - **NUNCA `git push`. NUNCA `git merge`** (salvo el humano, o `AUTO_MERGE=true`, que
@@ -187,14 +191,14 @@ escucha de Orca o del humano. Relanza siempre.
 
 Para cada tarea en `new/` que no tenga ya un coder trabajando:
 
-1. Decide la rama base (<BASE>) de su repo (`REPO.<carpeta>` o `BASE_BRANCH`).
-2. Crea el worktree si no existe: `orca worktree create --name <clave> --repo  <selector> --base-branch <BASE> [--activate]` (en un workspace, uno por repo de la
- tarea). Si falla (rama base inexistente, repo no registrado), escribe el motivo
+1. Crea el worktree si no existe: `orca worktree create --name <clave> --repo  <selector> [--activate]` (en un workspace, uno por repo de la
+ tarea; la rama sale de la base por defecto que Orca define para el repo). Si
+ falla (repo no registrado), escribe el motivo
  como `## Motivo de stopped` en el `.md` y muévelo a `stopped/` (no lo relances
  solo). Si el worktree **ya existe** (tarea devuelta por cambios), reúsalo:
  es la misma rama.
-3. Mueve el `.md` de la tarea de `new/` a `working/`.
-4. Despacha al coder: `orca orchestration worker-start --spec "<especificación>"  --worktree <clave> --agent <agente-disponible> --json` (o, si no hay agente de
+2. Mueve el `.md` de la tarea de `new/` a `working/`.
+3. Despacha al coder: `orca orchestration worker-start --spec "<especificación>"  --worktree <clave> --agent <agente-disponible> --json` (o, si no hay agente de
  orca, lanza el subagente `coder` del cliente en ese worktree). La especificación
  cumple el contrato de orca (Target / Change / Constraints / Ownership /
  Observable acceptance) y contiene el **encargo del coder** (más abajo).
@@ -203,7 +207,7 @@ Para cada tarea en `new/` que no tenga ya un coder trabajando:
  esta misma carpeta). No dependas de ningún agente `coder` de tu config global:
  si tu cliente registra el agente local por nombre, úsalo; si no, pasa el
  contenido de `$K/agents/coder.md` como instrucciones del subagente (pi).
-5. Si hay `MAX_CODERS` coders en vuelo (`PARALLEL=false` → 1), no lances más.
+4. Si hay `MAX_CODERS` coders en vuelo (`PARALLEL=false` → 1), no lances más.
 
 ### B. Terminó el coder (worker_done de orca, o aviso de subagente)
 
@@ -277,7 +281,7 @@ Clave y título; la **ruta del board** y la **clave** para leer la tarea
 (`cat .workitems/<estado>/<clave>-<slug>.md`: descripción, criterio y feedback
 completos — **no resumidos**); la **ruta de su worktree** (la de `orca worktree create`: ahí trabaja, nunca en la copia principal), el repo, la rama y `<BASE>`;
 si es un **workspace** y la tarea puede tocar otro repo, la lista de repos
-disponibles (y que abra la misma rama ahí con `orca worktree create --name <clave> --repo <carpeta> --base-branch <base>`); dónde está `$K` (`«K_DIR»`)
+disponibles (y que abra la misma rama ahí con `orca worktree create --name <clave> --repo <carpeta>`); dónde está `$K` (`«K_DIR»`)
 con `aenv.sh` y `entorno.py`; y la **ruta de salida**
 (`<board>/.autopilot/resultados/<clave>.md`). Pídele que trabaje **solo** la tarea,
 commitee en la rama y termine escribiendo `NOTAS DEL DESARROLLADOR` + `RESULTADO`

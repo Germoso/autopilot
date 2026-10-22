@@ -49,7 +49,7 @@ AMBIENTE_ALLOW = ["npm run build*", "npm run lint*", "npm run format*", "npm run
                   "curl http://localhost*", "curl http://127.0.0.1*", "*aenv.sh *", "orca worktree create*"]
 
 COMANDOS = {
-    "autopilot-init": "Prepara esta carpeta (repo o workspace de varios repos) para el autopilot: rama base y board",
+    "autopilot-init": "Prepara esta carpeta (repo o workspace de varios repos) para el autopilot: autopilot.env y board (la rama base la define Orca)",
     "autopilot-plan": "Convierte una idea o un documento en tareas del board: brainstorming hasta tenerlo claro, desglose y alta",
     "autopilot": "Arranca el sistema autonomo sobre el board de workitems de este proyecto (usa Orca para ejecutar a los coders)",
 }

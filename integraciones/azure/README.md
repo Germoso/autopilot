@@ -51,7 +51,8 @@ SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
 
 - **Sprint:** `@current` = sprint actual del equipo `<Proyecto> Team` (se actualiza solo al
   cambiar de sprint); `@current:<Equipo>` para otro equipo; o una ruta fija `Proyecto\Sprint X`.
-- En un workspace cada tarea se crea con su `repo:`. Cada `SYNC.<repo>` necesita su `REPO.<repo>` en `autopilot.env`.
+- En un workspace cada tarea se crea con su `repo:`. Ese repo debe estar registrado en
+  **Orca** (`orca repo add`); la rama base la define Orca (la base por defecto del repo).
 - En modo un repo, agrega `azure-sync.env` a `.git/info/exclude` para no commitearlo.
 - **Destino:** por defecto importa al board de `autopilot.env` (`WORKITEMS_DIR`, o `.workitems/`).
   `BOARD_DIR=<carpeta>` en `azure-sync.env` (relativo a ese archivo) o `--board <carpeta>` lo cambian;

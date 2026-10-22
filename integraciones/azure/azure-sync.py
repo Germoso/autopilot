@@ -8,7 +8,8 @@ conoce; escribe directamente archivos .md del board (no depende del kit).
 
 Cada Work Item se escribe como new/<tipo>-<numero>-<slug>.md, donde tipo es
 task o bug segun System.WorkItemType. <tipo>-<numero> es tambien el nombre de
-la rama que el autopilot crea desde la rama base del repo.
+la rama que el autopilot crea desde la rama base por defecto del repo (la que
+Orca define).
 
 FUENTES (azure-sync.env):
   Un repo:    AZURE_PROJECT=<proyecto>  AZURE_ITERATION=<sprint>

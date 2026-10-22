@@ -83,7 +83,8 @@ SYNC.Konectame_BackOffice=Konectame_BackOffice|@current
 ```
 
 - En un workspace, cada tarea se crea con `repo: <carpeta>`: así el autopilot sabe en qué repo
-  crear su rama. Cada `SYNC.<carpeta>` debe tener su `REPO.<carpeta>` en `autopilot.env`.
+  crear su worktree/rama. Ese `repo: <carpeta>` debe estar registrado en **Orca** (`orca repo add`);
+  la rama base la define Orca (la base por defecto del repo).
 - **Sprint**: una ruta (`Proyecto\Sprint X`) o `@current`, el sprint actual del equipo
   `<Proyecto> Team` (`@current:<Equipo>` para otro). Con `@current` no hay que editar nada al
   cambiar de sprint.
@@ -137,7 +138,7 @@ Un archivo `new/<tipo>-<id>-<slug>.md`:
 | `id` | número del Work Item |
 | `tipo` | `task` o `bug` |
 | `prioridad` | mapeada desde Azure |
-| `rama` | `<tipo>-<id>`: la rama que el autopilot creará desde `BASE_BRANCH` |
+| `rama` | `<tipo>-<id>`: la rama que el autopilot creará desde la rama base por defecto que Orca define para el repo |
 | `origen` | `azure:<project>` |
 | `## Descripción` | descripción del work item, HTML convertido a Markdown |
 | `## Criterio de aceptación` | `AcceptanceCriteria`, si no `ReproSteps`, si no `_Sin criterio en Azure._` (HTML convertido a Markdown: listas, encabezados e imágenes en su lugar) |

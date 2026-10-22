@@ -123,8 +123,9 @@ visibles en la tarea sin copiarse.
 - **Una rama independiente por workitem.** Nombre: `task-<id>` o `bug-<id>` (el tipo
   del workitem, no su estado: un `bug-140123` rechazado se sigue corrigiendo en
   `bug-140123`).
-- **Toda rama sale de la rama base de SU repo** (`REPO.<carpeta>=<rama>` o
-  `BASE_BRANCH`). La crea **Orca** (`orca worktree create`), no el orquestador a mano.
+- **Toda rama sale de la rama base por defecto que Orca tiene definida para su repo**
+  (aquí no se configura: `orca worktree create` sin `--base-branch` usa la del repo).
+  La crea **Orca** (`orca worktree create`), no el orquestador a mano.
 - **NUNCA `git push`.** El merge a la base lo hace **el humano**, o el autopilot con
   `AUTO_MERGE=true` (solo local, sin push; no borra la rama).
 - **NUNCA `git merge`** por parte de los agentes, ni `rebase`, ni borrar ramas, ni
@@ -183,8 +184,9 @@ funciona donde se instaló.
 
 Salvo *workspace*, en la **carpeta del proyecto** (la que abre el cliente):
 
-1. **`/autopilot-init`** detecta repo o workspace, propone la rama base de cada repo,
-   preguntate la confirmación y crea `autopilot.env` y el board `.workitems/`.
+1. **`/autopilot-init`** detecta repo o workspace y crea `autopilot.env` y el board
+   `.workitems/`. La rama base NO se pide: la define Orca (cada worktree nace de la
+   base por defecto del repo).
 2. **`.env.autopilot`** en cada repo que use BD/API: copia de `.env` con todo apuntando
    a **local o QA** (base con "qa" en el nombre). Sin él, ese repo no ejecuta nada.
 3. **Orca**: `orca repo add --path <ruta>` por repo (o de la carpeta de un workspace) y
@@ -193,8 +195,8 @@ Salvo *workspace*, en la **carpeta del proyecto** (la que abre el cliente):
 ### Workspace: varios repos, un board
 
 - La carpeta abierta es la del proyecto; bajo ella hay repos (subcarpetas con `.git/`).
-- `autopilot.env` se crea en la carpeta del proyecto; los repos se declaran con
-  `REPO.<carpeta>=<rama base>`.
+- `autopilot.env` se crea en la carpeta del proyecto; los repos se registran en Orca
+  (`orca repo add`) y cada worktree nace de la rama base por defecto de su repo.
 - El board `.workitems/` vive en la carpeta del proyecto (una sola lista de tareas para
   todo el workspace).
 
@@ -211,8 +213,6 @@ Variables del kit. Sin contraseñas (las cuentas van en los `.env.autopilot`).
 | Variable | Default | Qué hace |
 |---|---|---|
 | `WORKITEMS_DIR` | (vacío) | Carpeta del board: `.workitems/` junto a `autopilot.env`. |
-| `BASE_BRANCH` | — | Rama base (modo un solo repo). |
-| `REPO.<carpeta>=<rama>` | — | Repo del workspace y su rama base. |
 | `PARALLEL` | `false` | `true` = hasta `MAX_CODERS` coders a la vez. |
 | `MAX_CODERS` | `1` | Tope de coders en vuelo con `PARALLEL=true`. |
 | `AUTO_MERGE` | `false` | Al aprobar el humano una tarea de `done` (`aprobá <clave>`), el autopilot mergea la(s) rama(s) a la base **solo local** y la tarea queda en `done`. |
@@ -227,11 +227,11 @@ worker_done,escalation,question`) o esperándote a ti. Nunca deja de escuchar.
 
 **A. Lanzar coders** — por cada tarea en `new/` sin coder activo:
 
-1. rama base de su repo (`REPO.<carpeta>=<rama>` o `BASE_BRANCH`);
-2. `orca worktree create --name <clave> --repo <selector> --base-branch <base> [--activate]`
-   (workspace: una por repo de la tarea); si falla → `## Motivo de stopped` en el `.md` y
-a `stopped/`; si el worktree ya existe (tarea devuelta), lo reusa;
-3. mover el `.md` a `working/`;
+1. `orca worktree create --name <clave> --repo <selector> [--activate]`
+   (workspace: una por repo de la tarea; la rama sale de la base por defecto que Orca
+   define para el repo); si falla (repo no registrado) → `## Motivo de stopped` en el
+   `.md` y a `stopped/`; si el worktree ya existe (tarea devuelta), lo reusa;
+2. mover el `.md` a `working/`;
 4. `orca orchestration worker-start --spec "<encargo>" --worktree <clave> --agent <n> --json`
    (o un subagente `coder` del cliente en el worktree si no hay agente de orca);
 5. respetando `MAX_CODERS`/`PARALLEL`.
@@ -337,7 +337,7 @@ El kit delega en la CLI de Orca toda la ejecución. Comandos que usa el orquesta
 | Runtime listo | `orca status` |
 | Registrar repo | `orca repo add --path <ruta>` → luego `orca repo list` |
 | Cuentas de agente | `orca account list` (si falta: `orca account add`) |
-| Worktree de una tarea | `orca worktree create --name <clave> --repo <selector> --base-branch <base> [--activate]` |
+| Worktree de una tarea | `orca worktree create --name <clave> --repo <selector> [--activate]` (nace de la base por defecto del repo) |
 | Limpiar worktree | `orca worktree rm --worktree <clave>` |
 | Run de la sesión (una vez) | `orca orchestration run-create --objective "<resumen>"` → devuelve `run_id` |
 | Despachar al coder | `orca orchestration worker-start --spec "<encargo>" --worktree <clave> --agent <n> --json` |
