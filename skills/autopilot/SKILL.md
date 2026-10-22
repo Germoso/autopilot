@@ -119,15 +119,6 @@ Una tarea se ve así (las secciones las van añadiendo el coder y el humano):
    — te devuelve el `run_id` (lo usan los comandos de orquestación).
 4. Sigue **El bucle**.
 
-### Cómo se lanza cada cosa según el cliente
-
-| | **Claude Code** | **OpenCode** | **pi** |
-|---|---|---|
-| Orquesta | `orca orchestration worker-start --worktree <clave> --agent <n> --spec "…" --json` (o, si no hay agente de orca, Tool Agent `coder` en el worktree) | igual con `orca orchestration …` (o `task` con `agent: coder` en el worktree) | igual con `orca orchestration …` (o la herramienta `subagent` con `agent: "coder"` en el worktree) |
-| Esperar el resultado | `orca orchestration check --wait --types worker_done,escalation,question --timeout-ms …` (bloquea hasta que pase algo y te re-despierta) | igual, o el aviso de subagente de OpenCode | `orca orchestration check --wait …` bloquea; en pi el aviso de subagente también te despierta |
-| Finish del coder | `worker_done` (o aviso de Tool Agent) | `worker_done` (o aviso de OpenCode) | `worker_done` (o aviso nativo de pi) |
-| Registro de actividad | `orca orchestration log`/`task-create` opcional; lo esencial queda en el `.md` | igual | igual |
-
 El **coder siempre trabaja dentro del worktree de Orca** de su tarea (la ruta que
 devuelve `orca worktree create`). Nunca en la copia principal del repo.
 
