@@ -93,6 +93,14 @@ def test_grill_lo_usa_tambien_autopilot_plan():
               "grill-me", "grill-with-docs", "Fase 2")
 
 
+def test_cada_criterio_de_aceptacion_se_entrega_con_su_test():
+    # el coder entrega cada criterio de aceptacion de la tarea con un test
+    # verificable que pase (dado/cuando/entonces), y declara los que no se
+    # pueden probar de forma automatica bajo 'Criterio sin test'.
+    _contiene(COD, "su test verificable", "criterio sin test", "dado/cuando/entonces")
+    _contiene(COD, "cada criterio de aceptación")  # la regla exige por-CRITERIO, no un test suelto
+
+
 def test_redaccion_vieja_eliminada():
     for doc in (SKILL, REF):
         assert "nunca deja de escuchar" not in doc
