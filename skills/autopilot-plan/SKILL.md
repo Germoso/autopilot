@@ -1,23 +1,17 @@
 ---
 name: autopilot-plan
-description: 'Convierte una idea o un documento (PRD, spec, notas, acta, correo, imagenes) en tareas listas para el autopilot. Primero hace un brainstorming con el usuario, pregunta todo lo que haga falta hasta que no quede nada ambiguo, y recien entonces propone el desglose en tareas (con criterios de aceptacion verificables y dependencias) y, con su aprobacion, las crea en el board como .md en new/. Usar cuando el usuario diga /autopilot-plan, "convierte esto en tareas", "arma las tareas de esta idea", "planifica esto para el autopilot", "desglosa este documento" o similar. NO usar en proyectos sin autopilot.env.'
+description: 'Convierte una idea o un documento (PRD, spec, notas, acta, correo, imagenes) en tareas listas para el autopilot.'
 ---
 
 # Autopilot Plan — de una idea o documento a tareas del board
 
-Convierte una idea o un documento en tareas que el autopilot puede ejecutar solas:
-un coder las programa en su rama y **tú las revisionas** (dejándolas en `done`,
-o pidiendo cambios para que vuelvan a `new`), criterio por criterio. Como **no hay QA**, el trabajo
-de esta skill es **sacar toda la ambigüedad antes** de crear una sola tarea: el
-criterio tiene que ser observable y verificable para que TÚ lo compruebes al revisar.
+Convierte una idea o un documento en tareas que el autopilot puede ejecutar solas, criterio por criterio. El trabajo de esta skill es **sacar toda la ambigüedad antes** de crear una sola tarea: el criterio tiene que ser observable y verificable.
 
 Tres fases, en orden:
 
 1. **Entender:** leer la idea o el documento y el código.
 2. **Brainstorming:** preguntar hasta que todo esté 100 % claro, y que el usuario lo confirme.
 3. **Tareas:** proponer el desglose, iterarlo con el usuario y crearlo en el board solo cuando lo apruebe.
-
-Tú **no programas**. No creas ramas, no tocas los repos y no arrancas el autopilot.
 
 ```sh
 # El board SIEMPRE es la ruta de autopilot.env: WORKITEMS_DIR (por defecto .workitems/).
@@ -46,10 +40,13 @@ retoma donde quedó.
 
    Léelo **completo**. Si algo no se puede leer, dilo y pide otra forma de pasarlo. Si no hay entrada, pregunta
    cuál es la idea.
+
 2. **El proyecto.** Lee `autopilot.env` (no tiene secretos):
    - si es un repo o un workspace (los repos se registran en **Orca**;
      la rama base de cada uno la define él, no `autopilot.env`);
+
    El board está en `WORKITEMS_DIR`, o en `.workitems/` si no está definido.
+   
 3. **El código.** Explora los repos, solo en modo lectura, en su rama base:
    - stack y estructura, módulos relacionados, qué ya existe y qué falta;
    - convenciones, cómo son los tests y cómo se configuran los ambientes.
@@ -57,9 +54,11 @@ retoma donde quedó.
    En Claude Code puedes delegar la búsqueda en subagentes `Explore`, en paralelo; en pi, con
    la herramienta `subagent` (agente `researcher` o `scout`).
    **No preguntes lo que el código ya responde.** Pregunta lo que el código no puede decidir.
+
 4. **El board.** Lee las carpetas de estado `new/`, `working/` y `done/`, y las de
    apoyo `adjuntos/` y `planes/`: tareas que ya existen, para no duplicarlas y para saber
    qué claves están usadas (el `<id>` de una clave no puede repetirse).
+   
 5. **Devuelve lo que entendiste** en 5 a 10 líneas:
    - qué se quiere lograr y para quién;
    - qué hay hoy en el código;
@@ -68,6 +67,12 @@ retoma donde quedó.
    Pide que te corrijan antes de seguir.
 
 ## Fase 2 — Brainstorming hasta tenerlo 100 % claro
+
+**Grillá la idea antes de pasar a tareas**: usá **`grill-me`** (que invoca **`grilling`**:
+entrevista en rondas sobre un árbol de decisiones, sin dejar ramas con supuestos
+silenciosos) y **`grill-with-docs`** (suma **`domain-modeling`**: ADRs y glosario)
+cuando la idea implica diseño o terminología del dominio — las mismas skills que
+después usa el orquestador pre-dispatch, instaladas LOCAL con el kit.
 
 Crea el **documento del plan** en `<board>/planes/<slug>.md` y mantenlo al día después de cada respuesta.
 Es la memoria del brainstorming y la fuente de las tareas. Si la conversación se corta, se retoma desde ahí.
@@ -97,7 +102,8 @@ Origen: <idea / ruta del documento>   ·   Estado: brainstorming | definido | ta
 **Cómo preguntar:**
 
 - **En rondas cortas, de 1 a 4 preguntas**, empezando por lo que más cambia el diseño (alcance, flujos,
-  datos) y dejando para después los detalles.
+  datos) y dejando para después los detalles. Cada ronda avanza el árbol de decisiones del `grilling`
+  (modelo de `grill-me`): preguntá todo el frente resuelto en la ronda y recomienda una respuesta por pregunta.
 - **Cada pregunta con opciones concretas y tu recomendación** (y por qué), basadas en el código y en lo que ya
   se decidió. En Claude Code usa la herramienta `AskUserQuestion`; en OpenCode, la herramienta `question`.
   En pi, `contact_supervisor` con `interview_request` (o `AskUserQuestion` si el paquete lo expone).

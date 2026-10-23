@@ -86,6 +86,13 @@ def test_grill_es_del_orquestador_antes_de_despachar():
         assert skill not in COD  # el coder NO carga grill: arranca con el brief aclarado
 
 
+def test_grill_lo_usa_tambien_autopilot_plan():
+    # el grilling vive donde se decide el QUÉ: el brainstorming (Fase 2) de
+    # /autopilot-plan usa las mismas skills que el orquestador pre-dispatch.
+    _contiene(_norm(_leer("skills", "autopilot-plan", "SKILL.md")),
+              "grill-me", "grill-with-docs", "Fase 2")
+
+
 def test_redaccion_vieja_eliminada():
     for doc in (SKILL, REF):
         assert "nunca deja de escuchar" not in doc

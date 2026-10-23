@@ -121,3 +121,9 @@ REPOS MODIFICADOS:
 - Si la tarea venia devuelta por el humano: que decia el feedback y como lo atendiste punto por punto.
 
 Luego, en la ultima linea: 'RESULTADO: done' si completaste la tarea y commiteaste, 'RESULTADO: EN ESPERA' seguido de 'CHOCA CON: <clave>' si un archivo que necesitas lo tiene otra tarea (regla 15), o 'RESULTADO: STOPPED' seguido de 'MOTIVO: <razon>' si no pudiste (las notas se escriben igual: explican hasta donde llegaste).
+
+Y CUANDO TERMINES (hayas commiteado y escrito el archivo de salida), SALI del
+agente con su comando de salida (`/exit` en pi) para que el proceso del terminal de
+Orca cierre y el orquestador reciba el aviso. No dejes la sesion abierta esperando:
+si solo pausas, el terminal queda vivo y el orquestador nunca se entera de que
+terminaste.

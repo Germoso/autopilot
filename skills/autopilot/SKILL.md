@@ -264,14 +264,22 @@ Para cada tarea en `new/` que no tenga ya un coder trabajando:
      díselo al coder si hace falta; la regla 7 del rol ya lo impide.
 4. Despacha al coder **SIEMPRE como agente en un terminal de Orca**, con el agente
  que fijaste en el arranque (`AGENT` de `autopilot.env`; ver *El agente del coder*).
- Por defecto, escribe la especificación en un archivo
- (`<board>/.autopilot/resultados/<clave>.spec`) y lanza:
+ Escribe la especificación en un archivo
+ (`<board>/.autopilot/resultados/<clave>.spec`) y lanza el agente **interactivo**
+ para que su TUI quede visible al humano en el preview del terminal:
 
-   `orca terminal create --worktree <clave> --command '<AGENT> -p "$(cat <spec>.txt)"; exit $?'`
+   a) Crear el terminal con el agente interactivo y capturar su handle:
+      `orca terminal create --worktree <clave> --command '<AGENT>; exit $?' --json`
+      (lee el `handle` del JSON de respuesta)
+   b) Entregar la especificación como primer mensaje:
+      `orca terminal send --terminal <handle> --text "$(cat <spec>.txt)" --enter`
 
-   — el `; exit $?` hace que el terminal muera al terminar y `orca terminal wait
-   --for exit` avise al orquestador. Supervisa con `orca terminal list / read /
-   wait --for exit`. Solo como **alternativa**, si `orca account list` muestra una
+   — lanzar `<AGENT>` sin `-p` dibuja su TUI (borde y estado) en el preview del
+   terminal; el `; exit $?` se mantiene: el terminal muere cuando el agente sale y
+   `orca terminal wait --for exit` avisa al orquestador. Como un agente interactivo
+   NO sale solo tras un turno, el coder debe cerrarlo al terminar (ver CÓMO TERMINAR
+   en el *Encargo del coder*). Supervisa con `orca terminal list / read / wait
+   --for exit`. Solo como **alternativa**, si `orca account list` muestra una
    cuenta, puedes usar `orca orchestration worker-start --spec "<especificación>"
    --worktree <clave> --agent <agente> --json` (también un agente en terminal de
    Orca). La especificación cumple el contrato de orca (Target / Change /
@@ -373,6 +381,12 @@ con `aenv.sh` y `entorno.py`; y la **ruta de salida**
 commitee en la rama y termine escribiendo `NOTAS DEL DESARROLLADOR` + `RESULTADO`
 (`done` / `EN ESPERA` / `STOPPED`) en ese archivo de salida.
 
+CÓMO TERMINAR (para que el orquestador se entere): cuando termines (hayas
+commiteado y escrito `NOTAS DEL DESARROLLADOR` + `RESULTADO` en el archivo de
+salida), **salí del agente** con su comando de salida (`/exit` en pi) para que el
+proceso del terminal cierre y el orquestador reciba el aviso. No dejes la sesión
+abierta esperando.
+
 ## La máquina de estados
 
 ```
@@ -415,11 +429,15 @@ El agente que se lanza **dentro del terminal de Orca** lo fija **`AGENT`** de
 - **Definido** (p. ej. `AGENT=claude`, `AGENT=opencode`, o el nombre de una cuenta
   de orca como `codex`): ese es el agente del coder **en todos los lanzamientos**.
 
-El coder **SIEMPRE** se lanza como agente en un terminal de Orca
-(`orca terminal create --command '<AGENT> -p "…"; exit $?'`), **nunca** como
-subagente ni tarea de fondo del cliente. Solo como alternativa, si `orca account
-list` tiene una cuenta con ese nombre, puedes usar `orca orchestration
-worker-start --agent <AGENT>` (también un agente en terminal de Orca).
+El coder **SIEMPRE** se lanza como agente en un terminal de Orca, en **modo
+interactivo** para que la TUI del agente quede visible al humano:
+`orca terminal create --command '<AGENT>; exit $?' --json` (handle del JSON) y luego
+`orca terminal send --terminal <handle> --text "$(cat <spec>.txt)" --enter` para
+entregarle el encargo. Al terminar, el coder cierra el agente con `/exit` (ver
+CÓMO TERMINAR) para que el terminal muera. **Nunca** como subagente ni tarea de
+fondo del cliente. Solo como alternativa, si `orca account list` tiene una cuenta
+con ese nombre, puedes usar `orca orchestration worker-start --agent <AGENT>`
+(también un agente en terminal de Orca).
 
 Como ya no hay QA, el coder debe dejar **pruebas hechas**: si agregó lógica, agrega
 o actualiza el test que la cubre y lo corre (contra BD/API solo con `aenv.sh`). Si
