@@ -1,6 +1,6 @@
 ---
 name: autopilot
-description: 'Sistema autonomo de desarrollo sobre un board de workitems en carpetas y archivos Markdown (.workitems/), ejecutado por Orca: el orquestador crea un worktree por tarea con `orca worktree create`, lanza al coder con `orca orchestration` (worker-start / check) y el humano revisa en done (si pide cambios vuelve a new; lo que no se pudo va a stopped). Board de 4 estados: new / working / done / stopped. Sin QA ni E2E. Usar cuando el usuario mencione el tablero de tareas, el board, workitems, autopilot, /autopilot, o pida trabajo autonomo sobre tareas. NO usar en proyectos que no tengan un archivo autopilot.env.'
+description: 'Sistema autonomo de desarrollo sobre un board de workitems en carpetas y archivos Markdown (.workitems/), ejecutado por Orca: el orquestador crea un worktree por tarea con `orca worktree create`, lanza al coder **SIEMPRE como agente en un terminal de Orca** (el agente que se configure, pi por defecto; `worker-start` solo como alternativa si hay cuenta) y el humano revisa en done (si pide cambios vuelve a new; lo que no se pudo va a stopped). Board de 4 estados: new / working / done / stopped. Sin QA ni E2E. Usar cuando el usuario mencione el tablero de tareas, el board, workitems, autopilot, /autopilot, o pida trabajo autonomo sobre tareas. NO usar en proyectos que no tengan un archivo autopilot.env.'
 ---
 # Sistema Autónomo de Desarrollo (Autopilot)
 
@@ -48,17 +48,13 @@ orca repo list                    # ver los repos registrados
 
 En un **workspace** registra cada repo del proyecto. Cada worktree nace de la rama
 base **por defecto** que Orca define para ese repo: aquí no se configura (ver más
-abajo). Para lanzar al coder con la orquestación
-de Orca hace falta un agente disponible:
+abajo).
 
-```sh
-orca account list                 # cuentas de agente (codex, claude...)
-```
-
-Si `orca account list` no muestra ninguna cuenta, corre `orca account add` una vez
-(o dile al usuario que añada una). El orquestador despacha con el agente de
-`orca account list`; si no hubiera ninguno, usa el **subagente `coder`** del propio
-cliente (Claude Code / OpenCode / pi) dentro del worktree que creó Orca.
+**REGLA INNEGOCIABLE: los coders SIEMPRE van en un terminal de Orca.** Todo coder
+se lanza como un **agente dentro de un terminal de Orca** (`orca terminal create`),
+con el agente que se configure en `AGENT` (pi por defecto). Queda **PROHIBIDO**
+lanzarlo como **subagente** o como **tarea de fondo del cliente** (bg / bg_run /
+`pi -p` fuera de un terminal de Orca).
 
 **Usa la skill de orca (`orchestration`).** Orca carga esa skill para el orquestador
 (patrón *worker supervised*): es el contrato de `orca orchestration`
@@ -137,10 +133,14 @@ Una tarea se ve así (las secciones las van añadiendo el coder y el humano):
 2. Asegura Orca: `orca status`; registra el/los repo(s) (`orca repo add --path …`
  si no están en `orca repo list`); comprueba el agente disponible
  (`orca account list`).
-3. Abre un **Run de orquestación** (una vez por sesión):
+3. **Fija el agente del coder.** Lee `AGENT` de `autopilot.env` (ver *El agente del
+   coder*): el agente que se lanza **dentro del terminal de Orca**. Si `AGENT` está
+   vacío, usa **pi** por defecto. Si `AGENT` está definido (p. ej. `AGENT=claude`,
+   `AGENT=opencode`), ese es el agente del coder **en todos los lanzamientos**.
+4. Abre un **Run de orquestación** (una vez por sesión):
  `orca orchestration run-create --objective "<breve resumen del trabajo de esta sesión>" --json`
  — te devuelve el `run_id` (lo usan los comandos de orquestación).
-4. Sigue **El bucle**.
+5. Sigue **El bucle**.
 
 El **coder siempre trabaja dentro del worktree de Orca** de su tarea (la ruta que
 devuelve `orca worktree create`). Nunca en la copia principal del repo.
@@ -262,22 +262,35 @@ Para cada tarea en `new/` que no tenga ya un coder trabajando:
      regenera solo la sección del rol con la versión actual de `$K/agents/coder.md`.
    - El `AGENTS.md` del autopilot **no se commitea** (es del kit, no de la tarea):
      díselo al coder si hace falta; la regla 7 del rol ya lo impide.
-4. Despacha al coder: `orca orchestration worker-start --spec "<especificación>"  --worktree <clave> --agent <agente-disponible> --json` (o, si no hay agente de
- orca, lanza el subagente `coder` del cliente en ese worktree). La especificación
- cumple el contrato de orca (Target / Change / Constraints / Ownership /
- Observable acceptance) y contiene el **encargo del coder** (más abajo).
+4. Despacha al coder **SIEMPRE como agente en un terminal de Orca**, con el agente
+ que fijaste en el arranque (`AGENT` de `autopilot.env`; ver *El agente del coder*).
+ Por defecto, escribe la especificación en un archivo
+ (`<board>/.autopilot/resultados/<clave>.spec`) y lanza:
+
+   `orca terminal create --worktree <clave> --command '<AGENT> -p "$(cat <spec>.txt)"; exit $?'`
+
+   — el `; exit $?` hace que el terminal muera al terminar y `orca terminal wait
+   --for exit` avise al orquestador. Supervisa con `orca terminal list / read /
+   wait --for exit`. Solo como **alternativa**, si `orca account list` muestra una
+   cuenta, puedes usar `orca orchestration worker-start --spec "<especificación>"
+   --worktree <clave> --agent <agente> --json` (también un agente en terminal de
+   Orca). La especificación cumple el contrato de orca (Target / Change /
+   Constraints / Ownership / Observable acceptance) y contiene el **encargo del
+   coder** (más abajo).
  Constraint explícito de la tarea: **el coder no adivina** — le despachás un brief
  ya grillado (sin supuestos; el grill es tuyo, antes de lanzar); si le queda una duda
- resuelve con evidencia y, si persiste, termina `STOPPED: DUDA NO RESUELTA` o te
- pregunta con su `ask` en vez de suponer.
- El `coder` de ESTE proyecto es local: su definición está en `$K/agents/coder.md`
- (y, según cliente, en `.opencode/agent/coder.md` o `.claude/agents/coder.md` de
- esta misma carpeta). No dependas de ningún agente `coder` de tu config global:
- si tu cliente registra el agente local por nombre, úsalo; si no, pasa el
- contenido de `$K/agents/coder.md` como instrucciones del subagente (pi).
+ resuelve con evidencia y, si persiste, termina `STOPPED: DUDA NO RESUELTA` en vez
+ de suponer.
+ El rol del coder está en `$K/agents/coder.md` (ya cargado en el `AGENTS.md` del
+ worktree en el paso 3): el agente del terminal lo lee al arrancar. No dependas de
+ ningún agente `coder` de tu config global.
 5. Si hay `MAX_CODERS` coders en vuelo (`PARALLEL=false` → 1), no lances más.
 
-### B. Terminó el coder (worker_done de orca, o aviso de subagente)
+### B. Terminó el coder (salió el proceso del terminal de Orca)
+
+El coder termina cuando **salió el proceso del agente en su terminal de Orca**:
+`orca terminal wait --for exit` avisó (o `orca terminal read` lo muestra); no es
+`worker_done` de cuenta. Al salir:
 
 1. El coder dejó su resultado en `<board>/.autopilot/resultados/<clave>.md`
  (bloque `NOTAS DEL DESARROLLADOR` + `RESULTADO`). Léelo y **copia las notas**
@@ -292,7 +305,7 @@ Para cada tarea en `new/` que no tenga ya un coder trabajando:
    es un fallo.
    - `STOPPED` → escribe en el `.md` la sección `## Motivo de stopped` con el
    motivo tal cual y muévelo a `stopped/` (no se relanza solo).
-   - Sin `RESULTADO` claro o worker con `outcome: failed` → `## Motivo de
+   - Sin `RESULTADO` claro, o **exit ≠ 0** del proceso del terminal → `## Motivo de
    stopped` en el `.md` y mueve a `stopped/`.
 3. **Reporta al humano**: la tarea que está en `done` listo para revisar (y las
 `stopped/` con su motivo). Conviene que el humano verifique la sesión.
@@ -311,27 +324,21 @@ misma rama, y arregla solo eso.
 - Si el humano pide algo que el coder no puede o un cambio de alcance, negócialo
 con él antes de lanzar.
 
-### D. Atascos, preguntas y escalaciones de Orca
+### D. Atascos, preguntas y monitoreo del coder (terminal de Orca)
 
-- **Ciclo ask/reply (preguntas del coder, encoladas):** cuando un coder te pregunta con
-  su `ask` (código `question`/`escalation` en el `check`), la pregunta quedó **encolada**:
-  podés atenderla aunque no haya un `check --wait` activo en ese instante. Respondé con
-  `orca orchestration reply --id <message_id> --body "…"` (al coder solo por chat de orca)
-  o tomá una decisión; el coder retoma al recibir la respuesta. Si no respondés, la
-  pregunta sigue encolada: **no se pierde**.
-- **Mensajes stale de dispatches muertos:** si una `question`/`escalation` llega de un
-  dispatch cuya terminal ya está settle (failed/exited/liveness), NO es un bloqueo activo
-  ni señal de relanzar: verificá el supuesto con **evidencia real** del estado (git del
-  worktree, archivos presentes, `worker-list`), respondé/descartá según corresponda,
-  acusá y seguí. **Nunca** relances, detengas, abandones ni liberes por un mensaje stale
-  sin evidencia positiva (mismas reglas de seguridad que recovery-and-cleanup).
-- Si un worker está atascado y no responde: `worker-stop`/`worker-abandon` según
-  corresponda, escribe `## Motivo de stopped` en el `.md` y muévelo a `stopped/`.
+- **Los coders en terminal NO tienen canal `ask`** (pi no expone `ask`/`reply`):
+  una duda del coder se resuelve en el `.md` (feedback, secciones añadidas) o el
+  coder termina con `STOPPED: DUDA NO RESUELTA` + `RECOMENDACIÓN: …` — nunca la
+  inventa. No hay `ask`/`reply` que responder.
+- **Monitoreo:** usa `orca terminal list` / `orca terminal read <clave>` para ver
+  el estado y la salida real del terminal del coder; no supongas actividad.
+- **Atascado** (sin salida nueva, tiempo razonable sin avanzar): `orca terminal
+  close <clave>`, escribe `## Motivo de stopped` en el `.md` y muévelo a `stopped/`.
 - Un worktree quedó **sin tarea** (huérfano) → `orca worktree rm --worktree <clave>`
 (no lo dejes acumular).
-- Revisa actividad real con `orca orchestration worker-list --run <run_id> --json`
-si `check` se queda sin novedades rato largo: cada worker debe estar vivo o con
-`worker_done` pendiente de procesar. No lances duplicados.
+- Si se queda sin novedades rato largo, revisa con `orca terminal list`: cada
+terminal debe estar vivo o con `wait --for exit` pendiente de procesar. No lances
+duplicados.
 
 Después de procesar cada evento: corre `check` sin `--wait` para drenar lo que quedó en
 el inbox, acusá (`check --ack <delivery_id>`) solo lo que ya procesaste y, si no hay otra
@@ -399,6 +406,21 @@ rama `task-<id>`/`bug-<id>`, y deja sus **notas del desarrollador**. Le bloquean
 `reset --hard`; y todo lo que toque un ambiente fuera de `aenv.sh`. La certificación
 final es el **humano** cuando revisa la tarea de `done`.
 
+### El agente del coder (`AGENT`)
+
+El agente que se lanza **dentro del terminal de Orca** lo fija **`AGENT`** de
+`autopilot.env` (por proyecto):
+
+- **Vacío (default):** **pi**.
+- **Definido** (p. ej. `AGENT=claude`, `AGENT=opencode`, o el nombre de una cuenta
+  de orca como `codex`): ese es el agente del coder **en todos los lanzamientos**.
+
+El coder **SIEMPRE** se lanza como agente en un terminal de Orca
+(`orca terminal create --command '<AGENT> -p "…"; exit $?'`), **nunca** como
+subagente ni tarea de fondo del cliente. Solo como alternativa, si `orca account
+list` tiene una cuenta con ese nombre, puedes usar `orca orchestration
+worker-start --agent <AGENT>` (también un agente en terminal de Orca).
+
 Como ya no hay QA, el coder debe dejar **pruebas hechas**: si agregó lógica, agrega
 o actualiza el test que la cubre y lo corre (contra BD/API solo con `aenv.sh`). Si
 falta una herramienta para compilar o probar, lo dice claro en sus notas.
@@ -412,6 +434,10 @@ paralelo que contradiga al board.
 
 ## Lo que NUNCA debes hacer
 
+- **Nunca lances un coder como subagente o tarea de fondo del cliente** (bg /
+  bg_run / `pi -p` fuera de un terminal de Orca): el coder SIEMPRE va como agente
+  en un terminal de Orca.
+- Para saber si un coder vive, consulta `orca terminal list` (nunca lo adivines).
 - **Afirmar que un coder está trabajando si no lo está** (consulta `worker-list`).
 - `git push` o `git merge` (salvo `AUTO_MERGE=true`, solo local) — **el merge lo hace
 el humano, siempre**, o el autopilot con la variable activa.

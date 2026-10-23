@@ -67,8 +67,16 @@ def test_coder_pregunta_por_ask_no_por_tui_local():
 
 
 def test_mensajes_stale_se_verifican_con_evidencia():
-    for doc in (SKILL, REF):
-        _contiene(doc, "stale", "evidencia")
+    # (en la REFERENCIA del modelo de cuenta; la skill ya no maneja mensajes stale:
+    # el coder es un agente en terminal de Orca, se verifica con orca terminal list/read)
+    _contiene(REF, "stale", "evidencia")
+
+
+def test_coders_siempre_agentes_en_terminal_de_orca():
+    # contrato de despacho vigente: el coder SIEMPRE va como agente en un terminal de
+    # Orca (nunca subagente ni bg/bg_run del cliente); el agente lo fija AGENT (default pi).
+    _contiene(SKILL, "terminal de Orca", "subagente", "bg_run", "orca terminal create")
+    assert "worker-start" in SKILL  # solo como alternativa si hay cuenta
 
 
 def test_grill_es_del_orquestador_antes_de_despachar():
@@ -92,6 +100,16 @@ def test_instalador_declara_las_extensiones_pi_con_approve():
     assert "pi install --local --approve" in INSTALL
     assert "pi remove --local --approve" in INSTALL
     assert "pi-extensions.conf" in INSTALL
+
+
+def test_agente_del_coder_fijable_en_autopilot_env():
+    # el proyecto puede fijar con que agente corre el coder (AGENT en autopilot.env):
+    # documentado en la skill del orquestador, en el template de /autopilot-init, en la
+    # referencia y en el ejemplo.
+    _contiene(SKILL, "AGENT", "autopilot.env")
+    _contiene(_norm(_leer("skills", "autopilot-init", "SKILL.md")), "AGENT=")
+    _contiene(REF, "AGENT")
+    _contiene(_norm(_leer("examples", "proyecto", "autopilot.env.example")), "AGENT=")
 
 
 if __name__ == "__main__":

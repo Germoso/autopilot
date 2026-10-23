@@ -212,6 +212,12 @@ Todo está en **`autopilot.env`**, en la carpeta de tu proyecto. Lo más común:
 | Más de un coder a la vez | `PARALLEL=true`, y `MAX_CODERS` |
 | Que el kit mergee al aprobar yo | `AUTO_MERGE=true` |
 | Que un comando pueda tardar más | `COMMAND_TIMEOUT=900` (segundos) |
+| Que un agente/cliente concreto programe | `AGENT=pi` (u `opencode`, `claude`, o el nombre de una cuenta de orca) |
+
+> `AGENT` fija **con qué agente corre el coder** (`pi`, `claude`, `opencode`, o una
+> cuenta de orca). Vacío = el orquestador usa una cuenta de `orca account list` o,
+> si no hay, el subagente `coder` del cliente en el que corre el proyecto. Distinto
+> de los clientes en los que se **instala** el kit (`./install.sh --pi|--claude|--opencode`).
 
 > La rama de la que salen las tareas **no se configura en `autopilot.env`**: la define
 > Orca (la base por defecto de cada repo, registrado con `orca repo add`). Si la

@@ -43,6 +43,7 @@ cosas: `autopilot.env` y el board `.workitems/`.
    MAX_CODERS=2
    AUTO_MERGE=false          # true = el autopilot mergea la rama solo local al aprobar el humano
    COMMAND_TIMEOUT=900       # tiempo maximo (s) de lo que corre por aenv.sh
+   AGENT=                    # agente del coder: pi, claude, opencode (o una cuenta de orca); vacio = decidir al orquestar
    ```
 
    Si ya existía, conserva el resto de variables que puso el usuario (no

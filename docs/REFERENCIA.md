@@ -219,6 +219,7 @@ Variables del kit. Sin contraseñas (las cuentas van en los `.env.autopilot`).
 | `MAX_CODERS` | `1` | Tope de coders en vuelo con `PARALLEL=true`. |
 | `AUTO_MERGE` | `false` | Al aprobar el humano una tarea de `done` (`aprobá <clave>`), el autopilot mergea la(s) rama(s) a la base **solo local** y la tarea queda en `done`. |
 | `COMMAND_TIMEOUT` | `900` | Tope (segundos) de lo que corre `aenv.sh`. |
+| `AGENT` | (vacío) | Agente del coder: `pi`, `claude`, `opencode` (o el nombre de una cuenta de orca, p. ej. `codex`). Vacío = el orquestador decide: una cuenta de `orca account list`, o si no hay ninguna el subagente `coder` del cliente en el que corre. |
 
 Sin variables de ranuras, E2E ni Telegram: ya no existen.
 
